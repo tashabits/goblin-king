@@ -40,3 +40,6 @@ For existing maintenance work, the migration path should be:
 4. Emit `GoblinResult` envelopes with artifacts, metrics, handoffs, and failure details.
 5. Use events and heartbeats as the operator proof trail.
 6. Reload discovery after deployment and prove the new goblins from the admin lab bench.
+
+The `examples/adopting-project/` fixture shows this shape with multiple registry files,
+worker image coverage, and a short plus long-running project goblin pair.

@@ -54,6 +54,8 @@ def test_project_goblins_list_and_validate() -> None:
     assert "example.echo" in listed.stdout
     assert validated.exit_code == 0
     assert "goblins\t7" in validated.stdout
+    assert "worker_coverage\t7/7" in validated.stdout
+    assert "dockerfiles\tok" in validated.stdout
 
 
 def test_auth_setup_commands_create_user_project_and_token(tmp_path: Path) -> None:
@@ -117,6 +119,48 @@ def test_project_init_package_creates_template(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert (tmp_path / "generated" / "pyproject.toml").exists()
+    assert (tmp_path / "generated" / "workers" / "sample.echo.long-service" / "Dockerfile").exists()
+
+
+def test_project_validate_rejects_missing_worker_mapping(tmp_path: Path) -> None:
+    """Verify project validation catches missing worker image coverage."""
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "goblins.json").write_text(
+        json.dumps(
+            {
+                "goblins": [
+                    {
+                        "kind": "sample.echo",
+                        "display_name": "Sample Echo",
+                        "module": "examples.goblins.echo",
+                        "entrypoint": "run",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (project / "goblin-images.json").write_text('{"workers":{}}', encoding="utf-8")
+    (project / "goblin-king-project.json").write_text(
+        json.dumps(
+            {
+                "registries": ["goblins.json"],
+                "entry_points": False,
+                "images": "goblin-images.json",
+                "api_settings": "api.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        ["project", "validate", "--project", str(project / "goblin-king-project.json")],
+    )
+
+    assert result.exit_code == 1
+    assert "missing_worker\tsample.echo" in result.stderr
 
 
 def test_jobs_submit_persists_completed_run(tmp_path: Path) -> None:

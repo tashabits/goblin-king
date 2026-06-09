@@ -1,0 +1,14 @@
+{
+  "workers": {
+    "project.maintenance.hello": {
+      "context": "../../workers/example.hello",
+      "dockerfile": "Dockerfile",
+      "image": "project-maintenance-hello:local"
+    },
+    "project.reports.long-service": {
+      "context": "../../workers/example.long-hello",
+      "dockerfile": "Dockerfile",
+      "image": "project-reports-long-service:local"
+    }
+  }
+}
