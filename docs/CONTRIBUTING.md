@@ -56,6 +56,10 @@ the project validation command, worker build proof, Docker Compose extension pro
 Helm values render proof, discovery reload proof, and admin-visible project goblin
 proof.
 
+When a phase includes release or upgrade behavior, PR evidence must include wheel build
+proof, compatibility fixture validation, Docker/Helm adoption smoke or render proof,
+docs proof for release/migration/upgrade guides, and a compatibility matrix update.
+
 When a phase includes fanout or retry behavior, PR evidence must include both API and CLI
 proof. Record fanout creation, fanout readback, scheduler execution, retry creation from
 a terminal job, and retry completion.
@@ -95,6 +99,8 @@ source reporting, image-map coverage, scheduler refresh, and admin UI reload con
 Host-project deployment phases must include tests or render checks for project Compose
 fixtures, Helm project values, scheduler project settings, and admin discovery proof
 commands.
+Release/upgrade phases must include tests for compatibility fixtures, compatibility
+matrix shape, release documentation links, and first-hour adoption instructions.
 Fanout/retry phases must include tests for batch persistence, derived fanout status, API
 auth, CLI commands, retry lineage, rejected live-job retries, and scheduler execution.
 Event/heartbeat phases must include tests for event persistence, API event reads,

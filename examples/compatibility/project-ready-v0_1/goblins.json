@@ -1,0 +1,12 @@
+{
+  "goblins": [
+    {
+      "kind": "compat.hello",
+      "display_name": "Compatibility Hello",
+      "module": "examples.goblins.hello",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    }
+  ]
+}

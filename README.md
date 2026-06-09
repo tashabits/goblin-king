@@ -135,6 +135,11 @@ For host-project deployment integration, see
   - `make project-discovery-reload`
   - `make project-admin-proof`
 
+For the project-ready release and upgrade story, start with the
+[First Hour Guide](docs/FIRST_HOUR.md), [Release Checklist](docs/RELEASE_CHECKLIST.md),
+[Compatibility Matrix](docs/COMPATIBILITY.md), [Upgrade Guide](docs/UPGRADING.md), and
+[Migration Guide](docs/MIGRATION_GUIDE.md).
+
 Queue a fanout batch and inspect it:
 
 ```bash
@@ -299,6 +304,11 @@ updates to Redis pub/sub for live subscribers.
 | [Admin Guide](docs/ADMIN_GUIDE.md) | Screenshot walkthrough for logging in, spawning goblins, watching tasks, probing long services, reading events, and cleaning old rows. |
 | [Public API Boundary](docs/PUBLIC_API.md) | Stable root imports, semi-public commands, internal modules, and internal wheel compatibility policy. |
 | [Adopting Projects](docs/ADOPTING_PROJECTS.md) | How another project installs Goblin King, defines goblin plugins, builds workers, and proves the integration. |
+| [First Hour Guide](docs/FIRST_HOUR.md) | Fast path from internal install to first project goblin run. |
+| [Release Checklist](docs/RELEASE_CHECKLIST.md) | Internal wheel, Docker image, local CI, Docker adoption, and Helm proof checklist. |
+| [Compatibility Matrix](docs/COMPATIBILITY.md) | Contract and schema compatibility versions for project-ready adoption. |
+| [Upgrade Guide](docs/UPGRADING.md) | Host-project upgrade procedure and compatibility fixture policy. |
+| [Migration Guide](docs/MIGRATION_GUIDE.md) | How to move existing scripts and workers into goblin plugins. |
 | [Contributing](docs/CONTRIBUTING.md) | Branch, PR, local CI, commenting, goblin documentation, and test expectations. |
 | [API Roadmap](docs/api-roadmap.md) | API endpoints deferred beyond Phase 4 and their intended target phases. |
 | [Project Adoption](docs/project-adoption.md) | Notes for adapting existing queue, worker, heartbeat, and operator proof flows. |
