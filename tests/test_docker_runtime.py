@@ -11,7 +11,9 @@ import pytest
 from redis import Redis
 
 from goblin_king.contracts import GoblinDefinition
+from goblin_king.events import EventBus
 from goblin_king.runtime import DockerRuntime, new_run_context
+from goblin_king.store import SQLiteStore
 from goblin_king.workers import WorkerImageMap
 
 REDIS_CONTAINER = "goblin-king-test-redis"
@@ -95,6 +97,54 @@ def test_docker_runtime_executes_example_worker(
     assert result_file.exists()
     assert redis_payload is not None
     assert json.loads(redis_payload)["status"] == "success"
+
+
+def test_docker_runtime_records_worker_heartbeats(
+    tmp_path: Path,
+    redis_container: str,
+    example_worker_image: str,
+) -> None:
+    """Verify DockerRuntime persists worker heartbeats emitted through Redis."""
+    del redis_container, example_worker_image
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    event_bus = EventBus(store=store, redis_url=REDIS_URL)
+    worker_map = WorkerImageMap.from_path("goblin-images.json")
+    runtime = DockerRuntime(
+        workers=worker_map,
+        redis_url=REDIS_URL,
+        run_root=tmp_path / "runs",
+        event_bus=event_bus,
+    )
+    context = new_run_context("job-1", "example.echo")
+    context = context.model_copy(update={"artifact_root": str(tmp_path / "artifacts")})
+    definition = GoblinDefinition(
+        kind="example.echo",
+        display_name="Echo",
+        module="unused.by.docker",
+    )
+
+    result = runtime.run(definition, None, {"message": "hello heartbeat"}, context)
+    heartbeats = store.list_heartbeats()
+    event_types = [event.event_type for event in store.list_events()]
+
+    assert result.status == "success"
+    assert heartbeats[0].owner_type == "worker"
+    assert heartbeats[0].status == "completed"
+    assert heartbeats[0].run_id == context.run_id
+    assert "worker.started" in event_types
+    assert "worker.completed" in event_types
+
+
+def test_event_bus_records_malformed_worker_heartbeat(tmp_path: Path) -> None:
+    """Verify malformed worker heartbeat payloads become durable failure events."""
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    event_bus = EventBus(store=store, redis_url=REDIS_URL)
+
+    event_bus.record_worker_heartbeat_payload("not-json")
+
+    events = store.list_events(event_type="worker.heartbeat_invalid")
+    assert len(events) == 1
+    assert "error" in events[0].payload
 
 
 def test_docker_runtime_returns_failure_for_missing_image_mapping(tmp_path: Path) -> None:
