@@ -25,3 +25,18 @@ response payloads, and records events that prove the service is alive.
 Projects can start with Docker Compose, then opt into the Helm chart when Kubernetes is
 required. The same registry, image map, API, scheduler, event, heartbeat, and admin UI
 concepts apply in both deployment modes.
+
+The project-ready adoption roadmap keeps Nomena-style projects in a plugin model:
+Goblin King is installed as an internal wheel, while the host project owns goblin plugin
+packages, registry files, worker folders, and image maps. The admin/API should discover
+those project goblins at deploy time and support runtime reload, so newly deployed
+goblin types appear in the admin without rebuilding the React UI.
+
+For Nomena-like maintenance work, the migration path should be:
+
+1. Turn each task name into a stable `GoblinDefinition.kind`.
+2. Move queue payloads into typed job input JSON.
+3. Move existing worker code into self-contained worker folders or plugin packages.
+4. Emit `GoblinResult` envelopes with artifacts, metrics, handoffs, and failure details.
+5. Use events and heartbeats as the operator proof trail.
+6. Reload discovery after deployment and prove the new goblins from the admin lab bench.

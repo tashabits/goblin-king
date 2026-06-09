@@ -19,6 +19,9 @@ metadata.
 The final optional phase adds sample proof goblins, a FastAPI-served admin UI for
 Docker and Helm deployments, long-running service probes, and an optional Kubernetes
 Helm chart. Docker and Compose remain the default local path.
+The next roadmap extension focuses on project-ready adoption: internal wheel reuse,
+host-project goblin plugin packages, deploy-time discovery reload, and admin/API pickup
+of newly deployed goblin types without a React rebuild.
 
 ## Quick Start
 

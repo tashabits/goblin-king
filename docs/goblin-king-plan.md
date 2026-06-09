@@ -463,6 +463,92 @@ Integration tests:
 - Add documentation for when to choose Kubernetes and how to keep local Docker workflows unchanged.
 - Add local chart validation and, where practical, kind/minikube smoke tests with explicit PR proof.
 
+## Project-Ready Adoption Roadmap Extension
+
+The current roadmap gets Goblin King to a reusable scheduler, API, Docker/Kubernetes
+runtime, and admin proof surface. The next roadmap extension makes it practical for
+another project, such as Nomena, to install Goblin King as an internal dependency,
+define project-owned goblins, deploy them, and have the admin/API discover those goblin
+types without rebuilding the React admin.
+
+Primary direction:
+
+- Host projects install Goblin King as an internal Python wheel and consume published
+  API/scheduler/admin Docker images.
+- Host projects provide goblins as plugin packages with `goblin_king.goblins` entry
+  points, optional registry files, worker folders, and worker image maps.
+- Deploy-time discovery supports runtime reload so newly deployed goblin definitions
+  appear in the API/admin without restarting the React admin.
+- Public PyPI publishing is deferred; the first target is private/internal package and
+  image reuse.
+
+### Phase 11: Stable Internal Package Boundary
+
+- Define the supported public Python API surface for adopting projects.
+- Expand `goblin_king.__init__` exports to include stable adoption primitives only:
+  contracts, registry/project settings helpers, worker image map loading, and app or
+  scheduler factory entrypoints where appropriate.
+- Document public, semi-public, and internal modules so host projects know which imports
+  are compatible across internal releases.
+- Add internal wheel versioning policy and compatibility notes for goblin contracts,
+  registry schemas, worker image maps, API settings, and worker contract versions.
+- Add a "use from another project" guide covering editable install, wheel install,
+  Docker image usage, and where host projects should put goblin packages.
+
+### Phase 12: Project Plugin SDK And Templates
+
+- Expand the package generator into a project plugin SDK path.
+- Generated plugins include Python package metadata, a `goblin_king.goblins` entry point,
+  registry stub, worker image map stub, a short-running worker folder with Dockerfile,
+  optional long-running service worker folder with Dockerfile, local tests, and README
+  integration instructions.
+- Add project-level examples for multiple goblin packages in one adopting repo.
+- Add validation commands for plugin metadata, entry-point discovery, duplicate kinds,
+  worker image map coverage, worker Dockerfiles, and local worker buildability.
+- Update Nomena-style adoption docs to map existing queue workers into goblin kinds,
+  inputs, results, heartbeats, artifacts, and handoffs.
+
+### Phase 13: Deploy-Time Discovery And Runtime Reload
+
+- Add runtime reload support for project settings, registry files, entry points, and
+  worker image maps.
+- Add authenticated admin discovery endpoints: `POST /admin/discovery/reload`,
+  `GET /admin/discovery/status`, and `GET /admin/discovery/sources`.
+- Reload updates in-memory API registry and worker image map state safely; failed reloads
+  preserve the previous valid registry and report validation errors.
+- Scheduler reloads through the same discovery version marker, either before each pass or
+  through an explicit reload signal/API flow.
+- Add an admin Discovery panel showing loaded sources, entry-point goblins, image map
+  coverage, rejected definitions, duplicate kind errors, last reload time, current
+  discovery version, and a reload button.
+- Admin continues to read goblins dynamically through the API; no React rebuild is needed
+  for newly deployed goblin types.
+
+### Phase 14: Host Project Deployment Integration
+
+- Add deployment conventions for installing project plugin wheels into API/scheduler
+  images and mounting or baking project registry/image-map files.
+- Add Docker Compose extension examples for a host project that uses Goblin King services
+  plus project-specific worker images.
+- Add Helm values patterns for extra project registries, worker image map entries,
+  long-running service workers, project package images, and post-upgrade discovery reload.
+- Add Makefile/documented commands for building project goblin packages, building project
+  worker images, starting the stack, reloading discovery, and running admin proof.
+- Prove that a newly deployed project goblin appears in admin after reload and can be
+  spawned without frontend rebuild.
+
+### Phase 15: Project-Ready Release And Upgrade Story
+
+- Add an internal release checklist for building the wheel, API/scheduler/admin Docker
+  images, sample plugin package, local CI, Docker adoption smoke, and Helm adoption smoke.
+- Add upgrade compatibility tests using a sample adopting-project fixture.
+- Add docs for migrating existing project scripts/workers into goblin plugins.
+- Add a changelog and compatibility matrix for goblin contract version, registry schema
+  version, worker contract version, and API compatibility.
+- Add a "first hour with Goblin King in your project" guide: install the wheel, generate
+  a plugin, define a goblin, build the worker image, start the stack, reload discovery,
+  spawn the goblin from admin, and inspect run/events/heartbeats/artifacts.
+
 ## Key Decisions To Make Before Coding
 
 1. Database default: SQLite-only MVP, or Postgres in Compose from day one.
