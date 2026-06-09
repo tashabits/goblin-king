@@ -401,6 +401,15 @@ export function App() {
     await refreshAll();
   }
 
+  async function hardKillJob(jobId: string) {
+    await api(
+      `/admin/runtime/jobs/${jobId}/kill`,
+      { method: "POST", body: JSON.stringify({ runtime: "both" }) },
+      "POST /admin/runtime/jobs/{job_id}/kill",
+    );
+    await refreshAll();
+  }
+
   async function createFanout() {
     await api("/jobs/fanout", { method: "POST", body: fanoutInput }, "POST /jobs/fanout");
     await refreshAll();
@@ -465,6 +474,15 @@ export function App() {
       `/services/long-running/${serviceId}/stop`,
       { method: "POST" },
       "POST /services/long-running/{service_id}/stop",
+    );
+    await refreshAll();
+  }
+
+  async function hardKillService(serviceId: string) {
+    await api(
+      `/admin/runtime/services/${serviceId}/kill`,
+      { method: "POST", body: JSON.stringify({ runtime: "both" }) },
+      "POST /admin/runtime/services/{service_id}/kill",
     );
     await refreshAll();
   }
@@ -627,7 +645,10 @@ export function App() {
                 <code>{job.id}</code>
                 <p>{job.last_error || quoteFor(job.id.length)}</p>
                 {!["completed", "failed", "timed_out", "cancelled"].includes(job.status) && (
-                  <button className="danger" onClick={() => void cancelJob(job.id)}><Ban size={16} /> Kill / cancel</button>
+                  <div className="button-row">
+                    <button className="danger" onClick={() => void cancelJob(job.id)}><Ban size={16} /> Kill / cancel</button>
+                    <button className="danger" onClick={() => void hardKillJob(job.id)}><Square size={16} /> Hard kill runtime</button>
+                  </div>
                 )}
               </article>
             ))}
@@ -733,6 +754,13 @@ export function App() {
                   onClick={() => void stopService(service.id)}
                 >
                   <Square size={16} /> {service.status === "stopped" ? "Stopped" : "Stop service"}
+                </button>
+                <button
+                  className="danger"
+                  disabled={service.status === "stopped"}
+                  onClick={() => void hardKillService(service.id)}
+                >
+                  <Square size={16} /> Hard stop runtime
                 </button>
               </article>
             ))}

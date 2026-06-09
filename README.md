@@ -9,11 +9,11 @@ The current implementation covers the Phase 1-17 roadmap: a SQLite-backed schedu
 Docker worker execution, FastAPI control plane, reusable project/plugin discovery,
 fanout and retry workflows, durable events, Redis pub/sub and Redis Streams delivery,
 WebSocket run updates, scheduler and worker heartbeats, local bearer-token auth,
-optional OIDC/JWT bearer auth, volume/PVC-backed artifact management, project scoping,
-audit/rate-limit proof, a Docker/Helm admin UI, deploy-time discovery reload,
-host-project adoption examples, internal release/upgrade checks, and cloud-neutral Helm
-hardening. Docker and Compose remain the default local path; Kubernetes is optional
-through the Helm chart.
+optional OIDC/JWT bearer auth, volume/PVC-backed artifact management, scoped runtime
+termination, project scoping, audit/rate-limit proof, a Docker/Helm admin UI,
+deploy-time discovery reload, host-project adoption examples, internal release/upgrade
+checks, and cloud-neutral Helm hardening. Docker and Compose remain the default local
+path; Kubernetes is optional through the Helm chart.
 
 ## Table Of Contents
 
@@ -231,9 +231,12 @@ total bytes, metadata rows, and writable status. Admins can preview and execute 
 cleanup without moving bytes to object storage; Docker uses the `goblin-king-data`
 Compose volume and Helm uses the chart PVC.
 
-The tester buttons labeled kill perform King-side cancellation or registered-service
-stop actions. They do not hard-kill Docker containers or Kubernetes pods; the API
-records the requested state change through events and audit logs.
+The tester buttons labeled kill perform King-side cancellation. The hard-kill runtime
+buttons are separate admin controls and only target Docker containers or Kubernetes Jobs
+carrying Goblin King labels such as `goblin-king.worker=true`,
+`goblin-king.job-id=<id>`, and `goblin-king.run-id=<id>`. Registered long-running
+services use a hard-stop presentation control because they are registered by URL rather
+than owned as runtime rows.
 
 Run the Docker admin proof flow:
 
@@ -393,6 +396,7 @@ for adopting projects and internal wheel reuse, with a plugin SDK path for short
 and long-running goblin workers. Redis Streams provide replayable delivery proof for
 event consumers, and the optional Helm chart includes cloud-neutral production
 hardening controls. Artifact bytes stay on Docker volumes and Kubernetes PVCs with
-status and cleanup APIs. Remaining follow-up work is limited to later roadmap items
-such as scoped hard runtime termination, image promotion/deployment orchestration, and
+status and cleanup APIs. Scoped hard runtime termination is available for
+Goblin-labeled Docker and Kubernetes runtime objects. Remaining follow-up work is
+limited to later roadmap items such as image promotion/deployment orchestration and
 cloud-specific recipes.

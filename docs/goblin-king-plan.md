@@ -584,7 +584,7 @@ Primary direction:
 
 ### Phase 20: Scoped Runtime Termination
 
-- Status: planned.
+- Status: implemented in Phase 20.
 - Add hard termination only for Docker containers and Kubernetes jobs/pods created and
   labeled by Goblin King, with audit/events and safe no-op behavior for finished work.
 

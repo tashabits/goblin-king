@@ -215,6 +215,8 @@ class DockerRuntime:
             "goblin-king.worker=true",
             "--label",
             f"goblin-king.run-id={context.run_id}",
+            "--label",
+            f"goblin-king.job-id={context.metadata.get('job_id', '')}",
             "--add-host",
             "host.docker.internal:host-gateway",
             "-e",
@@ -451,6 +453,7 @@ class KubernetesRuntime:
                     "labels": {
                         "goblin-king.worker": "true",
                         "goblin-king.run-id": context.run_id,
+                        "goblin-king.job-id": str(context.metadata.get("job_id", "")),
                     }
                 },
                 "spec": {
@@ -512,7 +515,14 @@ class KubernetesRuntime:
         return {
             "apiVersion": "batch/v1",
             "kind": "Job",
-            "metadata": {"name": name, "labels": {"goblin-king.worker": "true"}},
+            "metadata": {
+                "name": name,
+                "labels": {
+                    "goblin-king.worker": "true",
+                    "goblin-king.run-id": context.run_id,
+                    "goblin-king.job-id": str(context.metadata.get("job_id", "")),
+                },
+            },
             "spec": spec,
         }
 

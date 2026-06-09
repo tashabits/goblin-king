@@ -90,9 +90,9 @@ Log in with `local-dev-token`. The same React admin image is used by Docker and 
 It lists goblins, worker images, jobs, schedules, runs, fanouts, long-running services,
 events, heartbeats, artifacts, audit logs, and rate-limit proof panels. The lab bench
 captures request payloads, responses, durable events, Redis Stream delivery health, and
-live WebSocket messages. The
-King-side kill controls cancel jobs or stop registered services; they do not hard-kill
-containers or pods.
+live WebSocket messages. King-side kill controls cancel jobs or stop registered
+services. Admin hard-kill runtime controls are separate and only target Docker
+containers or Kubernetes Jobs with Goblin King ownership labels.
 
 For a screenshot walkthrough of each admin panel, see
 [Goblin King Admin Guide](ADMIN_GUIDE.md).
@@ -119,6 +119,28 @@ curl -X POST http://127.0.0.1:8000/admin/artifacts/cleanup \
 
 Docker Compose stores artifact bytes in the `goblin-king-data` volume under
 `.goblin-king/artifacts`; Helm stores them on the chart PVC at `/data/artifacts`.
+
+## Hard-Kill Runtime Objects
+
+Use hard-kill controls only when a running worker runtime object needs to be stopped
+outside the normal scheduler path. The API only targets runtime objects labeled by
+Goblin King:
+
+```bash
+curl -X POST http://127.0.0.1:8000/admin/runtime/jobs/<job-id>/kill \
+  -H "Authorization: Bearer local-dev-token" \
+  -H "Content-Type: application/json" \
+  -d "{\"runtime\":\"both\"}"
+curl -X POST http://127.0.0.1:8000/admin/runtime/runs/<run-id>/kill \
+  -H "Authorization: Bearer local-dev-token" \
+  -H "Content-Type: application/json" \
+  -d "{\"runtime\":\"docker\"}"
+```
+
+The response lists killed runtime objects and any runtime errors. A job hard-kill also
+marks a non-terminal job as cancelled. Registered long-running services can be
+hard-stopped from the admin UI or `/admin/runtime/services/{service_id}/kill`; this
+changes King-side service presentation because those services are registered by URL.
 
 The API requires bearer auth for everything except `/health`:
 

@@ -114,6 +114,7 @@ function mockFetch() {
       return jsonResponse({ id: "job-2", kind: "example.hello", status: "queued" });
     }
     if (url.includes("/jobs/job-1/cancel")) return jsonResponse({ ...fixtures.jobs.items[0], status: "cancelled" });
+    if (url.includes("/admin/runtime/jobs/job-1/kill")) return jsonResponse({ killed: ["docker:abc"], errors: [] });
     if (url.includes("/jobs/fanout")) return jsonResponse({ status: "queued" });
     if (url.includes("/retry")) return jsonResponse({ id: "job-retry", status: "queued" });
     if (url.includes("/runs?")) return jsonResponse(fixtures.runs);
@@ -125,6 +126,9 @@ function mockFetch() {
     }
     if (url.includes("/services/long-running") && init?.method === "POST" && url.endsWith("/stop")) {
       return jsonResponse({ ...fixtures.services[0], status: "stopped" });
+    }
+    if (url.includes("/admin/runtime/services/svc-1/kill")) {
+      return jsonResponse({ killed: ["registered-service:svc-1"], errors: [] });
     }
     if (url.endsWith("/services/long-running") && init?.method === "POST") {
       return jsonResponse(fixtures.services[0]);
@@ -215,6 +219,7 @@ describe("App", () => {
     expect(screen.getAllByText("Admin & Auth").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Cleanup").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: /kill \/ cancel/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: /hard kill runtime/i }).length).toBeGreaterThan(0);
   });
 
   it("calls job submit, cancel, service probe, and stop paths", async () => {
@@ -225,15 +230,19 @@ describe("App", () => {
     await screen.findAllByText("example.hello");
     await userEvent.click(screen.getAllByRole("button", { name: /^submit job/i })[0]);
     await userEvent.click(screen.getAllByRole("button", { name: /kill \/ cancel/i })[0]);
+    await userEvent.click(screen.getAllByRole("button", { name: /hard kill runtime/i })[0]);
     await userEvent.click(screen.getAllByRole("button", { name: /^probe/i })[0]);
     await userEvent.click(screen.getAllByRole("button", { name: /stop service/i })[0]);
+    await userEvent.click(screen.getAllByRole("button", { name: /hard stop runtime/i })[0]);
 
     await waitFor(() => {
       const urls = fetchMock.mock.calls.map((call) => String(call[0]));
       expect(urls).toContain("/admin-api/jobs");
       expect(urls).toContain("/admin-api/jobs/job-1/cancel");
+      expect(urls).toContain("/admin-api/admin/runtime/jobs/job-1/kill");
       expect(urls).toContain("/admin-api/services/long-running/svc-1/probe");
       expect(urls).toContain("/admin-api/services/long-running/svc-1/stop");
+      expect(urls).toContain("/admin-api/admin/runtime/services/svc-1/kill");
     });
   });
 
