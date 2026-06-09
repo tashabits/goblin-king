@@ -20,7 +20,8 @@ def test_valid_example_registry_loads() -> None:
     """Verify the committed example registry resolves the echo goblin."""
     registry = GoblinRegistry.from_path("examples/goblins.json")
 
-    assert registry.list()[0].kind == "example.echo"
+    assert "example.echo" in {definition.kind for definition in registry.list()}
+    assert "example.hello" in {definition.kind for definition in registry.list()}
     definition, entrypoint = registry.resolve("example.echo")
     assert definition.display_name == "Example Echo"
     assert callable(entrypoint)

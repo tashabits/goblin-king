@@ -1,0 +1,45 @@
+image:
+  repository: goblin-king
+  tag: local
+  pullPolicy: IfNotPresent
+
+api:
+  replicas: 1
+  port: 8000
+  bootstrapAdminToken: local-dev-token
+
+scheduler:
+  enabled: true
+  replicas: 1
+  intervalSeconds: 5
+
+redis:
+  image: redis:7-alpine
+  port: 6379
+
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClassName: ""
+
+config:
+  registryPath: /app/examples/goblins.json
+  imagesPath: /app/goblin-images.json
+  dbPath: /data/goblin-king.sqlite3
+  artifactRoot: /data/artifacts
+  redisUrl: redis://goblin-king-redis:6379/0
+
+admin:
+  enabled: true
+  ingress:
+    enabled: true
+    className: nginx
+    host: goblin-king.local
+    path: /
+    annotations: {}
+
+workers:
+  exampleLongHello:
+    enabled: true
+    image: goblin-king-example-long-hello:local
+    port: 8080

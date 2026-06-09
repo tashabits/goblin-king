@@ -59,6 +59,11 @@ When a phase includes API hardening behavior, PR evidence must include auth/RBAC
 project-scope denial proof, token hashing proof, audit-log proof, rate-limit proof,
 pagination proof, OpenAPI proof, and Docker regression proof for scheduler execution.
 
+When a phase includes Kubernetes, Helm, admin UI, or long-running service behavior,
+PR evidence must include Docker admin proof, Helm render proof, ingress configuration
+proof, sample goblin proof, long-running service probe proof with changing timestamps,
+and kind/minikube smoke output when a local cluster is available.
+
 ## Commenting Standards
 
 - New public modules should start with a concise file-level comment describing purpose and ownership.
@@ -84,3 +89,6 @@ API hardening phases must include tests for local users/projects/tokens, hashed 
 storage, missing/invalid/revoked token failures, project-scope authorization, audit
 logging, local rate limits, paginated envelopes, OpenAPI metadata, and existing Docker
 execution regressions.
+Kubernetes/admin phases must include tests for Helm manifests, ingress defaults,
+admin authentication and rendering, sample goblin execution, long-running service
+probes, and proof events or audit records.

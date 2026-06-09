@@ -1,0 +1,40 @@
+{{- if .Values.workers.exampleLongHello.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "goblin-king.fullname" . }}-long-hello
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: long-hello
+      app.kubernetes.io/name: {{ include "goblin-king.name" . }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: long-hello
+        app.kubernetes.io/name: {{ include "goblin-king.name" . }}
+    spec:
+      containers:
+        - name: long-hello
+          image: {{ .Values.workers.exampleLongHello.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: {{ .Values.workers.exampleLongHello.port }}
+          env:
+            - name: GOBLIN_WORKER_ID
+              value: example-long-hello-k8s
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "goblin-king.fullname" . }}-long-hello
+spec:
+  selector:
+    app.kubernetes.io/component: long-hello
+    app.kubernetes.io/name: {{ include "goblin-king.name" . }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: {{ .Values.workers.exampleLongHello.port }}
+{{- end }}
