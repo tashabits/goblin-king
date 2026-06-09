@@ -4,6 +4,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from goblin_king.contracts import (
+    FanoutRecord,
     GoblinResult,
     JobRecord,
     RunRecord,
@@ -151,3 +152,33 @@ def test_claim_due_jobs_once_and_reclaim_after_lease_expiry(tmp_path: Path) -> N
     assert second == []
     assert [job.id for job in expired] == ["job-claim"]
     assert expired[0].lease_owner == "worker-c"
+
+
+def test_store_persists_fanout_and_job_metadata(tmp_path: Path) -> None:
+    """Verify fanout records and child job metadata persist."""
+    now = utc_now()
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    fanout = FanoutRecord(
+        id="fanout-1",
+        created_at=now,
+        created_by="api",
+        correlation_id="corr-1",
+        description="demo",
+    )
+
+    store.save_fanout(fanout)
+    store.save_job(
+        JobRecord(
+            id="job-1",
+            kind="example.echo",
+            input={},
+            created_at=now,
+            fanout_id="fanout-1",
+            metadata={"fanout_item_index": 0},
+        )
+    )
+
+    assert store.get_fanout("fanout-1") == fanout
+    jobs = store.list_fanout_jobs("fanout-1")
+    assert jobs[0].fanout_id == "fanout-1"
+    assert jobs[0].metadata["fanout_item_index"] == 0

@@ -130,6 +130,8 @@ class JobRecord(BaseModel):
     created_at: datetime
     created_by: str = "cli"
     correlation_id: str | None = None
+    fanout_id: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     status: JobStatus = "queued"
     priority: int = 100
     schedule_id: str | None = None
@@ -140,6 +142,16 @@ class JobRecord(BaseModel):
     max_retries: int = 0
     timeout_seconds: int | None = None
     last_error: str | None = None
+
+
+class FanoutRecord(BaseModel):
+    """Capture durable metadata for a batch of fanout-created jobs."""
+
+    id: str
+    created_at: datetime
+    created_by: str = "api"
+    correlation_id: str | None = None
+    description: str | None = None
 
 
 class RunRecord(BaseModel):

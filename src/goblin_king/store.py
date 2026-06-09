@@ -27,6 +27,7 @@ from sqlalchemy.engine import Engine
 
 from goblin_king.contracts import (
     ArtifactRecord,
+    FanoutRecord,
     GoblinResult,
     HandoffRecord,
     JobRecord,
@@ -48,6 +49,8 @@ jobs_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("created_by", String, nullable=False),
     Column("correlation_id", String, nullable=True),
+    Column("fanout_id", String, nullable=True),
+    Column("metadata_json", Text, nullable=False, default="{}"),
     Column("status", String, nullable=False, default="queued"),
     Column("priority", Integer, nullable=False, default=100),
     Column("schedule_id", String, nullable=True),
@@ -58,6 +61,16 @@ jobs_table = Table(
     Column("max_retries", Integer, nullable=False, default=0),
     Column("timeout_seconds", Integer, nullable=True),
     Column("last_error", Text, nullable=True),
+)
+
+fanouts_table = Table(
+    "fanouts",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("created_by", String, nullable=False),
+    Column("correlation_id", String, nullable=True),
+    Column("description", Text, nullable=True),
 )
 
 schedules_table = Table(
@@ -135,6 +148,8 @@ class SQLiteStore:
                     created_at=job.created_at,
                     created_by=job.created_by,
                     correlation_id=job.correlation_id,
+                    fanout_id=job.fanout_id,
+                    metadata_json=json.dumps(job.metadata),
                     status=job.status,
                     priority=job.priority,
                     schedule_id=job.schedule_id,
@@ -147,6 +162,69 @@ class SQLiteStore:
                     last_error=job.last_error,
                 )
             )
+
+    def save_fanout(self, fanout: FanoutRecord) -> None:
+        """Insert one durable fanout batch record."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                fanouts_table.insert().values(
+                    id=fanout.id,
+                    created_at=fanout.created_at,
+                    created_by=fanout.created_by,
+                    correlation_id=fanout.correlation_id,
+                    description=fanout.description,
+                )
+            )
+
+    def get_fanout(self, fanout_id: str) -> FanoutRecord | None:
+        """Load one fanout batch record by ID."""
+        with self.engine.connect() as connection:
+            row = (
+                connection.execute(select(fanouts_table).where(fanouts_table.c.id == fanout_id))
+                .mappings()
+                .one_or_none()
+            )
+        if row is None:
+            return None
+        return _row_to_fanout(dict(row))
+
+    def list_fanouts(self) -> list[FanoutRecord]:
+        """Return all fanout batches ordered by creation time."""
+        with self.engine.connect() as connection:
+            rows = (
+                connection.execute(select(fanouts_table).order_by(fanouts_table.c.created_at))
+                .mappings()
+                .all()
+            )
+        return [_row_to_fanout(dict(row)) for row in rows]
+
+    def list_fanout_jobs(self, fanout_id: str) -> list[JobRecord]:
+        """Return child jobs for one fanout batch ordered by item index."""
+        with self.engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    select(jobs_table)
+                    .where(jobs_table.c.fanout_id == fanout_id)
+                    .order_by(jobs_table.c.created_at)
+                )
+                .mappings()
+                .all()
+            )
+        return [_row_to_job(dict(row)) for row in rows]
+
+    def list_job_runs(self, job_id: str) -> list[RunRecord]:
+        """Return runs for one job ordered by attempt."""
+        with self.engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    select(runs_table)
+                    .where(runs_table.c.job_id == job_id)
+                    .order_by(runs_table.c.attempt)
+                )
+                .mappings()
+                .all()
+            )
+        return [_row_to_run(dict(row)) for row in rows]
 
     def save_run(self, run: RunRecord) -> None:
         """Insert or replace a run and refresh its artifact and handoff metadata rows."""
@@ -436,6 +514,8 @@ class SQLiteStore:
         """Add Phase 2 job columns to existing Phase 1 SQLite databases."""
         job_columns = {column["name"] for column in inspect(self.engine).get_columns("jobs")}
         job_additions = {
+            "fanout_id": "TEXT",
+            "metadata_json": "TEXT NOT NULL DEFAULT '{}'",
             "status": "TEXT NOT NULL DEFAULT 'queued'",
             "priority": "INTEGER NOT NULL DEFAULT 100",
             "schedule_id": "TEXT",
@@ -496,6 +576,8 @@ def _row_to_job(payload: dict[str, Any]) -> JobRecord:
         created_at=_coerce_datetime(payload["created_at"]),
         created_by=payload["created_by"],
         correlation_id=payload["correlation_id"],
+        fanout_id=payload.get("fanout_id"),
+        metadata=json.loads(payload.get("metadata_json") or "{}"),
         status=payload.get("status") or "queued",
         priority=payload.get("priority") or 100,
         schedule_id=payload.get("schedule_id"),
@@ -508,6 +590,17 @@ def _row_to_job(payload: dict[str, Any]) -> JobRecord:
         max_retries=payload.get("max_retries") or 0,
         timeout_seconds=payload.get("timeout_seconds"),
         last_error=payload.get("last_error"),
+    )
+
+
+def _row_to_fanout(payload: dict[str, Any]) -> FanoutRecord:
+    """Convert a SQLAlchemy row mapping into the public FanoutRecord contract."""
+    return FanoutRecord(
+        id=payload["id"],
+        created_at=_coerce_datetime(payload["created_at"]),
+        created_by=payload["created_by"],
+        correlation_id=payload.get("correlation_id"),
+        description=payload.get("description"),
     )
 
 
@@ -547,6 +640,7 @@ def _coerce_datetime(value: datetime | str) -> datetime:
 __all__ = [
     "ArtifactRecord",
     "DEFAULT_DB_PATH",
+    "FanoutRecord",
     "HandoffRecord",
     "SQLiteStore",
 ]
