@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
 import json
 import sys
 from collections.abc import Callable
@@ -12,6 +13,8 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 
 from goblin_king.contracts import GoblinDefinition
+
+ENTRY_POINT_GROUP = "goblin_king.goblins"
 
 
 class RegistryError(ValueError):
@@ -76,6 +79,17 @@ class GoblinRegistry:
             [*registry.list(), *definitions],
             import_roots=registry._import_roots,
         )
+
+    @classmethod
+    def from_project_sources(
+        cls,
+        paths: list[str | Path],
+        *,
+        include_entry_points: bool = True,
+    ) -> GoblinRegistry:
+        """Merge registry files with optional Python entry point discovery."""
+        definitions = discover_entry_point_definitions() if include_entry_points else []
+        return cls.from_paths_and_definitions(paths, definitions)
 
     @staticmethod
     def load_file(path: str | Path) -> list[GoblinDefinition]:
@@ -155,3 +169,41 @@ def _read_registry_file(path: str | Path) -> tuple[list[GoblinDefinition], Path]
     except ValidationError as error:
         raise RegistryError(str(error)) from error
     return document.goblins, registry_path.resolve().parent
+
+
+def discover_entry_point_definitions(
+    group: str = ENTRY_POINT_GROUP,
+) -> list[GoblinDefinition]:
+    """Load goblin definitions from installed Python package entry points."""
+    definitions: list[GoblinDefinition] = []
+    try:
+        entry_points = importlib.metadata.entry_points().select(group=group)
+    except AttributeError:  # pragma: no cover - old importlib.metadata compatibility
+        entry_points = importlib.metadata.entry_points().get(group, [])
+
+    for entry_point in entry_points:
+        try:
+            loaded = entry_point.load()
+        except Exception as error:
+            raise RegistryError(
+                f"could not load goblin entry point {entry_point.name!r}"
+            ) from error
+        definitions.append(_definition_from_entry_point_value(entry_point.name, loaded))
+    return definitions
+
+
+def _definition_from_entry_point_value(name: str, value: Any) -> GoblinDefinition:
+    """Normalize supported entry point values into a GoblinDefinition."""
+    if isinstance(value, GoblinDefinition):
+        return value
+    if isinstance(value, dict):
+        return GoblinDefinition.model_validate(value)
+    if callable(value):
+        produced = value()
+        if isinstance(produced, GoblinDefinition):
+            return produced
+        if isinstance(produced, dict):
+            return GoblinDefinition.model_validate(produced)
+    raise RegistryError(
+        f"goblin entry point {name!r} must be a GoblinDefinition, dict, or zero-arg factory"
+    )
