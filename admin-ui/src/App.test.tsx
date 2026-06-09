@@ -91,6 +91,30 @@ const fixtures = {
     rejected_definitions: [],
     duplicate_kind_errors: [],
   },
+  promotions: [
+    {
+      id: "promo-1",
+      kind: "example.hello",
+      source_image: "goblin-king-example-hello:local",
+      target_image: "registry.example/goblin-king-example-hello:promoted",
+      status: "planned",
+      digest: null,
+      created_at: "2026-06-09T00:00:00Z",
+      detail: { dry_run: true },
+    },
+  ],
+  deployments: [
+    {
+      id: "deploy-1",
+      name: "goblin-king",
+      action: "helm-template",
+      status: "planned",
+      command: ["helm", "template", "goblin-king", "charts/goblin-king"],
+      output: null,
+      created_at: "2026-06-09T00:00:00Z",
+      detail: { execute: false },
+    },
+  ],
 };
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -151,6 +175,20 @@ function mockFetch() {
     }
     if (url.includes("/admin/discovery/status")) return jsonResponse(fixtures.discoveryStatus);
     if (url.includes("/admin/discovery/sources")) return jsonResponse(fixtures.discoverySources);
+    if (url.includes("/admin/images/promotions") && url.endsWith("/mark")) {
+      return jsonResponse({ ...fixtures.promotions[0], status: "promoted" });
+    }
+    if (url.includes("/admin/images/promotions") && init?.method === "POST") {
+      return jsonResponse(fixtures.promotions[0]);
+    }
+    if (url.includes("/admin/images/promotions")) return jsonResponse(fixtures.promotions);
+    if (url.includes("/admin/deployments/helm-template")) return jsonResponse(fixtures.deployments[0]);
+    if (url.includes("/admin/deployments/reload-discovery")) return jsonResponse({
+      ...fixtures.deployments[0],
+      action: "discovery-reload",
+      status: "applied",
+    });
+    if (url.includes("/admin/deployments")) return jsonResponse(fixtures.deployments);
     if (url.includes("/admin/cleanup/runtime")) {
       return jsonResponse({
         dry_run: init?.body ? JSON.parse(String(init.body)).dry_run : true,
@@ -216,6 +254,7 @@ describe("App", () => {
     expect(screen.getAllByText("Durable Events").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Redis Stream Delivery").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Discovery").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Image Promotion & Deploy").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Admin & Auth").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Cleanup").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: /kill \/ cancel/i }).length).toBeGreaterThan(0);
@@ -294,5 +333,25 @@ describe("App", () => {
       expect(urls).toContain("/admin-api/admin/discovery/reload");
     });
     expect(screen.getAllByText(/example.long-hello/i).length).toBeGreaterThan(0);
+  });
+
+  it("records image promotion and deployment proof paths", async () => {
+    const fetchMock = mockFetch();
+    localStorage.setItem("goblinKingAdminToken", "test-token");
+    render(<App />);
+
+    await screen.findAllByText("Image Promotion & Deploy");
+    await userEvent.click(screen.getByRole("button", { name: /plan image promotion/i }));
+    await userEvent.click(screen.getByRole("button", { name: /record helm render/i }));
+    await userEvent.click(screen.getByRole("button", { name: /reload after deploy/i }));
+    await userEvent.click(screen.getAllByRole("button", { name: /mark promoted/i })[0]);
+
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+      expect(urls).toContain("/admin-api/admin/images/promotions");
+      expect(urls).toContain("/admin-api/admin/deployments/helm-template");
+      expect(urls).toContain("/admin-api/admin/deployments/reload-discovery");
+      expect(urls).toContain("/admin-api/admin/images/promotions/promo-1/mark");
+    });
   });
 });

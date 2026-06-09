@@ -590,7 +590,7 @@ Primary direction:
 
 ### Phase 21: Image Promotion And Deployment Orchestration
 
-- Status: planned.
+- Status: implemented in Phase 21.
 - Add generic image promotion records and Docker registry-oriented plan/build/push/mark
   flows plus Helm render/dry-run/apply intent records and admin proof trails.
 
@@ -607,6 +607,118 @@ Primary direction:
 - Split oversized backend and React admin files into smaller cohesive modules where
   useful, extract small domain-specific helpers, reduce duplication, and document
   non-obvious helpers without changing behavior or public adoption imports.
+
+## Container-First Language-Agnostic Roadmap Extension
+
+After the productionization and cleanup phases land, Goblin King moves into a
+container-first authoring pass. The central rule is that a goblin is a contract-compliant
+OCI/Docker container. The language inside that container is an implementation detail.
+Python helpers remain optional conveniences, not the worker model.
+
+Phase 24 must land before any new-language or WASI/WebAssembly goblin samples are added.
+The examples must prove one shared container contract instead of inventing
+language-specific protocols.
+
+### Phase 24: Formalize The Goblin Container Contract
+
+- Status: planned.
+- Branch: `phase-24-goblin-container-contract`.
+- Create `docs/goblin-container-contract.md` as the canonical worker interface.
+- Document required environment variables, mounted paths, input/context/result JSON,
+  artifacts, logs, progress/events, heartbeats, exit codes, timeouts, cancellation,
+  runtime metadata, security expectations, resource expectations, and versioning.
+- Explicitly state that every goblin is an OCI/Docker container and that
+  WASI/WebAssembly goblins are container-wrapped.
+- Update README and worker authoring docs so Python helpers are described as optional.
+
+### Phase 25: Expand Goblin Authoring Documentation
+
+- Status: planned.
+- Branch: `phase-25-goblin-authoring-docs`.
+- Add or update docs such as `docs/what-is-a-goblin.md`, `docs/writing-goblins.md`,
+  `docs/goblin-dockerfiles.md`, `docs/language-agnostic-workers.md`, and
+  `docs/security-model.md`.
+- Include copy-pasteable contract examples, Dockerfile patterns, local debugging
+  commands, non-root/read-only guidance, and practical secret/resource notes.
+
+### Phase 26: Add Minimal Cross-Language Hello Goblins
+
+- Status: planned.
+- Branch: `phase-26-cross-language-hello-goblins`.
+- Add small contract-compliant hello goblins for Go, Rust, Node.js, Java, .NET/C#,
+  Ruby, PHP, shell, and a minimal Python baseline if needed.
+- Each sample includes source, Dockerfile, README, build/run commands, stdout proof,
+  and valid result JSON without depending on Goblin King Python internals.
+
+### Phase 27: Add Container-Wrapped WASI/WebAssembly Goblins
+
+- Status: planned.
+- Branch: `phase-27-container-wrapped-wasi-goblins`.
+- Add at least two WASI/WebAssembly hello goblins wrapped in normal container images,
+  including Rust WASI and one additional boring/reliable WASI sample.
+- Do not add native WASI scheduling support; Goblin King still launches containers.
+
+### Phase 28: Register And Run Cross-Language Goblins Through Goblin King
+
+- Status: planned.
+- Branch: `phase-28-cross-language-runtime-proof`.
+- Add registry and image-map definitions, build scripts or commands, and repeatable
+  run-all proof for the cross-language and container-wrapped WASI samples.
+- Prove job/run/result records and admin/API visibility through the existing Docker
+  runtime path.
+
+### Phase 29: Add Artifact, Progress, And Failure Goblins Across Languages
+
+- Status: planned.
+- Branch: `phase-29-cross-language-contract-behaviors`.
+- Add small behavior samples across several runtimes: artifacts, progress/events,
+  failure, timeout-ish behavior, context reading, logging, input transform,
+  cancellation friendliness, and a WASI behavior sample if practical.
+
+### Phase 30: Add Goblin Contract Validation
+
+- Status: planned.
+- Branch: `phase-30-goblin-contract-validation`.
+- Add practical validation commands for container images and example directories.
+- Validate that images run with temporary contract mounts, read input/context, write
+  valid result JSON, handle artifacts/logs/exit codes, and report clear errors.
+
+### Phase 31: Update Admin UI And Docs For Container-First Workers
+
+- Status: planned.
+- Branch: `phase-31-container-first-worker-docs-ui`.
+- Update docs and admin UI text so goblins are presented as language-agnostic
+  contract-compliant containers.
+- Add an examples index, runtime comparison table, choose-your-runtime guide, and
+  screenshots or command output proving multiple language and WASI goblins.
+
+### Phase 32: Cross-Language Goblin Roadmap Closeout
+
+- Status: planned.
+- Branch: `phase-32-language-agnostic-closeout`.
+- Re-audit docs and samples for container-contract consistency, README/Dockerfile/source
+  completeness, WASI honesty, optional Python helper wording, screenshots, and command
+  proof.
+- Leave explicit deferred items such as official language SDKs, deep certification,
+  object storage examples, cloud-provider recipes, and native Kubernetes WASI scheduling.
+
+### Phase 33: Per-Goblin Resource Policies
+
+- Status: planned.
+- Branch: `phase-33-per-goblin-resource-policies`.
+- Add `docs/goblin-resource-policies.md` and extend the Goblin Container Contract with
+  scheduler-enforced resource controls.
+- Add per-goblin resource policy metadata for CPU, memory, timeout, logs, artifacts,
+  concurrency, network behavior, and security options such as non-root and read-only
+  root filesystem.
+- Add global resource ceilings so goblins cannot request unsafe limits, plus safe
+  defaults for existing goblins.
+- Map policies onto Docker options and Kubernetes Job/Pod specs where supported.
+- Persist the effective resource policy used for each run and expose it in API, CLI,
+  and admin surfaces.
+- Add audit/event records for policy validation failures and enforcement outcomes.
+- Prove explicit Docker policy execution, over-ceiling rejection, timeout behavior,
+  Helm/Kubernetes render mapping, and admin-visible policy details.
 
 ## Key Decisions To Make Before Coding
 

@@ -100,6 +100,64 @@ def test_auth_setup_commands_create_user_project_and_token(tmp_path: Path) -> No
     assert json.loads(token.stdout)["raw_token"].startswith("gk_")
 
 
+def test_deploy_promotion_and_helm_record_commands(tmp_path: Path) -> None:
+    """Verify CLI deployment proof commands persist image and Helm records."""
+    db_path = tmp_path / "goblin.sqlite3"
+    planned = runner.invoke(
+        app,
+        [
+            "deploy",
+            "promotions",
+            "plan",
+            "example.hello",
+            "--target-image",
+            "registry.example/example-hello:prod",
+            "--db",
+            str(db_path),
+            "--images",
+            "goblin-images.json",
+            "--build",
+            "--push",
+        ],
+    )
+    records = runner.invoke(app, ["deploy", "promotions", "list", "--db", str(db_path)])
+    promotion_id = json.loads(planned.stdout)["id"]
+    marked = runner.invoke(
+        app,
+        [
+            "deploy",
+            "promotions",
+            "mark",
+            promotion_id,
+            "--status",
+            "promoted",
+            "--digest",
+            "sha256:abc",
+            "--db",
+            str(db_path),
+        ],
+    )
+    helm = runner.invoke(
+        app,
+        [
+            "deploy",
+            "helm-template",
+            "--db",
+            str(db_path),
+            "--chart",
+            "charts/goblin-king",
+        ],
+    )
+    deployment_records = runner.invoke(app, ["deploy", "records", "--db", str(db_path)])
+
+    assert planned.exit_code == 0
+    assert "registry.example/example-hello:prod" in records.stdout
+    assert marked.exit_code == 0
+    assert json.loads(marked.stdout)["status"] == "promoted"
+    assert helm.exit_code == 0
+    assert "helm-template" in deployment_records.stdout
+
+
 def test_project_init_package_creates_template(tmp_path: Path) -> None:
     """Verify the package template generator is reachable from the CLI."""
     result = runner.invoke(

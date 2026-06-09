@@ -100,6 +100,24 @@ kinds after reload:
 
 ![Host project discovery proof](images/admin/admin-project-discovery.png)
 
+## Promote Images And Record Deployments
+
+Use **Image Promotion & Deploy** to create a cloud-neutral proof trail for releases.
+The panel shows worker image coverage, plans image promotion, records Helm render
+intent, reloads discovery after deployment, and lists prior promotion/deployment
+records.
+
+The admin promotion button records the source worker image, target promoted tag, worker
+build context, Dockerfile, and dry-run build/push commands. It does not push to a real
+registry by itself. Mark a promotion as promoted after the external registry step is
+complete.
+
+Use **Record Helm render** to record the Helm template command that should be used for
+deployment proof. Use **Reload after deploy** after applying Docker Compose changes or a
+Helm upgrade so newly deployed goblins appear in the admin without a React rebuild.
+
+The King allows many banners in the courtyard, but every banner needs a receipt.
+
 ## Clean Up Old Rows
 
 Use **Admin & Auth -> Cleanup** after a test pass. Always press **Preview old rows**

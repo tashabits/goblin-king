@@ -4,10 +4,12 @@ from datetime import timedelta
 from pathlib import Path
 
 from goblin_king.contracts import (
+    DeploymentRecord,
     EventRecord,
     FanoutRecord,
     GoblinResult,
     HeartbeatRecord,
+    ImagePromotionRecord,
     JobRecord,
     RunRecord,
     ScheduleRecord,
@@ -245,3 +247,47 @@ def test_store_upserts_heartbeats(tmp_path: Path) -> None:
     assert heartbeats[0].status == "running"
     assert heartbeats[0].payload == {"runtime": "docker"}
     assert store.get_heartbeat("scheduler-1") == heartbeats[0]
+
+
+def test_image_promotion_and_deployment_records_persist(tmp_path: Path) -> None:
+    """Verify deployment proof records survive a SQLite round trip."""
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    now = utc_now()
+    promotion = ImagePromotionRecord(
+        id="promo-1",
+        kind="example.hello",
+        source_image="example:local",
+        target_image="registry.example/example:prod",
+        status="planned",
+        actor="test",
+        created_at=now,
+        updated_at=now,
+        detail={"commands": [["docker", "push", "registry.example/example:prod"]]},
+    )
+    deployment = DeploymentRecord(
+        id="deploy-1",
+        name="goblin-king",
+        action="helm-template",
+        status="planned",
+        actor="test",
+        command=["helm", "template", "goblin-king", "charts/goblin-king"],
+        created_at=now,
+        updated_at=now,
+        detail={"execute": False},
+    )
+
+    store.save_image_promotion(promotion)
+    store.save_deployment_record(deployment)
+    updated = store.update_image_promotion(
+        "promo-1",
+        status="promoted",
+        digest="sha256:abc",
+        detail={"marked_by": "test"},
+        updated_at=utc_now(),
+    )
+
+    assert updated is not None
+    assert updated.status == "promoted"
+    assert updated.digest == "sha256:abc"
+    assert store.list_image_promotions()[0].target_image == "registry.example/example:prod"
+    assert store.list_deployment_records()[0].command[0] == "helm"

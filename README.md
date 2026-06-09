@@ -1,19 +1,20 @@
 # Goblin King
 
-Goblin King is a reusable Python scheduler kernel for running small, injectable worker
-modules called goblins. Goblins can run as self-contained Docker workers, which lets each
-worker use the language and runtime that fits its job while the King keeps scheduling,
-status, and result contracts consistent.
+Goblin King is a reusable scheduler and control plane for running small, isolated worker
+containers called goblins. Goblins run as self-contained Docker/OCI workers, which lets
+each worker use the language and runtime that fits its job while the King keeps
+scheduling, status, and result contracts consistent.
 
-The current implementation covers the Phase 1-17 roadmap: a SQLite-backed scheduler,
+The current implementation covers the Phase 1-21 roadmap: a SQLite-backed scheduler,
 Docker worker execution, FastAPI control plane, reusable project/plugin discovery,
 fanout and retry workflows, durable events, Redis pub/sub and Redis Streams delivery,
 WebSocket run updates, scheduler and worker heartbeats, local bearer-token auth,
 optional OIDC/JWT bearer auth, volume/PVC-backed artifact management, scoped runtime
 termination, project scoping, audit/rate-limit proof, a Docker/Helm admin UI,
 deploy-time discovery reload, host-project adoption examples, internal release/upgrade
-checks, and cloud-neutral Helm hardening. Docker and Compose remain the default local
-path; Kubernetes is optional through the Helm chart.
+checks, cloud-neutral Helm hardening, and image promotion/deployment proof records.
+Docker and Compose remain the default local path; Kubernetes is optional through the
+Helm chart.
 
 ## Table Of Contents
 
@@ -21,6 +22,7 @@ path; Kubernetes is optional through the Helm chart.
 - [Table Of Contents](#table-of-contents)
 - [Quick Start](#quick-start)
 - [Worker Images](#worker-images)
+- [Image Promotion And Deployment Proof](#image-promotion-and-deployment-proof)
 - [Documentation](#documentation)
 - [Current Scope](#current-scope)
 - Deeper manuals:
@@ -365,6 +367,35 @@ write the same result to a mounted fallback file, and publish heartbeat envelope
 they run. The Docker runtime records those heartbeats in SQLite and mirrors event
 updates to Redis pub/sub for live subscribers.
 
+## Image Promotion And Deployment Proof
+
+Phase 21 adds generic promotion and deployment proof records. These records do not tie
+Goblin King to one cloud registry or deployment platform. They capture the image, target
+tag, planned build/push commands, Helm render command, discovery reload result, audit
+logs, and events that prove an operator action happened.
+
+Plan and mark a worker image promotion from the CLI:
+
+```bash
+goblin-king deploy promotions plan example.hello \
+  --target-image registry.example/goblin-king-example-hello:prod \
+  --images goblin-images.json --build --push
+goblin-king deploy promotions list
+goblin-king deploy promotions mark <promotion-id> --status promoted --digest sha256:...
+```
+
+Record Helm render intent without applying anything:
+
+```bash
+goblin-king deploy helm-template --chart charts/goblin-king --release goblin-king
+goblin-king deploy records
+```
+
+The React admin includes **Image Promotion & Deploy**. It shows worker image coverage,
+plans dry-run image promotion, records Helm render intent, reloads discovery after a
+deployment, and displays the deployment proof trail. The King loves ambition, but he
+requires receipts.
+
 ## Documentation
 
 | Document | Purpose |
@@ -397,6 +428,8 @@ and long-running goblin workers. Redis Streams provide replayable delivery proof
 event consumers, and the optional Helm chart includes cloud-neutral production
 hardening controls. Artifact bytes stay on Docker volumes and Kubernetes PVCs with
 status and cleanup APIs. Scoped hard runtime termination is available for
-Goblin-labeled Docker and Kubernetes runtime objects. Remaining follow-up work is
-limited to later roadmap items such as image promotion/deployment orchestration and
-cloud-specific recipes.
+Goblin-labeled Docker and Kubernetes runtime objects. Image promotion and deployment
+orchestration records give operators a cloud-neutral proof trail for builds, registry
+promotion, Helm render intent, and discovery reloads. Remaining follow-up work is
+limited to the roadmap closeout, repo cleanup, container-first worker contract phases,
+per-goblin resource policies, and cloud-specific recipes.

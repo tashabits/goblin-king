@@ -24,6 +24,8 @@ EventSource = Literal["api", "scheduler", "runtime", "worker", "cli"]
 HeartbeatOwnerType = Literal["scheduler", "worker"]
 PrincipalRole = Literal["admin", "member", "viewer"]
 LongServiceStatus = Literal["registered", "running", "failed", "stopped"]
+ImagePromotionStatus = Literal["planned", "built", "pushed", "promoted", "failed"]
+DeploymentRecordStatus = Literal["planned", "rendered", "dry_run", "applied", "failed"]
 
 
 def utc_now() -> datetime:
@@ -202,6 +204,36 @@ class LongServiceRecord(BaseModel):
     created_by: str = "api"
     last_probe_at: datetime | None = None
     last_probe_json: dict[str, Any] | None = None
+
+
+class ImagePromotionRecord(BaseModel):
+    """Track worker image promotion intent and proof across local deployment steps."""
+
+    id: str
+    kind: str
+    source_image: str
+    target_image: str
+    status: ImagePromotionStatus = "planned"
+    actor: str = "api"
+    digest: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class DeploymentRecord(BaseModel):
+    """Track deployment orchestration proof such as Helm render and reload actions."""
+
+    id: str
+    name: str
+    action: str
+    status: DeploymentRecordStatus = "planned"
+    actor: str = "api"
+    command: list[str] = Field(default_factory=list)
+    output: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    detail: dict[str, Any] = Field(default_factory=dict)
 
 
 class RunRecord(BaseModel):

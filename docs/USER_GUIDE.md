@@ -142,6 +142,41 @@ marks a non-terminal job as cancelled. Registered long-running services can be
 hard-stopped from the admin UI or `/admin/runtime/services/{service_id}/kill`; this
 changes King-side service presentation because those services are registered by URL.
 
+## Promote Images And Record Deployment Proof
+
+Phase 21 adds cloud-neutral proof records for image promotion and deployment
+orchestration. These records are useful for local and internal release flows before a
+project chooses registry-specific automation.
+
+Plan an image promotion:
+
+```bash
+goblin-king deploy promotions plan example.hello \
+  --target-image registry.example/goblin-king-example-hello:prod \
+  --images goblin-images.json --build --push
+goblin-king deploy promotions list
+```
+
+After an external registry push or promotion is complete, mark the proof record:
+
+```bash
+goblin-king deploy promotions mark <promotion-id> \
+  --status promoted \
+  --digest sha256:<digest>
+```
+
+Record Helm render intent:
+
+```bash
+goblin-king deploy helm-template --chart charts/goblin-king --release goblin-king
+goblin-king deploy records
+```
+
+The same paths are available through authenticated admin API endpoints under
+`/admin/images/promotions` and `/admin/deployments`. The React admin exposes them in
+**Image Promotion & Deploy**, including worker image coverage, promotion history, Helm
+render records, and discovery reload proof.
+
 The API requires bearer auth for everything except `/health`:
 
 ```bash

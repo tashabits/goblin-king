@@ -10,6 +10,7 @@ import {
   Play,
   Radio,
   RefreshCw,
+  Rocket,
   ScrollText,
   Shield,
   Sparkles,
@@ -170,6 +171,28 @@ type DiscoverySources = {
   duplicate_kind_errors: string[];
 };
 
+type ImagePromotion = {
+  id: string;
+  kind: string;
+  source_image: string;
+  target_image: string;
+  status: string;
+  digest?: string | null;
+  created_at: string;
+  detail: Record<string, unknown>;
+};
+
+type DeploymentRecord = {
+  id: string;
+  name: string;
+  action: string;
+  status: string;
+  command: string[];
+  output?: string | null;
+  created_at: string;
+  detail: Record<string, unknown>;
+};
+
 function latestFirst<T>(items: T[]): T[] {
   return [...items].sort((left, right) => {
     const leftRecord = left as Record<string, unknown>;
@@ -250,6 +273,9 @@ export function App() {
   const [cleanupPreview, setCleanupPreview] = useState<CleanupResponse | null>(null);
   const [discoveryStatus, setDiscoveryStatus] = useState<DiscoveryStatus | null>(null);
   const [discoverySources, setDiscoverySources] = useState<DiscoverySources | null>(null);
+  const [promotions, setPromotions] = useState<ImagePromotion[]>([]);
+  const [deployments, setDeployments] = useState<DeploymentRecord[]>([]);
+  const [promotionTargetImage, setPromotionTargetImage] = useState("goblin-king-example:promoted");
   const [includeUnprobedServices, setIncludeUnprobedServices] = useState(true);
   const [traffic, setTraffic] = useState<TrafficEntry[]>([]);
   const [error, setError] = useState("");
@@ -323,6 +349,8 @@ export function App() {
         artifactStoragePayload,
         discoveryStatusPayload,
         discoverySourcesPayload,
+        promotionPayload,
+        deploymentPayload,
       ] = await Promise.all([
         api("/goblins", {}, "GET /goblins"),
         api("/jobs?limit=100", {}, "GET /jobs"),
@@ -337,6 +365,8 @@ export function App() {
         api("/admin/artifacts/storage", {}, "GET /admin/artifacts/storage"),
         api("/admin/discovery/status", {}, "GET /admin/discovery/status"),
         api("/admin/discovery/sources", {}, "GET /admin/discovery/sources"),
+        api("/admin/images/promotions", {}, "GET /admin/images/promotions"),
+        api("/admin/deployments", {}, "GET /admin/deployments"),
       ]);
       setGoblins(goblinPayload);
       setJobs(latestFirst(jobPayload.items));
@@ -351,6 +381,8 @@ export function App() {
       setArtifactStorage(artifactStoragePayload);
       setDiscoveryStatus(discoveryStatusPayload);
       setDiscoverySources(discoverySourcesPayload);
+      setPromotions(latestFirst(promotionPayload));
+      setDeployments(latestFirst(deploymentPayload));
       setSelectedKind((current) => goblinPayload.find((item: Goblin) => item.kind === current)?.kind || goblinPayload[0]?.kind || "example.hello");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -552,6 +584,57 @@ export function App() {
     await refreshAll();
   }
 
+  async function planPromotion() {
+    await api(
+      "/admin/images/promotions",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          kind: selectedKind,
+          target_image: promotionTargetImage,
+          build: true,
+          push: true,
+          dry_run: true,
+        }),
+      },
+      "POST /admin/images/promotions",
+    );
+    await refreshAll();
+  }
+
+  async function markPromotion(promotionId: string) {
+    await api(
+      `/admin/images/promotions/${promotionId}/mark`,
+      {
+        method: "POST",
+        body: JSON.stringify({ status: "promoted", detail: { marked_from: "admin lab" } }),
+      },
+      "POST /admin/images/promotions/{promotion_id}/mark",
+    );
+    await refreshAll();
+  }
+
+  async function recordHelmTemplate() {
+    await api(
+      "/admin/deployments/helm-template",
+      {
+        method: "POST",
+        body: JSON.stringify({ name: "admin-lab", release: "goblin-king", execute: false }),
+      },
+      "POST /admin/deployments/helm-template",
+    );
+    await refreshAll();
+  }
+
+  async function recordDeploymentReload() {
+    await api(
+      "/admin/deployments/reload-discovery",
+      { method: "POST" },
+      "POST /admin/deployments/reload-discovery",
+    );
+    await refreshAll();
+  }
+
   const cleanupTotal = cleanupPreview
     ? Object.values(cleanupPreview.counts).reduce((total, value) => total + value, 0)
     : 0;
@@ -588,7 +671,7 @@ export function App() {
         <h1>Goblin King</h1>
         <p>Admin Lab Bench</p>
         <nav>
-          {["Dashboard", "Goblin Lab", "Task Board", "Schedules", "Runs", "Fanout", "Services", "Events", "Discovery", "Admin"].map((item) => (
+          {["Dashboard", "Goblin Lab", "Task Board", "Schedules", "Runs", "Fanout", "Services", "Events", "Discovery", "Deploy", "Admin"].map((item) => (
             <a href={`#${item.toLowerCase().replaceAll(" ", "-")}`} key={item}>{item}</a>
           ))}
         </nav>
@@ -813,6 +896,50 @@ export function App() {
               rows={(discoverySources?.goblin_kinds || []).map((kind) => [
                 kind,
                 discoverySources?.worker_mapped_kinds.includes(kind) ? "worker mapped" : "needs mapping",
+              ])}
+            />
+          </div>
+        </section>
+
+        <section id="deploy" className="panel two-column">
+          <div>
+            <h3><Rocket /> Image Promotion & Deploy</h3>
+            <p className="muted">
+              Plan worker image promotion, record Helm render intent, and reload discovery after deploy. Pushes are dry-run proof unless an operator runs the recorded command outside the lab.
+            </p>
+            <label>Promoted image tag</label>
+            <input value={promotionTargetImage} onChange={(event) => setPromotionTargetImage(event.target.value)} />
+            <div className="button-row">
+              <button onClick={() => void planPromotion()}><Rocket size={16} /> Plan image promotion</button>
+              <button onClick={() => void recordHelmTemplate()}>Record Helm render</button>
+              <button onClick={() => void recordDeploymentReload()}><RefreshCw size={16} /> Reload after deploy</button>
+            </div>
+            <Table
+              title="Worker Coverage"
+              rows={goblins.map((goblin) => [
+                goblin.kind,
+                goblin.worker_mapped ? "image mapped" : "missing image map",
+                goblin.worker_image || "none",
+              ])}
+            />
+          </div>
+          <div>
+            <Table
+              title="Image Promotions"
+              rows={promotions.map((promotion) => [
+                promotion.kind,
+                promotion.status,
+                `${promotion.source_image} -> ${promotion.target_image}`,
+                <button key={promotion.id} onClick={() => void markPromotion(promotion.id)}>Mark promoted</button>,
+              ])}
+            />
+            <Table
+              title="Deployment Proof Trail"
+              rows={deployments.map((record) => [
+                record.action,
+                record.status,
+                record.command.join(" "),
+                record.output || JSON.stringify(record.detail),
               ])}
             />
           </div>
