@@ -1,0 +1,12 @@
+{
+  "goblins": [
+    {
+      "kind": "example.echo",
+      "display_name": "Example Echo",
+      "module": "examples.goblins.echo",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    }
+  ]
+}
