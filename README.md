@@ -9,10 +9,10 @@ The current implementation covers the Phase 1-17 roadmap: a SQLite-backed schedu
 Docker worker execution, FastAPI control plane, reusable project/plugin discovery,
 fanout and retry workflows, durable events, Redis pub/sub and Redis Streams delivery,
 WebSocket run updates, scheduler and worker heartbeats, local bearer-token auth,
-project scoping, audit/rate-limit proof, a Docker/Helm admin UI, deploy-time discovery
-reload, host-project adoption examples, internal release/upgrade checks, and
-cloud-neutral Helm hardening. Docker and Compose remain the default local path;
-Kubernetes is optional through the Helm chart.
+optional OIDC/JWT bearer auth, project scoping, audit/rate-limit proof, a Docker/Helm
+admin UI, deploy-time discovery reload, host-project adoption examples, internal
+release/upgrade checks, and cloud-neutral Helm hardening. Docker and Compose remain the
+default local path; Kubernetes is optional through the Helm chart.
 
 ## Table Of Contents
 
@@ -96,6 +96,24 @@ tokens. API list endpoints return paginated envelopes such as:
 
 ```bash
 curl -H "Authorization: Bearer local-dev-token" "http://127.0.0.1:8000/jobs?limit=20&offset=0"
+```
+
+For external identity, enable OIDC/JWT validation in `goblin-king-api.json`. Local API
+tokens are checked first; if no local token matches, Goblin King validates the bearer
+token against the configured issuer, audience, and JWKS URL, then maps configured role
+and project claims into the same RBAC model:
+
+```json
+{
+  "oidc": {
+    "enabled": true,
+    "issuer": "https://issuer.example",
+    "audience": "goblin-king",
+    "jwks_url": "https://issuer.example/.well-known/jwks.json",
+    "role_claim": "goblin_king_role",
+    "project_claim": "goblin_king_project_id"
+  }
+}
 ```
 
 OpenAPI metadata is available at `/openapi.json` with bearer auth schemes, stable
@@ -369,5 +387,5 @@ for adopting projects and internal wheel reuse, with a plugin SDK path for short
 and long-running goblin workers. Redis Streams provide replayable delivery proof for
 event consumers, and the optional Helm chart includes cloud-neutral production
 hardening controls. Remaining follow-up work is limited to later roadmap items such as
-OIDC/JWT authentication, volume-backed artifact management, scoped hard runtime
-termination, image promotion/deployment orchestration, and cloud-specific recipes.
+volume-backed artifact management, scoped hard runtime termination, image
+promotion/deployment orchestration, and cloud-specific recipes.

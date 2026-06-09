@@ -74,6 +74,12 @@ target phase below.
   and pending delivery counts.
 - CLI stream inspection and consumer-group read/ack commands for local proof.
 
+## Covered In Phase 18
+
+- OIDC/JWT bearer authentication with issuer, audience, JWKS, and clock-skew validation.
+- Claim mapping from external identity tokens into local roles and project scope.
+- Local API tokens remain supported and take precedence when a token hash matches.
+
 ## Later Infrastructure Follow-Up
 
 - Kubernetes runtime APIs.
@@ -83,3 +89,4 @@ target phase below.
 - External webhook callbacks.
 - Cloud-specific Kubernetes recipes, such as managed ingress controllers, external
   secret operators, cloud storage classes, and registry-specific image promotion.
+- External identity providers beyond generic OIDC/JWT.

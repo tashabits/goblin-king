@@ -10,7 +10,19 @@ data:
       "db": "{{ .Values.config.dbPath }}",
       "redis_url": "{{ .Values.config.redisUrl }}",
       "artifact_root": "{{ .Values.config.artifactRoot }}",
-      "bootstrap_admin_token": "{{ .Values.api.bootstrapAdminToken }}"
+      "bootstrap_admin_token": "{{ .Values.api.bootstrapAdminToken }}",
+      "oidc": {
+        "enabled": {{ .Values.config.oidc.enabled }},
+        "issuer": {{ if .Values.config.oidc.issuer }}{{ .Values.config.oidc.issuer | quote }}{{ else }}null{{ end }},
+        "audience": {{ if .Values.config.oidc.audience }}{{ .Values.config.oidc.audience | quote }}{{ else }}null{{ end }},
+        "jwks_url": {{ if .Values.config.oidc.jwksUrl }}{{ .Values.config.oidc.jwksUrl | quote }}{{ else }}null{{ end }},
+        "clock_skew_seconds": {{ .Values.config.oidc.clockSkewSeconds }},
+        "user_claim": {{ .Values.config.oidc.userClaim | quote }},
+        "email_claim": {{ .Values.config.oidc.emailClaim | quote }},
+        "role_claim": {{ .Values.config.oidc.roleClaim | quote }},
+        "project_claim": {{ .Values.config.oidc.projectClaim | quote }},
+        "admin_roles": {{ .Values.config.oidc.adminRoles | toJson }}
+      }
       {{- if .Values.config.projectSettingsPath }},
       "project": "{{ .Values.config.projectSettingsPath }}"
       {{- end }}

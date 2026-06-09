@@ -109,6 +109,25 @@ The API requires bearer auth for everything except `/health`:
 curl -H "Authorization: Bearer local-dev-token" http://127.0.0.1:8000/goblins
 ```
 
+For external identity, enable OIDC/JWT validation in `goblin-king-api.json`. Local API
+tokens are checked first, then OIDC validation runs when no local token matches:
+
+```json
+{
+  "oidc": {
+    "enabled": true,
+    "issuer": "https://issuer.example",
+    "audience": "goblin-king",
+    "jwks_url": "https://issuer.example/.well-known/jwks.json",
+    "role_claim": "goblin_king_role",
+    "project_claim": "goblin_king_project_id"
+  }
+}
+```
+
+The role claim maps configured admin roles to `admin`; otherwise callers become
+project-scoped `member` or `viewer` principals according to their claims.
+
 ## Prove The Long-Running Service
 
 Start the sample long-running service:
