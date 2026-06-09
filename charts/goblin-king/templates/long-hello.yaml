@@ -38,3 +38,44 @@ spec:
       port: 80
       targetPort: {{ .Values.workers.exampleLongHello.port }}
 {{- end }}
+{{- range .Values.workers.extraLongServices }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "goblin-king.fullname" $ }}-{{ .name }}
+spec:
+  replicas: {{ default 1 .replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: {{ .name }}
+      app.kubernetes.io/name: {{ include "goblin-king.name" $ }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: {{ .name }}
+        app.kubernetes.io/name: {{ include "goblin-king.name" $ }}
+    spec:
+      containers:
+        - name: {{ .name }}
+          image: {{ .image }}
+          imagePullPolicy: {{ default "IfNotPresent" .pullPolicy }}
+          ports:
+            - containerPort: {{ default 8080 .port }}
+          env:
+            - name: GOBLIN_WORKER_ID
+              value: {{ default .name .workerId | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "goblin-king.fullname" $ }}-{{ .name }}
+spec:
+  selector:
+    app.kubernetes.io/component: {{ .name }}
+    app.kubernetes.io/name: {{ include "goblin-king.name" $ }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: {{ default 8080 .port }}
+{{- end }}

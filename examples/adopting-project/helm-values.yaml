@@ -1,0 +1,21 @@
+config:
+  registryPath: /project/registries/maintenance.json
+  imagesPath: /project/goblin-images.json
+  projectSettingsPath: /project/goblin-king-project.json
+
+project:
+  extraVolumes:
+    - name: project-config
+      configMap:
+        name: project-goblin-config
+  extraVolumeMounts:
+    - name: project-config
+      mountPath: /project
+      readOnly: true
+
+workers:
+  extraLongServices:
+    - name: project-reports-long-service
+      image: project-reports-long-service:local
+      port: 8080
+      workerId: project-reports-long-service-k8s

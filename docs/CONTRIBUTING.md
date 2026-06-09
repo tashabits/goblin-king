@@ -51,6 +51,11 @@ admin/API reload proof, source and image-map coverage proof, a newly discovered 
 appearing without a React rebuild, and a failed reload preserving the previous valid
 registry.
 
+When a phase includes host-project deployment integration, PR evidence must include
+the project validation command, worker build proof, Docker Compose extension proof,
+Helm values render proof, discovery reload proof, and admin-visible project goblin
+proof.
+
 When a phase includes fanout or retry behavior, PR evidence must include both API and CLI
 proof. Record fanout creation, fanout readback, scheduler execution, retry creation from
 a terminal job, and retry completion.
@@ -87,6 +92,9 @@ Reusable package phases must include tests for project settings, registry mergin
 point discovery, template generation, and CLI discovery.
 Deploy-time discovery phases must include tests for reload success, reload failure,
 source reporting, image-map coverage, scheduler refresh, and admin UI reload controls.
+Host-project deployment phases must include tests or render checks for project Compose
+fixtures, Helm project values, scheduler project settings, and admin discovery proof
+commands.
 Fanout/retry phases must include tests for batch persistence, derived fanout status, API
 auth, CLI commands, retry lineage, rejected live-job retries, and scheduler execution.
 Event/heartbeat phases must include tests for event persistence, API event reads,

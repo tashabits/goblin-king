@@ -8,7 +8,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from goblin_king.cli import app
-from goblin_king.contracts import EventRecord, HeartbeatRecord, JobRecord, utc_now
+from goblin_king.contracts import EventRecord, HeartbeatRecord, JobRecord, ScheduleRecord, utc_now
 from goblin_king.store import SQLiteStore
 
 runner = CliRunner()
@@ -161,6 +161,42 @@ def test_project_validate_rejects_missing_worker_mapping(tmp_path: Path) -> None
 
     assert result.exit_code == 1
     assert "missing_worker\tsample.echo" in result.stderr
+
+
+def test_scheduler_run_once_uses_project_settings(tmp_path: Path) -> None:
+    """Verify scheduler commands can load merged project discovery settings."""
+    db_path = tmp_path / "goblin.sqlite3"
+    store = SQLiteStore(db_path)
+    now = utc_now()
+    store.save_schedule(
+        ScheduleRecord(
+            id="project-schedule",
+            kind="project.maintenance.hello",
+            input={"name": "Project"},
+            cron="* * * * *",
+            created_at=now,
+            next_run_at=now,
+        )
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "scheduler",
+            "run-once",
+            "--project",
+            "examples/adopting-project/goblin-king-project.json",
+            "--runtime",
+            "in-process",
+            "--db",
+            str(db_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload[0]["kind"] == "project.maintenance.hello"
+    assert payload[0]["status"] == "completed"
 
 
 def test_jobs_submit_persists_completed_run(tmp_path: Path) -> None:

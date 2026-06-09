@@ -545,6 +545,10 @@ def scheduler_run_once(
         Path,
         typer.Option("--registry", help="Registry JSON path."),
     ] = Path("goblins.json"),
+    project: Annotated[
+        Path | None,
+        typer.Option("--project", help="Optional project settings path."),
+    ] = None,
     db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
     runtime: Annotated[
         RuntimeOption,
@@ -560,11 +564,12 @@ def scheduler_run_once(
     ] = DEFAULT_REDIS_URL,
 ) -> None:
     """Run one deterministic scheduler pass and print any created runs."""
+    registry, workers = _load_scheduler_discovery(registry, images, project, runtime)
     scheduler = Scheduler(
-        registry=_load_registry(registry),
+        registry=registry,
         store=SQLiteStore(db),
         runtime_mode=runtime,
-        workers=_load_workers(images) if runtime in {"docker", "kubernetes"} else None,
+        workers=workers,
         redis_url=redis_url,
     )
     runs = scheduler.run_once()
@@ -577,6 +582,10 @@ def scheduler_run(
         Path,
         typer.Option("--registry", help="Registry JSON path."),
     ] = Path("goblins.json"),
+    project: Annotated[
+        Path | None,
+        typer.Option("--project", help="Optional project settings path."),
+    ] = None,
     db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
     interval_seconds: Annotated[
         int,
@@ -596,11 +605,12 @@ def scheduler_run(
     ] = DEFAULT_REDIS_URL,
 ) -> None:
     """Run scheduler passes until interrupted."""
+    registry, workers = _load_scheduler_discovery(registry, images, project, runtime)
     scheduler = Scheduler(
-        registry=_load_registry(registry),
+        registry=registry,
         store=SQLiteStore(db),
         runtime_mode=runtime,
-        workers=_load_workers(images) if runtime in {"docker", "kubernetes"} else None,
+        workers=workers,
         redis_url=redis_url,
     )
     try:
@@ -667,6 +677,23 @@ def _load_project_registry(path: Path) -> GoblinRegistry:
     except RegistryError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
+
+
+def _load_scheduler_discovery(
+    registry_path: Path,
+    images_path: Path,
+    project_path: Path | None,
+    runtime: RuntimeOption,
+) -> tuple[GoblinRegistry, WorkerImageMap | None]:
+    """Load scheduler registry and worker map from either direct paths or project settings."""
+    if project_path is not None:
+        settings = _load_project_settings(project_path)
+        registry = _load_project_registry(project_path)
+        workers = _load_workers(settings.images) if runtime in {"docker", "kubernetes"} else None
+        return registry, workers
+    registry = _load_registry(registry_path)
+    workers = _load_workers(images_path) if runtime in {"docker", "kubernetes"} else None
+    return registry, workers
 
 
 def _load_input(path: Path) -> dict:

@@ -49,7 +49,7 @@ target phase below.
 - Scheduler discovery refresh through the same discovery version marker.
 - Admin Discovery panel that calls these endpoints and displays reload proof.
 
-## Planned For Phase 14
+## Covered In Phase 14
 
 - Host-project deployment integration for extra registries, worker image maps, plugin
   wheels, and long-running services in Docker Compose and Helm.
