@@ -341,7 +341,7 @@ This should be clearly marked as a local/dev adapter. Production should prefer K
 
 ## Testing Plan
 
-Phase 1 uses local CI only. Local CI means the developer runs the verification commands on their machine before opening a PR. Do not rely on GitHub Actions CI runs as a Phase 1 quality gate.
+All phases use local CI unless the project explicitly changes this policy later. Local CI means the developer runs the verification commands on their machine before opening a PR. Do not rely on GitHub Actions CI runs as a required quality gate.
 
 Local CI commands:
 
@@ -387,6 +387,7 @@ Integration tests:
 - Implement job leasing.
 - Implement retry and timeout fields.
 - Add scheduler loop with clean shutdown.
+- Add scheduler CLI commands for schedule creation, schedule listing, one-pass execution, loop execution, and job listing.
 
 ### Phase 3: Docker Execution
 

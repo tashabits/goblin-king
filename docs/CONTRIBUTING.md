@@ -12,7 +12,8 @@ Goblin King code should stay easy to review, test, and reuse across projects.
 
 ## Local CI
 
-Phase 1 uses local CI only. Do not rely on GitHub Actions CI runs as a quality gate yet.
+All phases use local CI unless the project explicitly changes this policy later. Do not
+rely on GitHub Actions CI runs as the required quality gate.
 
 Before opening a pull request, run:
 

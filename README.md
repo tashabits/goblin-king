@@ -5,9 +5,8 @@ modules called goblins. The project is designed to grow into a Docker-friendly t
 scheduler that can queue work, execute goblins, track run status, and collect structured
 results for downstream systems.
 
-Phase 1 builds the library kernel: typed goblin contracts, JSON registry loading,
-in-process execution, SQLite-backed job/run persistence, example goblins, a CLI, and
-local tests.
+Phase 2 builds on the library kernel with durable schedules, queued jobs, leases, retry
+metadata, timeout bookkeeping, and a scheduler loop that can run due work locally.
 
 ## Quick Start
 
@@ -30,6 +29,14 @@ Run the example goblin:
 goblin-king jobs submit example.echo --input examples/input.json --registry examples/goblins.json
 ```
 
+Create and run a due schedule:
+
+```bash
+goblin-king schedules add example.echo --cron "* * * * *" --input examples/input.json --registry examples/goblins.json --due-now
+goblin-king scheduler run-once --registry examples/goblins.json
+goblin-king jobs list
+```
+
 ## Documentation
 
 | Document | Purpose |
@@ -40,5 +47,5 @@ goblin-king jobs submit example.echo --input examples/input.json --registry exam
 ## Current Scope
 
 The current kernel intentionally runs goblins in-process and stores metadata in SQLite.
-Docker execution, Redis, the API server, cron scheduling, leases, retries, and fanout are
+Docker execution, Redis, the API server, container timeout enforcement, and fanout are
 planned for later phases.
