@@ -9,6 +9,17 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 GOBLIN_KIND_PATTERN = re.compile(r"^[a-z0-9][a-z0-9]*(?:[.-][a-z0-9][a-z0-9]*)*$")
+JobStatus = Literal[
+    "queued",
+    "leased",
+    "running",
+    "completed",
+    "failed",
+    "retrying",
+    "timed_out",
+    "cancelled",
+]
+RunStatus = Literal["running", "completed", "failed", "timed_out"]
 
 
 def utc_now() -> datetime:
@@ -111,7 +122,7 @@ class GoblinResult(BaseModel):
 
 
 class JobRecord(BaseModel):
-    """Capture a submitted Phase 1 job before and after runtime execution."""
+    """Capture a submitted or scheduler-created job before and after execution."""
 
     id: str
     kind: str
@@ -119,6 +130,16 @@ class JobRecord(BaseModel):
     created_at: datetime
     created_by: str = "cli"
     correlation_id: str | None = None
+    status: JobStatus = "queued"
+    priority: int = 100
+    schedule_id: str | None = None
+    due_at: datetime | None = None
+    lease_owner: str | None = None
+    leased_until: datetime | None = None
+    attempt_count: int = 0
+    max_retries: int = 0
+    timeout_seconds: int | None = None
+    last_error: str | None = None
 
 
 class RunRecord(BaseModel):
@@ -128,8 +149,28 @@ class RunRecord(BaseModel):
     job_id: str
     kind: str
     attempt: int = 1
-    status: Literal["running", "completed", "failed"]
+    status: RunStatus
     started_at: datetime
     finished_at: datetime | None = None
     result: GoblinResult | None = None
     error: str | None = None
+    timeout_seconds: int | None = None
+    max_retries: int = 0
+    leased_until: datetime | None = None
+
+
+class ScheduleRecord(BaseModel):
+    """Capture a recurring cron schedule that materializes queued jobs."""
+
+    id: str
+    kind: str
+    input: dict[str, Any] = Field(default_factory=dict)
+    cron: str
+    timezone: str = "UTC"
+    enabled: bool = True
+    priority: int = 100
+    created_at: datetime
+    next_run_at: datetime
+    last_materialized_at: datetime | None = None
+    max_retries: int = 0
+    timeout_seconds: int | None = None

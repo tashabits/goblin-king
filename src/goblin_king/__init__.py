@@ -6,6 +6,7 @@ from goblin_king.contracts import (
     GoblinResult,
     JobRecord,
     RunRecord,
+    ScheduleRecord,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "GoblinResult",
     "JobRecord",
     "RunRecord",
+    "ScheduleRecord",
 ]

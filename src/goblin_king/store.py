@@ -17,7 +17,11 @@ from sqlalchemy import (
     Table,
     Text,
     create_engine,
+    inspect,
+    or_,
     select,
+    text,
+    update,
 )
 from sqlalchemy.engine import Engine
 
@@ -27,6 +31,7 @@ from goblin_king.contracts import (
     HandoffRecord,
     JobRecord,
     RunRecord,
+    ScheduleRecord,
 )
 
 DEFAULT_DB_PATH = Path(".goblin-king") / "goblin-king.sqlite3"
@@ -43,6 +48,33 @@ jobs_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("created_by", String, nullable=False),
     Column("correlation_id", String, nullable=True),
+    Column("status", String, nullable=False, default="queued"),
+    Column("priority", Integer, nullable=False, default=100),
+    Column("schedule_id", String, nullable=True),
+    Column("due_at", DateTime(timezone=True), nullable=True),
+    Column("lease_owner", String, nullable=True),
+    Column("leased_until", DateTime(timezone=True), nullable=True),
+    Column("attempt_count", Integer, nullable=False, default=0),
+    Column("max_retries", Integer, nullable=False, default=0),
+    Column("timeout_seconds", Integer, nullable=True),
+    Column("last_error", Text, nullable=True),
+)
+
+schedules_table = Table(
+    "schedules",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("kind", String, nullable=False),
+    Column("input_json", Text, nullable=False),
+    Column("cron", String, nullable=False),
+    Column("timezone", String, nullable=False),
+    Column("enabled", Integer, nullable=False, default=1),
+    Column("priority", Integer, nullable=False, default=100),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("next_run_at", DateTime(timezone=True), nullable=False),
+    Column("last_materialized_at", DateTime(timezone=True), nullable=True),
+    Column("max_retries", Integer, nullable=False, default=0),
+    Column("timeout_seconds", Integer, nullable=True),
 )
 
 runs_table = Table(
@@ -57,6 +89,9 @@ runs_table = Table(
     Column("finished_at", DateTime(timezone=True), nullable=True),
     Column("result_json", Text, nullable=True),
     Column("error", Text, nullable=True),
+    Column("timeout_seconds", Integer, nullable=True),
+    Column("max_retries", Integer, nullable=False, default=0),
+    Column("leased_until", DateTime(timezone=True), nullable=True),
 )
 
 artifacts_table = Table(
@@ -87,6 +122,7 @@ class SQLiteStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.engine: Engine = create_engine(f"sqlite:///{self.db_path}")
         metadata.create_all(self.engine)
+        self._ensure_phase2_columns()
 
     def save_job(self, job: JobRecord) -> None:
         """Insert one submitted job record."""
@@ -99,6 +135,16 @@ class SQLiteStore:
                     created_at=job.created_at,
                     created_by=job.created_by,
                     correlation_id=job.correlation_id,
+                    status=job.status,
+                    priority=job.priority,
+                    schedule_id=job.schedule_id,
+                    due_at=job.due_at,
+                    lease_owner=job.lease_owner,
+                    leased_until=job.leased_until,
+                    attempt_count=job.attempt_count,
+                    max_retries=job.max_retries,
+                    timeout_seconds=job.timeout_seconds,
+                    last_error=job.last_error,
                 )
             )
 
@@ -117,6 +163,9 @@ class SQLiteStore:
                     finished_at=run.finished_at,
                     result_json=result_json,
                     error=run.error,
+                    timeout_seconds=run.timeout_seconds,
+                    max_retries=run.max_retries,
+                    leased_until=run.leased_until,
                 )
             )
             if run.result is not None:
@@ -137,6 +186,152 @@ class SQLiteStore:
                             payload_json=json.dumps(handoff.payload),
                         )
                     )
+
+    def save_schedule(self, schedule: ScheduleRecord) -> None:
+        """Insert one recurring schedule definition."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                schedules_table.insert().values(
+                    id=schedule.id,
+                    kind=schedule.kind,
+                    input_json=json.dumps(schedule.input),
+                    cron=schedule.cron,
+                    timezone=schedule.timezone,
+                    enabled=1 if schedule.enabled else 0,
+                    priority=schedule.priority,
+                    created_at=schedule.created_at,
+                    next_run_at=schedule.next_run_at,
+                    last_materialized_at=schedule.last_materialized_at,
+                    max_retries=schedule.max_retries,
+                    timeout_seconds=schedule.timeout_seconds,
+                )
+            )
+
+    def list_schedules(self) -> list[ScheduleRecord]:
+        """Return all schedules ordered by next run time for CLI display."""
+        with self.engine.connect() as connection:
+            rows = (
+                connection.execute(select(schedules_table).order_by(schedules_table.c.next_run_at))
+                .mappings()
+                .all()
+            )
+        return [_row_to_schedule(dict(row)) for row in rows]
+
+    def list_due_schedules(self, now: datetime) -> list[ScheduleRecord]:
+        """Return enabled schedules whose next run is due at or before now."""
+        with self.engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    select(schedules_table)
+                    .where(schedules_table.c.enabled == 1)
+                    .where(schedules_table.c.next_run_at <= now)
+                    .order_by(schedules_table.c.next_run_at)
+                )
+                .mappings()
+                .all()
+            )
+        return [_row_to_schedule(dict(row)) for row in rows]
+
+    def update_schedule_after_materialize(
+        self,
+        schedule_id: str,
+        *,
+        last_materialized_at: datetime,
+        next_run_at: datetime,
+    ) -> None:
+        """Advance one schedule after its due job has been materialized."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                update(schedules_table)
+                .where(schedules_table.c.id == schedule_id)
+                .values(last_materialized_at=last_materialized_at, next_run_at=next_run_at)
+            )
+
+    def list_jobs(self) -> list[JobRecord]:
+        """Return all jobs ordered by creation time for CLI display."""
+        with self.engine.connect() as connection:
+            rows = (
+                connection.execute(select(jobs_table).order_by(jobs_table.c.created_at))
+                .mappings()
+                .all()
+            )
+        return [_row_to_job(dict(row)) for row in rows]
+
+    def claim_due_jobs(
+        self,
+        *,
+        worker_id: str,
+        now: datetime,
+        lease_until: datetime,
+        limit: int,
+    ) -> list[JobRecord]:
+        """Lease due queued or retrying jobs once for this scheduler worker."""
+        claimed: list[JobRecord] = []
+        with self.engine.begin() as connection:
+            claimable_status = or_(
+                jobs_table.c.status.in_(["queued", "retrying"]),
+                (
+                    (jobs_table.c.status == "leased")
+                    & (jobs_table.c.leased_until.is_not(None))
+                    & (jobs_table.c.leased_until <= now)
+                ),
+            )
+            rows = (
+                connection.execute(
+                    select(jobs_table)
+                    .where(claimable_status)
+                    .where(or_(jobs_table.c.due_at.is_(None), jobs_table.c.due_at <= now))
+                    .order_by(jobs_table.c.priority.desc(), jobs_table.c.created_at)
+                    .limit(limit)
+                )
+                .mappings()
+                .all()
+            )
+            for row in rows:
+                connection.execute(
+                    update(jobs_table)
+                    .where(jobs_table.c.id == row["id"])
+                    .values(
+                        status="leased",
+                        lease_owner=worker_id,
+                        leased_until=lease_until,
+                    )
+                )
+                payload = dict(row)
+                payload["status"] = "leased"
+                payload["lease_owner"] = worker_id
+                payload["leased_until"] = lease_until
+                claimed.append(_row_to_job(payload))
+        return claimed
+
+    def mark_job_running(self, job_id: str, *, attempt_count: int) -> None:
+        """Mark a leased job as running with its incremented attempt count."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                update(jobs_table)
+                .where(jobs_table.c.id == job_id)
+                .values(status="running", attempt_count=attempt_count)
+            )
+
+    def finish_job(
+        self,
+        job_id: str,
+        *,
+        status: str,
+        last_error: str | None = None,
+        due_at: datetime | None = None,
+    ) -> None:
+        """Finalize or requeue a job after a run attempt."""
+        values: dict[str, Any] = {
+            "status": status,
+            "last_error": last_error,
+            "lease_owner": None,
+            "leased_until": None,
+        }
+        if due_at is not None:
+            values["due_at"] = due_at
+        with self.engine.begin() as connection:
+            connection.execute(update(jobs_table).where(jobs_table.c.id == job_id).values(**values))
 
     def get_run(self, run_id: str) -> RunRecord | None:
         """Load one run record with its persisted result envelope when present."""
@@ -160,15 +355,36 @@ class SQLiteStore:
             )
         if row is None:
             return None
-        payload = dict(row)
-        return JobRecord(
-            id=payload["id"],
-            kind=payload["kind"],
-            input=json.loads(payload["input_json"]),
-            created_at=_coerce_datetime(payload["created_at"]),
-            created_by=payload["created_by"],
-            correlation_id=payload["correlation_id"],
-        )
+        return _row_to_job(dict(row))
+
+    def _ensure_phase2_columns(self) -> None:
+        """Add Phase 2 job columns to existing Phase 1 SQLite databases."""
+        job_columns = {column["name"] for column in inspect(self.engine).get_columns("jobs")}
+        job_additions = {
+            "status": "TEXT NOT NULL DEFAULT 'queued'",
+            "priority": "INTEGER NOT NULL DEFAULT 100",
+            "schedule_id": "TEXT",
+            "due_at": "DATETIME",
+            "lease_owner": "TEXT",
+            "leased_until": "DATETIME",
+            "attempt_count": "INTEGER NOT NULL DEFAULT 0",
+            "max_retries": "INTEGER NOT NULL DEFAULT 0",
+            "timeout_seconds": "INTEGER",
+            "last_error": "TEXT",
+        }
+        run_columns = {column["name"] for column in inspect(self.engine).get_columns("runs")}
+        run_additions = {
+            "timeout_seconds": "INTEGER",
+            "max_retries": "INTEGER NOT NULL DEFAULT 0",
+            "leased_until": "DATETIME",
+        }
+        with self.engine.begin() as connection:
+            for column_name, ddl in job_additions.items():
+                if column_name not in job_columns:
+                    connection.execute(text(f"ALTER TABLE jobs ADD COLUMN {column_name} {ddl}"))
+            for column_name, ddl in run_additions.items():
+                if column_name not in run_columns:
+                    connection.execute(text(f"ALTER TABLE runs ADD COLUMN {column_name} {ddl}"))
 
 
 def _row_to_run(payload: dict[str, Any]) -> RunRecord:
@@ -188,6 +404,57 @@ def _row_to_run(payload: dict[str, Any]) -> RunRecord:
         finished_at=_coerce_datetime(payload["finished_at"]) if payload["finished_at"] else None,
         result=result,
         error=payload["error"],
+        timeout_seconds=payload.get("timeout_seconds"),
+        max_retries=payload.get("max_retries") or 0,
+        leased_until=(
+            _coerce_datetime(payload["leased_until"]) if payload.get("leased_until") else None
+        ),
+    )
+
+
+def _row_to_job(payload: dict[str, Any]) -> JobRecord:
+    """Convert a SQLAlchemy row mapping into the public JobRecord contract."""
+    return JobRecord(
+        id=payload["id"],
+        kind=payload["kind"],
+        input=json.loads(payload["input_json"]),
+        created_at=_coerce_datetime(payload["created_at"]),
+        created_by=payload["created_by"],
+        correlation_id=payload["correlation_id"],
+        status=payload.get("status") or "queued",
+        priority=payload.get("priority") or 100,
+        schedule_id=payload.get("schedule_id"),
+        due_at=_coerce_datetime(payload["due_at"]) if payload.get("due_at") else None,
+        lease_owner=payload.get("lease_owner"),
+        leased_until=(
+            _coerce_datetime(payload["leased_until"]) if payload.get("leased_until") else None
+        ),
+        attempt_count=payload.get("attempt_count") or 0,
+        max_retries=payload.get("max_retries") or 0,
+        timeout_seconds=payload.get("timeout_seconds"),
+        last_error=payload.get("last_error"),
+    )
+
+
+def _row_to_schedule(payload: dict[str, Any]) -> ScheduleRecord:
+    """Convert a SQLAlchemy row mapping into the public ScheduleRecord contract."""
+    return ScheduleRecord(
+        id=payload["id"],
+        kind=payload["kind"],
+        input=json.loads(payload["input_json"]),
+        cron=payload["cron"],
+        timezone=payload["timezone"],
+        enabled=bool(payload["enabled"]),
+        priority=payload["priority"],
+        created_at=_coerce_datetime(payload["created_at"]),
+        next_run_at=_coerce_datetime(payload["next_run_at"]),
+        last_materialized_at=(
+            _coerce_datetime(payload["last_materialized_at"])
+            if payload.get("last_materialized_at")
+            else None
+        ),
+        max_retries=payload["max_retries"],
+        timeout_seconds=payload.get("timeout_seconds"),
     )
 
 
