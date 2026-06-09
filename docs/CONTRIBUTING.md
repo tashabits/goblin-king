@@ -41,6 +41,11 @@ At minimum, record a successful read endpoint, a rejected unauthenticated mutati
 an accepted authenticated mutation, and a follow-up read that proves the mutation was
 persisted.
 
+When a phase includes reusable package behavior, PR evidence must include generated
+package proof. Record the generator command, local editable install, discovery through
+`goblin_king.goblins`, worker image build, and a completed scheduler run when the package
+includes a worker.
+
 ## Commenting Standards
 
 - New public modules should start with a concise file-level comment describing purpose and ownership.
@@ -55,3 +60,5 @@ Docker runtime phases must also include local Docker tests that fail clearly whe
 is unavailable.
 API phases must include HTTP tests for success paths, auth failures, validation errors,
 not-found responses, and persistence effects.
+Reusable package phases must include tests for project settings, registry merging, entry
+point discovery, template generation, and CLI discovery.

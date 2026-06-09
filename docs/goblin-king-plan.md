@@ -416,9 +416,11 @@ Integration tests:
 
 ### Phase 5: Reuse Package
 
-- Split project goblins from core scheduler.
-- Support registry files and Python entry point discovery.
-- Add example goblin package.
+- Add `goblin-king-project.json` for reusable project integration.
+- Support multiple registry files and Python entry point discovery.
+- Add package/worker template generator.
+- Add project validation and project goblin listing CLI commands.
+- Allow API goblin discovery from project settings.
 - Document how existing projects can adopt it without taking a hard dependency on implementation details.
 
 ### Final Optional Phase: Kubernetes Deployment
