@@ -22,6 +22,7 @@ import type { ReactNode } from "react";
 const API_BASE = "/admin-api";
 const WS_BASE = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/admin-ws/runs`;
 const TOKEN_KEY = "goblinKingAdminToken";
+const DEFAULT_LONG_HELLO_URL = "http://long-hello:8080";
 const QUOTES = [
   "The King counts every task twice: once for courage, once for evidence.",
   "A proper goblin returns receipts.",
@@ -108,6 +109,11 @@ type TrafficEntry = {
   response: unknown;
 };
 
+type AdminConfig = {
+  deploymentScope: string;
+  longHelloUrl: string;
+};
+
 function latestFirst<T>(items: T[]): T[] {
   return [...items].sort((left, right) => {
     const leftRecord = left as Record<string, unknown>;
@@ -121,9 +127,9 @@ function latestFirst<T>(items: T[]): T[] {
 }
 
 function serviceRank(service: LongService): number {
-  if (service.status === "running") return 0;
-  if (service.status === "registered") return 1;
-  return 2;
+  if (service.status === "stopped") return 2;
+  if (service.status === "failed") return 1;
+  return 0;
 }
 
 function usefulServicesFirst(services: LongService[]): LongService[] {
@@ -158,7 +164,11 @@ export function App() {
     '{"description":"admin lab fanout","items":[{"kind":"example.hello","input":{"name":"One"}},{"kind":"example.progress","input":{"steps":3}}]}',
   );
   const [scheduleCron, setScheduleCron] = useState("* * * * *");
-  const [serviceUrl, setServiceUrl] = useState("http://long-hello:8080");
+  const [adminConfig, setAdminConfig] = useState<AdminConfig>({
+    deploymentScope: "docker",
+    longHelloUrl: DEFAULT_LONG_HELLO_URL,
+  });
+  const [serviceUrl, setServiceUrl] = useState(DEFAULT_LONG_HELLO_URL);
   const [retryJobId, setRetryJobId] = useState("");
   const [artifactRunId, setArtifactRunId] = useState("");
   const [traffic, setTraffic] = useState<TrafficEntry[]>([]);
@@ -188,6 +198,25 @@ export function App() {
     }
     return payload;
   }
+
+  useEffect(() => {
+    async function loadConfig() {
+      try {
+        const response = await fetch("/admin/config.json", { cache: "no-store" });
+        if (!response.ok) return;
+        const payload = (await response.json()) as Partial<AdminConfig>;
+        const nextUrl = payload.longHelloUrl || DEFAULT_LONG_HELLO_URL;
+        setAdminConfig({
+          deploymentScope: payload.deploymentScope || "docker",
+          longHelloUrl: nextUrl,
+        });
+        setServiceUrl((current) => (current === DEFAULT_LONG_HELLO_URL || !current ? nextUrl : current));
+      } catch {
+        return;
+      }
+    }
+    void loadConfig();
+  }, []);
 
   async function refreshAll() {
     if (!token) return;
@@ -317,7 +346,7 @@ export function App() {
   async function registerService() {
     await api(
       "/services/long-running",
-      { method: "POST", body: JSON.stringify({ kind: "example.long-hello", base_url: serviceUrl }) },
+      { method: "POST", body: JSON.stringify({ kind: "example.long-hello", base_url: serviceUrl.trim() }) },
       "POST /services/long-running",
     );
     await refreshAll();
@@ -510,8 +539,13 @@ export function App() {
 
         <section id="services" className="panel">
           <h3><Radio /> Long Services</h3>
+          <p className="muted">
+            Deployment default: {adminConfig.deploymentScope} uses <code>{adminConfig.longHelloUrl}</code>.
+          </p>
           <div className="button-row">
-            <input value={serviceUrl} onChange={(event) => setServiceUrl(event.target.value)} />
+            <label className="sr-only" htmlFor="service-url">Long service URL</label>
+            <input id="service-url" value={serviceUrl} onChange={(event) => setServiceUrl(event.target.value)} />
+            <button className="ghost" onClick={() => setServiceUrl(adminConfig.longHelloUrl)}>Use deployment URL</button>
             <button onClick={() => void registerService()}>Register service</button>
           </div>
           <div className="cards">

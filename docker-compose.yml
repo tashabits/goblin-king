@@ -93,6 +93,8 @@ services:
       - api
     environment:
       API_UPSTREAM: api:8000
+      DEPLOYMENT_SCOPE: docker-compose
+      LONG_HELLO_URL: http://long-hello:8080
     ports:
       - "8080:8080"
 

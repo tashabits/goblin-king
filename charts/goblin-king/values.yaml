@@ -37,6 +37,7 @@ admin:
     tag: local
     pullPolicy: IfNotPresent
   port: 8080
+  longHelloUrl: http://goblin-king-long-hello
   ingress:
     enabled: true
     className: nginx

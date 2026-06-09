@@ -24,6 +24,10 @@ spec:
           env:
             - name: API_UPSTREAM
               value: '{{ include "goblin-king.fullname" . }}-api:{{ .Values.api.port }}'
+            - name: DEPLOYMENT_SCOPE
+              value: kubernetes
+            - name: LONG_HELLO_URL
+              value: {{ .Values.admin.longHelloUrl | quote }}
 ---
 apiVersion: v1
 kind: Service

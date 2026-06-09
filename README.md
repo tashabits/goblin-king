@@ -163,6 +163,8 @@ make admin-smoke
 When the API runs in Docker Compose, the long service is reached at
 `http://long-hello:8080` from inside the API container. Override
 `LONG_HELLO_URL=http://localhost:8090` only when probing from a host-run API process.
+The React admin reads `/admin/config.json` from its container at startup, so Docker
+prefills `http://long-hello:8080` and Helm prefills `http://goblin-king-long-hello`.
 
 Render the optional Kubernetes chart:
 

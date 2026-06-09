@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 
@@ -60,6 +60,9 @@ function jsonResponse(payload: unknown, status = 200) {
 function mockFetch() {
   const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
+    if (url.endsWith("/admin/config.json")) {
+      return jsonResponse({ deploymentScope: "test", longHelloUrl: "http://test-long-hello" });
+    }
     if (url.includes("/goblins")) return jsonResponse(fixtures.goblins);
     if (url.includes("/jobs?")) return jsonResponse(fixtures.jobs);
     if (url.endsWith("/jobs")) {
@@ -100,6 +103,10 @@ class MockWebSocket {
 }
 
 describe("App", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   beforeEach(() => {
     localStorage.clear();
     vi.restoreAllMocks();
@@ -158,5 +165,14 @@ describe("App", () => {
       expect(urls).toContain("/admin-api/services/long-running/svc-1/probe");
       expect(urls).toContain("/admin-api/services/long-running/svc-1/stop");
     });
+  });
+
+  it("loads the deployment long-service URL from runtime config", async () => {
+    mockFetch();
+    localStorage.setItem("goblinKingAdminToken", "test-token");
+    render(<App />);
+
+    expect(await screen.findByDisplayValue("http://test-long-hello")).toBeInTheDocument();
+    expect(screen.getByText(/Deployment default: test uses/i)).toBeInTheDocument();
   });
 });

@@ -114,6 +114,10 @@ curl -X POST http://127.0.0.1:8000/services/long-running/<service-id>/probe \
 ```
 
 Each probe returns `Hello World from long running service` with a fresh timestamp.
+In Docker Compose, register `http://long-hello:8080` from the admin UI because the API
+container resolves that service name. In Helm, register `http://goblin-king-long-hello`.
+The React admin preloads the correct default from `/admin/config.json` for each
+deployment.
 
 ## Optional Kubernetes Deployment
 
