@@ -61,6 +61,14 @@ prove scheduler and worker liveness. If a goblin moves, the King writes it down.
 
 ![Events and live rail](images/admin/admin-events.png)
 
+## Manage Artifact Storage
+
+The **Runs & Artifacts** panel shows the configured artifact root for Docker volumes or
+the Helm PVC, whether it exists and is writable, the number of files, total bytes, and
+artifact metadata rows. Use **Preview artifact cleanup** before deleting files. Cleanup
+removes only files resolved under the configured artifact root. The King is fussy about
+treasure rooms: if the path points outside the vault, it does not get a key.
+
 ## Reload Discovery
 
 Use **Discovery** after deploying a new project plugin package, registry file, or worker

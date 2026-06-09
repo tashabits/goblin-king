@@ -130,6 +130,24 @@ type CleanupResponse = {
   counts: Record<string, number>;
 };
 
+type ArtifactStorageStatus = {
+  root: string;
+  exists: boolean;
+  writable: boolean;
+  file_count: number;
+  total_bytes: number;
+  metadata_count: number;
+};
+
+type ArtifactCleanupResponse = {
+  dry_run: boolean;
+  deleted: boolean;
+  root: string;
+  files_selected: number;
+  bytes_selected: number;
+  files: string[];
+};
+
 type DiscoveryStatus = {
   active_goblin_count: number;
   worker_mapped_count: number;
@@ -227,6 +245,8 @@ export function App() {
   const [serviceUrl, setServiceUrl] = useState(DEFAULT_LONG_HELLO_URL);
   const [retryJobId, setRetryJobId] = useState("");
   const [artifactRunId, setArtifactRunId] = useState("");
+  const [artifactStorage, setArtifactStorage] = useState<ArtifactStorageStatus | null>(null);
+  const [artifactCleanup, setArtifactCleanup] = useState<ArtifactCleanupResponse | null>(null);
   const [cleanupPreview, setCleanupPreview] = useState<CleanupResponse | null>(null);
   const [discoveryStatus, setDiscoveryStatus] = useState<DiscoveryStatus | null>(null);
   const [discoverySources, setDiscoverySources] = useState<DiscoverySources | null>(null);
@@ -300,6 +320,7 @@ export function App() {
         schedulePayload,
         fanoutPayload,
         auditPayload,
+        artifactStoragePayload,
         discoveryStatusPayload,
         discoverySourcesPayload,
       ] = await Promise.all([
@@ -313,6 +334,7 @@ export function App() {
         api("/schedules", {}, "GET /schedules"),
         api("/fanouts", {}, "GET /fanouts"),
         api("/audit-logs?limit=20", {}, "GET /audit-logs"),
+        api("/admin/artifacts/storage", {}, "GET /admin/artifacts/storage"),
         api("/admin/discovery/status", {}, "GET /admin/discovery/status"),
         api("/admin/discovery/sources", {}, "GET /admin/discovery/sources"),
       ]);
@@ -326,6 +348,7 @@ export function App() {
       setSchedules(schedulePayload);
       setFanouts(fanoutPayload);
       setAuditLogs(latestFirst(auditPayload.items));
+      setArtifactStorage(artifactStoragePayload);
       setDiscoveryStatus(discoveryStatusPayload);
       setDiscoverySources(discoverySourcesPayload);
       setSelectedKind((current) => goblinPayload.find((item: Goblin) => item.kind === current)?.kind || goblinPayload[0]?.kind || "example.hello");
@@ -449,6 +472,19 @@ export function App() {
   async function inspectArtifacts(runId: string) {
     if (!runId) return;
     await api(`/runs/${runId}/artifacts`, {}, "GET /runs/{run_id}/artifacts");
+  }
+
+  async function cleanupArtifacts(dryRun: boolean) {
+    const payload = await api(
+      "/admin/artifacts/cleanup",
+      {
+        method: "POST",
+        body: JSON.stringify({ dry_run: dryRun, max_total_bytes: 0 }),
+      },
+      dryRun ? "POST /admin/artifacts/cleanup dry-run" : "POST /admin/artifacts/cleanup delete",
+    );
+    setArtifactCleanup(payload);
+    await refreshAll();
   }
 
   async function createPrincipal(type: "user" | "project" | "token") {
@@ -627,6 +663,30 @@ export function App() {
             <input value={artifactRunId} onChange={(event) => setArtifactRunId(event.target.value)} placeholder="run id" />
             <button onClick={() => void inspectArtifacts(artifactRunId)}>Inspect artifacts</button>
             <p className="muted">Download links are returned by `GET /runs/{"{run_id}"}/artifacts`.</p>
+            <h3><Boxes /> Artifact Volume</h3>
+            <p className="muted">Volume/PVC storage health and cleanup proof for filesystem-backed artifacts.</p>
+            <Table
+              title="Storage"
+              rows={[
+                ["Root", artifactStorage?.root || "unknown"],
+                ["Exists", artifactStorage?.exists ? "yes" : "no"],
+                ["Writable", artifactStorage?.writable ? "yes" : "no"],
+                ["Files", artifactStorage?.file_count ?? 0],
+                ["Bytes", artifactStorage?.total_bytes ?? 0],
+                ["Metadata rows", artifactStorage?.metadata_count ?? 0],
+              ]}
+            />
+            <div className="button-row">
+              <button onClick={() => void cleanupArtifacts(true)}>Preview artifact cleanup</button>
+              <button
+                className="danger"
+                disabled={!artifactCleanup || artifactCleanup.deleted || artifactCleanup.files_selected === 0}
+                onClick={() => void cleanupArtifacts(false)}
+              >
+                Delete previewed artifacts
+              </button>
+            </div>
+            {artifactCleanup && <pre className="traffic">{JSON.stringify(artifactCleanup, null, 2)}</pre>}
           </div>
         </section>
 

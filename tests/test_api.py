@@ -565,6 +565,64 @@ def test_run_and_artifact_endpoints(tmp_path: Path) -> None:
     )
 
 
+def test_admin_artifact_storage_status_and_cleanup(tmp_path: Path) -> None:
+    """Verify volume-backed artifact status and cleanup are project scoped."""
+    client, store, artifact_root = build_client(tmp_path)
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    (artifact_root / "old.txt").write_text("old artifact", encoding="utf-8")
+    store.save_job(
+        JobRecord(
+            id="job-1",
+            kind="example.artifact",
+            input={},
+            created_at=datetime(2026, 6, 9, tzinfo=UTC),
+            status="completed",
+            project_id="project-1",
+        )
+    )
+    store.save_run(
+        RunRecord(
+            id="run-1",
+            job_id="job-1",
+            kind="example.artifact",
+            status="completed",
+            started_at=datetime(2026, 6, 9, tzinfo=UTC),
+            finished_at=datetime(2026, 6, 9, tzinfo=UTC),
+            project_id="project-1",
+            result=GoblinResult.ok(
+                artifacts=[
+                    ArtifactRecord(name="old.txt", uri="old.txt", media_type="text/plain")
+                ]
+            ),
+        )
+    )
+
+    status = client.get("/admin/artifacts/storage", headers=auth_headers())
+    preview = client.post(
+        "/admin/artifacts/cleanup",
+        json={"dry_run": True, "project_id": "project-1", "max_total_bytes": 0},
+        headers=auth_headers(),
+    )
+
+    assert status.status_code == 200
+    assert status.json()["file_count"] == 1
+    assert status.json()["metadata_count"] == 1
+    assert preview.status_code == 200
+    assert preview.json()["files_selected"] == 1
+    assert (artifact_root / "old.txt").exists()
+
+    deleted = client.post(
+        "/admin/artifacts/cleanup",
+        json={"dry_run": False, "project_id": "project-1", "max_total_bytes": 0},
+        headers=auth_headers(),
+    )
+
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted"] is True
+    assert not (artifact_root / "old.txt").exists()
+    assert store.list_events(event_type="admin.artifacts.cleaned")
+
+
 def test_admin_creates_user_project_and_hashed_token(tmp_path: Path) -> None:
     """Verify admin setup creates users, projects, and hashed API tokens."""
     client, store, _ = build_client(tmp_path)

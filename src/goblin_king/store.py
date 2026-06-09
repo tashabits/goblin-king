@@ -1247,6 +1247,24 @@ class SQLiteStore:
             for row in rows
         ]
 
+    def list_artifacts_for_project(self, project_id: str | None = None) -> list[ArtifactRecord]:
+        """Return artifact metadata rows, optionally scoped by owning run project."""
+        query = select(artifacts_table)
+        if project_id is not None:
+            query = query.join(runs_table, artifacts_table.c.run_id == runs_table.c.id).where(
+                runs_table.c.project_id == project_id
+            )
+        with self.engine.connect() as connection:
+            rows = connection.execute(query.order_by(artifacts_table.c.name)).mappings().all()
+        return [
+            ArtifactRecord(
+                name=row["name"],
+                uri=row["uri"],
+                media_type=row["media_type"],
+            )
+            for row in rows
+        ]
+
     def _ensure_phase2_columns(self) -> None:
         """Add Phase 2 job columns to existing Phase 1 SQLite databases."""
         job_columns = {column["name"] for column in inspect(self.engine).get_columns("jobs")}

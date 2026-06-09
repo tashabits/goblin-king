@@ -103,6 +103,23 @@ events, worker heartbeats, and stopped or unprobed long-service rows. It preserv
 schedules, users, projects, API tokens, active jobs, running services, and scheduler
 heartbeat.
 
+Use the Runs & Artifacts artifact-volume controls to inspect filesystem-backed storage.
+The API reports the configured root, whether it exists and is writable, file count,
+total bytes, and artifact metadata count. Cleanup is admin-only and always supports a
+dry run first:
+
+```bash
+curl -H "Authorization: Bearer local-dev-token" \
+  http://127.0.0.1:8000/admin/artifacts/storage
+curl -X POST http://127.0.0.1:8000/admin/artifacts/cleanup \
+  -H "Authorization: Bearer local-dev-token" \
+  -H "Content-Type: application/json" \
+  -d "{\"dry_run\":true,\"max_total_bytes\":0}"
+```
+
+Docker Compose stores artifact bytes in the `goblin-king-data` volume under
+`.goblin-king/artifacts`; Helm stores them on the chart PVC at `/data/artifacts`.
+
 The API requires bearer auth for everything except `/health`:
 
 ```bash
