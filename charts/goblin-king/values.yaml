@@ -33,7 +33,7 @@ admin:
   enabled: true
   ingress:
     enabled: true
-    className: ""
+    className: nginx
     host: goblin-king.local
     path: /
     annotations: {}

@@ -168,11 +168,24 @@ docker build -t goblin-king-example-long-hello:local workers/example.long-hello
 make helm-template
 ```
 
-The Helm chart exposes the admin/API service through an ingress by default. Disable it
-for deployments that already provide ingress routing:
+The Helm chart exposes the admin/API service through an ingress by default using the
+`nginx` ingress class. Disable it for deployments that already provide ingress routing:
 
 ```bash
 helm template goblin-king charts/goblin-king --set admin.ingress.enabled=false
+```
+
+For Docker Desktop Kubernetes, install a local ingress controller for port 80 traffic:
+
+```bash
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update ingress-nginx
+helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx \
+  --create-namespace \
+  --set controller.service.type=LoadBalancer \
+  --set controller.ingressClassResource.default=true \
+  --wait
 ```
 
 For local ingress access, point `goblin-king.local` at your local Kubernetes ingress
@@ -185,13 +198,6 @@ endpoint. On Windows, open Notepad as Administrator, edit
 
 Then browse to `http://goblin-king.local/admin?token=local-dev-token`. If your local
 cluster exposes ingress on a different IP, use that IP instead of `127.0.0.1`.
-Without a local ingress controller, use a port-forward:
-
-```bash
-kubectl port-forward svc/goblin-king-api 18000:8000
-```
-
-Then browse to `http://127.0.0.1:18000/admin?token=local-dev-token`.
 
 ## Worker Images
 
