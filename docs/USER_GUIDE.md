@@ -20,6 +20,10 @@ Build workers and start Redis:
 make deploy
 ```
 
+When using Goblin King from another project, start with
+[Using Goblin King From Another Project](ADOPTING_PROJECTS.md) and keep project imports
+inside the [Public API Boundary](PUBLIC_API.md).
+
 ## Run A Short Job
 
 Queue and execute the short Hello World sample:
