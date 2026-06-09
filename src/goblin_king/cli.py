@@ -9,18 +9,23 @@ from uuid import uuid4
 
 import typer
 
-from goblin_king.contracts import GoblinContext, JobRecord, RunRecord, utc_now
+from goblin_king.contracts import GoblinContext, JobRecord, RunRecord, ScheduleRecord, utc_now
 from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.runtime import InProcessRuntime
+from goblin_king.scheduler import DEFAULT_INTERVAL_SECONDS, Scheduler, next_run_after
 from goblin_king.store import DEFAULT_DB_PATH, SQLiteStore
 
 app = typer.Typer(help="Run and inspect Goblin King jobs.")
 goblins_app = typer.Typer(help="Inspect registered goblins.")
 jobs_app = typer.Typer(help="Submit goblin jobs.")
 runs_app = typer.Typer(help="Inspect goblin runs.")
+schedules_app = typer.Typer(help="Create and inspect schedules.")
+scheduler_app = typer.Typer(help="Run scheduler passes.")
 app.add_typer(goblins_app, name="goblins")
 app.add_typer(jobs_app, name="jobs")
 app.add_typer(runs_app, name="runs")
+app.add_typer(schedules_app, name="schedules")
+app.add_typer(scheduler_app, name="scheduler")
 
 
 @goblins_app.command("list")
@@ -84,10 +89,21 @@ def submit_job(
         error=result.error,
     )
     store.save_run(run)
+    store.finish_job(job.id, status=run.status, last_error=run.error)
 
     typer.echo(run.model_dump_json(indent=2))
     if run.status == "failed":
         raise typer.Exit(1)
+
+
+@jobs_app.command("list")
+def list_jobs(
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+) -> None:
+    """Print persisted jobs in creation order."""
+    store = SQLiteStore(db)
+    for job in store.list_jobs():
+        typer.echo(f"{job.id}\t{job.kind}\t{job.status}\t{job.due_at or ''}")
 
 
 @runs_app.command("show")
@@ -102,6 +118,102 @@ def show_run(
         typer.echo(f"run not found: {run_id}", err=True)
         raise typer.Exit(1)
     typer.echo(run.model_dump_json(indent=2))
+
+
+@schedules_app.command("add")
+def add_schedule(
+    kind: Annotated[str, typer.Argument(help="Goblin kind to schedule.")],
+    cron: Annotated[str, typer.Option("--cron", help="Cron expression.")],
+    input_path: Annotated[Path, typer.Option("--input", help="JSON input payload path.")],
+    registry: Annotated[
+        Path,
+        typer.Option("--registry", help="Registry JSON path."),
+    ] = Path("goblins.json"),
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+    due_now: Annotated[
+        bool,
+        typer.Option("--due-now", help="Make the schedule due immediately for local smoke tests."),
+    ] = False,
+    timezone: Annotated[str, typer.Option("--timezone", help="Schedule timezone.")] = "UTC",
+    max_retries: Annotated[int, typer.Option("--max-retries", help="Maximum retry attempts.")] = 0,
+    timeout_seconds: Annotated[
+        int | None,
+        typer.Option("--timeout-seconds", help="Optional timeout in seconds."),
+    ] = None,
+) -> None:
+    """Persist a recurring goblin schedule."""
+    loaded = _load_registry(registry)
+    try:
+        definition = loaded.get(kind)
+    except RegistryError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+    input_payload = _load_input(input_path)
+    created_at = utc_now()
+    provisional = ScheduleRecord(
+        id=str(uuid4()),
+        kind=definition.kind,
+        input=input_payload,
+        cron=cron,
+        timezone=timezone,
+        created_at=created_at,
+        next_run_at=created_at,
+        max_retries=max_retries,
+        timeout_seconds=timeout_seconds,
+    )
+    schedule = provisional.model_copy(
+        update={
+            "next_run_at": created_at if due_now else next_run_after(provisional, created_at),
+        }
+    )
+    store = SQLiteStore(db)
+    store.save_schedule(schedule)
+    typer.echo(schedule.model_dump_json(indent=2))
+
+
+@schedules_app.command("list")
+def list_schedules(
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+) -> None:
+    """Print persisted schedules ordered by next run time."""
+    store = SQLiteStore(db)
+    for schedule in store.list_schedules():
+        enabled = "enabled" if schedule.enabled else "disabled"
+        typer.echo(f"{schedule.id}\t{schedule.kind}\t{enabled}\t{schedule.next_run_at}")
+
+
+@scheduler_app.command("run-once")
+def scheduler_run_once(
+    registry: Annotated[
+        Path,
+        typer.Option("--registry", help="Registry JSON path."),
+    ] = Path("goblins.json"),
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+) -> None:
+    """Run one deterministic scheduler pass and print any created runs."""
+    scheduler = Scheduler(registry=_load_registry(registry), store=SQLiteStore(db))
+    runs = scheduler.run_once()
+    typer.echo(json.dumps([run.model_dump(mode="json") for run in runs], indent=2))
+
+
+@scheduler_app.command("run")
+def scheduler_run(
+    registry: Annotated[
+        Path,
+        typer.Option("--registry", help="Registry JSON path."),
+    ] = Path("goblins.json"),
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+    interval_seconds: Annotated[
+        int,
+        typer.Option("--interval-seconds", help="Seconds between scheduler passes."),
+    ] = DEFAULT_INTERVAL_SECONDS,
+) -> None:
+    """Run scheduler passes until interrupted."""
+    scheduler = Scheduler(registry=_load_registry(registry), store=SQLiteStore(db))
+    try:
+        scheduler.run_loop(interval_seconds=interval_seconds)
+    except KeyboardInterrupt:
+        typer.echo("scheduler stopped")
 
 
 def _load_registry(path: Path) -> GoblinRegistry:
