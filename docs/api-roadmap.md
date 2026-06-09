@@ -67,6 +67,13 @@ target phase below.
   accounts/RBAC, NetworkPolicy, ingress TLS/options, PVC access modes, and
   externally managed bootstrap secrets.
 
+## Covered In Phase 17
+
+- Redis Streams event delivery alongside SQLite event history and Redis pub/sub.
+- `GET /events/stream/status`: inspect stream length, generated IDs, consumer groups,
+  and pending delivery counts.
+- CLI stream inspection and consumer-group read/ack commands for local proof.
+
 ## Later Infrastructure Follow-Up
 
 - Kubernetes runtime APIs.

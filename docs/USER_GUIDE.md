@@ -60,6 +60,8 @@ Inspect persisted state:
 ```bash
 goblin-king jobs list
 goblin-king events list --limit 20
+goblin-king events stream-status
+goblin-king events stream-read --ack
 goblin-king heartbeats list
 ```
 
@@ -87,7 +89,8 @@ http://127.0.0.1:8080/admin
 Log in with `local-dev-token`. The same React admin image is used by Docker and Helm.
 It lists goblins, worker images, jobs, schedules, runs, fanouts, long-running services,
 events, heartbeats, artifacts, audit logs, and rate-limit proof panels. The lab bench
-captures request payloads, responses, durable events, and live WebSocket messages. The
+captures request payloads, responses, durable events, Redis Stream delivery health, and
+live WebSocket messages. The
 King-side kill controls cancel jobs or stop registered services; they do not hard-kill
 containers or pods.
 

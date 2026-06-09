@@ -494,6 +494,27 @@ def test_websocket_streams_pubsub_events(tmp_path: Path, monkeypatch) -> None:
         assert json.loads(websocket.receive_text()) == event
 
 
+def test_event_stream_status_endpoint(tmp_path: Path, monkeypatch) -> None:
+    """Verify the API exposes Redis Stream delivery health."""
+
+    class FakeRedis:
+        def xinfo_stream(self, _stream: str) -> dict:
+            return {"length": 2, "last-generated-id": b"2-0"}
+
+        def xinfo_groups(self, _stream: str) -> list[dict]:
+            return [{b"name": b"goblin-king-event-readers", b"pending": 1}]
+
+    monkeypatch.setattr("goblin_king.events.Redis.from_url", lambda _url: FakeRedis())
+    client, _, _ = build_client(tmp_path)
+
+    response = client.get("/events/stream/status", headers=auth_headers())
+
+    assert response.status_code == 200
+    assert response.json()["stream"] == "goblin-king:events:stream"
+    assert response.json()["length"] == 2
+    assert response.json()["pending"] == 1
+
+
 def test_run_and_artifact_endpoints(tmp_path: Path) -> None:
     """Verify run lookup, artifact metadata, and safe file download."""
     client, store, artifact_root = build_client(tmp_path)

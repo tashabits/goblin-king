@@ -50,7 +50,7 @@ from goblin_king.contracts import (
     UserRecord,
     utc_now,
 )
-from goblin_king.events import EventBus
+from goblin_king.events import DEFAULT_EVENT_STREAM, EventBus, stream_status
 from goblin_king.fanout import (
     FanoutCreateRequest,
     FanoutDetail,
@@ -96,6 +96,18 @@ class EventListResponse(BaseModel):
 
     items: list[EventRecord]
     meta: PageMeta
+
+
+class EventStreamStatusResponse(BaseModel):
+    """Redis Stream delivery health response for operators."""
+
+    stream: str
+    ok: bool
+    length: int
+    last_generated_id: str | None
+    groups: list[dict[str, Any]]
+    pending: int
+    error: str | None = None
 
 
 class AuditLogListResponse(BaseModel):
@@ -1215,6 +1227,21 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         return EventListResponse(
             items=items,
             meta=PageMeta(limit=limit, offset=offset, count=len(items)),
+        )
+
+    @app.get(
+        "/events/stream/status",
+        response_model=EventStreamStatusResponse,
+        tags=["events"],
+        operation_id="getEventStreamStatus",
+    )
+    def get_event_stream_status(
+        stream: str = DEFAULT_EVENT_STREAM,
+        _principal: Principal = Depends(require_principal),
+    ) -> EventStreamStatusResponse:
+        """Return Redis Stream delivery status for event transport."""
+        return EventStreamStatusResponse.model_validate(
+            stream_status(state.settings.redis_url, stream=stream)
         )
 
     @app.websocket("/ws/runs")

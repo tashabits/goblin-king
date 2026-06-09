@@ -13,7 +13,13 @@ from redis.exceptions import RedisError
 
 from goblin_king.auth import create_api_token, create_project, create_user
 from goblin_king.contracts import JobRecord, RunRecord, ScheduleRecord, utc_now
-from goblin_king.events import DEFAULT_EVENT_CHANNEL
+from goblin_king.events import (
+    DEFAULT_EVENT_CHANNEL,
+    DEFAULT_EVENT_STREAM,
+    DEFAULT_EVENT_STREAM_GROUP,
+    read_stream_group,
+    stream_status,
+)
 from goblin_king.fanout import (
     FanoutCreateRequest,
     RetryCreateRequest,
@@ -451,6 +457,61 @@ def watch_events(
             pubsub.close()
         except UnboundLocalError:
             pass
+
+
+@events_app.command("stream-status")
+def event_stream_status(
+    redis_url: Annotated[
+        str,
+        typer.Option("--redis-url", help="Redis URL used by event streams."),
+    ] = DEFAULT_REDIS_URL,
+    stream: Annotated[
+        str,
+        typer.Option("--stream", help="Redis Stream key to inspect."),
+    ] = DEFAULT_EVENT_STREAM,
+) -> None:
+    """Print Redis Stream health and consumer lag metadata."""
+    typer.echo(json.dumps(stream_status(redis_url, stream=stream), indent=2))
+
+
+@events_app.command("stream-read")
+def event_stream_read(
+    redis_url: Annotated[
+        str,
+        typer.Option("--redis-url", help="Redis URL used by event streams."),
+    ] = DEFAULT_REDIS_URL,
+    stream: Annotated[
+        str,
+        typer.Option("--stream", help="Redis Stream key to read."),
+    ] = DEFAULT_EVENT_STREAM,
+    group: Annotated[
+        str,
+        typer.Option("--group", help="Redis Stream consumer group."),
+    ] = DEFAULT_EVENT_STREAM_GROUP,
+    consumer: Annotated[
+        str,
+        typer.Option("--consumer", help="Consumer name for this read."),
+    ] = "goblin-king-cli",
+    limit: Annotated[int, typer.Option("--limit", help="Maximum events to read.")] = 10,
+    ack: Annotated[
+        bool,
+        typer.Option("--ack", help="Acknowledge messages after printing them."),
+    ] = False,
+) -> None:
+    """Read event envelopes from Redis Streams through a consumer group."""
+    try:
+        for event in read_stream_group(
+            redis_url,
+            stream=stream,
+            group=group,
+            consumer=consumer,
+            count=limit,
+            ack=ack,
+        ):
+            typer.echo(json.dumps(event))
+    except RedisError as error:
+        typer.echo(f"redis stream read failed: {error}", err=True)
+        raise typer.Exit(1) from error
 
 
 @heartbeats_app.command("list")

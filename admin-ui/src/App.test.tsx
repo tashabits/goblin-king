@@ -33,6 +33,15 @@ const fixtures = {
   },
   runs: { items: [], meta: { limit: 100, offset: 0, count: 0 } },
   events: { items: [], meta: { limit: 50, offset: 0, count: 0 } },
+  eventStream: {
+    stream: "goblin-king:events:stream",
+    ok: true,
+    length: 3,
+    last_generated_id: "1-0",
+    groups: [],
+    pending: 0,
+    error: null,
+  },
   heartbeats: [],
   services: [
     {
@@ -92,6 +101,7 @@ function mockFetch() {
     if (url.includes("/jobs/fanout")) return jsonResponse({ status: "queued" });
     if (url.includes("/retry")) return jsonResponse({ id: "job-retry", status: "queued" });
     if (url.includes("/runs?")) return jsonResponse(fixtures.runs);
+    if (url.includes("/events/stream/status")) return jsonResponse(fixtures.eventStream);
     if (url.includes("/events")) return jsonResponse(fixtures.events);
     if (url.includes("/heartbeats")) return jsonResponse(fixtures.heartbeats);
     if (url.includes("/services/long-running") && init?.method === "POST" && url.endsWith("/probe")) {
@@ -175,6 +185,7 @@ describe("App", () => {
     expect(screen.getAllByText("Fanout & Retry").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Long Services").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Durable Events").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Redis Stream Delivery").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Discovery").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Admin & Auth").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Cleanup").length).toBeGreaterThan(0);

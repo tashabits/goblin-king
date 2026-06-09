@@ -564,7 +564,7 @@ Primary direction:
 
 ### Phase 17: Redis Streams Durable Delivery
 
-- Status: planned.
+- Status: implemented in Phase 17.
 - Add Redis Streams alongside SQLite event history and Redis pub/sub.
 - Add stream health, pending entry, consumer lag, and delivery proof surfaces in API,
   CLI, and admin.

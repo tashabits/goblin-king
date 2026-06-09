@@ -67,6 +67,16 @@ type EventRecord = {
   payload: Record<string, unknown>;
 };
 
+type EventStreamStatus = {
+  stream: string;
+  ok: boolean;
+  length: number;
+  last_generated_id?: string | null;
+  groups: Record<string, unknown>[];
+  pending: number;
+  error?: string | null;
+};
+
 type Heartbeat = {
   owner_id: string;
   owner_type: string;
@@ -198,6 +208,7 @@ export function App() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [events, setEvents] = useState<EventRecord[]>([]);
+  const [eventStream, setEventStream] = useState<EventStreamStatus | null>(null);
   const [heartbeats, setHeartbeats] = useState<Heartbeat[]>([]);
   const [services, setServices] = useState<LongService[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -283,6 +294,7 @@ export function App() {
         jobPayload,
         runPayload,
         eventPayload,
+        eventStreamPayload,
         heartbeatPayload,
         servicePayload,
         schedulePayload,
@@ -295,6 +307,7 @@ export function App() {
         api("/jobs?limit=100", {}, "GET /jobs"),
         api("/runs?limit=100", {}, "GET /runs"),
         api("/events?limit=50", {}, "GET /events"),
+        api("/events/stream/status", {}, "GET /events/stream/status"),
         api("/heartbeats", {}, "GET /heartbeats"),
         api("/services/long-running", {}, "GET /services/long-running"),
         api("/schedules", {}, "GET /schedules"),
@@ -307,6 +320,7 @@ export function App() {
       setJobs(latestFirst(jobPayload.items));
       setRuns(latestFirst(runPayload.items));
       setEvents(latestFirst(eventPayload.items));
+      setEventStream(eventStreamPayload);
       setHeartbeats(heartbeatPayload);
       setServices(usefulServicesFirst(servicePayload));
       setSchedules(schedulePayload);
@@ -668,6 +682,18 @@ export function App() {
         <section id="events" className="panel two-column">
           <Table title="Durable Events" rows={events.map((event) => [event.event_type, event.source, event.created_at])} />
           <Table title="Live Event Rail" rows={liveEvents.map((event) => [event.event_type, event.source, JSON.stringify(event.payload)])} />
+          <Table
+            title="Redis Stream Delivery"
+            rows={[
+              ["Stream", eventStream?.stream || "goblin-king:events:stream"],
+              ["Status", eventStream?.ok ? "healthy" : "unavailable"],
+              ["Length", eventStream?.length ?? 0],
+              ["Pending", eventStream?.pending ?? 0],
+              ["Last ID", eventStream?.last_generated_id || "none"],
+              ["Groups", eventStream?.groups?.length ?? 0],
+              ["Error", eventStream?.error || "none"],
+            ]}
+          />
           <Table title="Heartbeats" rows={heartbeats.map((beat) => [beat.owner_type, beat.owner_id, beat.status, beat.last_seen_at])} />
         </section>
 
