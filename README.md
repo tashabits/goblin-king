@@ -33,6 +33,7 @@ Helm chart.
   - [Adopting Projects](docs/ADOPTING_PROJECTS.md)
   - [Public API Boundary](docs/PUBLIC_API.md)
   - [Release Checklist](docs/RELEASE_CHECKLIST.md)
+  - [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md)
 
 ## Quick Start
 
@@ -407,6 +408,7 @@ requires receipts.
 | [Adopting Projects](docs/ADOPTING_PROJECTS.md) | How another project installs Goblin King, defines goblin plugins, builds workers, and proves the integration. |
 | [First Hour Guide](docs/FIRST_HOUR.md) | Fast path from internal install to first project goblin run. |
 | [Release Checklist](docs/RELEASE_CHECKLIST.md) | Internal wheel, Docker image, local CI, Docker adoption, and Helm proof checklist. |
+| [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md) | Phase 16-21 closeout audit, current proof surfaces, and explicit deferred items. |
 | [Compatibility Matrix](docs/COMPATIBILITY.md) | Contract and schema compatibility versions for project-ready adoption. |
 | [Upgrade Guide](docs/UPGRADING.md) | Host-project upgrade procedure and compatibility fixture policy. |
 | [Migration Guide](docs/MIGRATION_GUIDE.md) | How to move existing scripts and workers into goblin plugins. |
@@ -431,5 +433,6 @@ status and cleanup APIs. Scoped hard runtime termination is available for
 Goblin-labeled Docker and Kubernetes runtime objects. Image promotion and deployment
 orchestration records give operators a cloud-neutral proof trail for builds, registry
 promotion, Helm render intent, and discovery reloads. Remaining follow-up work is
-limited to the roadmap closeout, repo cleanup, container-first worker contract phases,
-per-goblin resource policies, and cloud-specific recipes.
+tracked in [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md) and limited to repo
+cleanup, container-first worker contract phases, per-goblin resource policies, public
+packaging, and explicitly deferred cloud-specific recipes.
