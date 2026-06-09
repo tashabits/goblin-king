@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from goblin_king.api import create_app
 from goblin_king.api_settings import ApiSettings
+from goblin_king.auth import hash_api_token
 from goblin_king.contracts import (
     ArtifactRecord,
     GoblinResult,
@@ -35,6 +36,23 @@ def build_client(tmp_path: Path) -> tuple[TestClient, SQLiteStore, Path]:
     return TestClient(create_app(settings)), SQLiteStore(settings.db), artifact_root
 
 
+def build_client_with_limit(
+    tmp_path: Path,
+    rate_limit_per_minute: int,
+) -> tuple[TestClient, SQLiteStore]:
+    """Create a test API app with a custom local rate limit."""
+    settings = ApiSettings(
+        registry=Path("examples/goblins.json").resolve(),
+        images=Path("goblin-images.json").resolve(),
+        db=tmp_path / "api.sqlite3",
+        redis_url="redis://localhost:6379/0",
+        artifact_root=tmp_path / "artifacts",
+        auth_token="test-token",
+        rate_limit_per_minute=rate_limit_per_minute,
+    )
+    return TestClient(create_app(settings)), SQLiteStore(settings.db)
+
+
 def auth_headers() -> dict[str, str]:
     """Return the static bearer token used by test settings."""
     return {"Authorization": "Bearer test-token"}
@@ -45,10 +63,12 @@ def test_health_and_goblins_endpoints(tmp_path: Path) -> None:
     client, _, _ = build_client(tmp_path)
 
     health = client.get("/health")
-    goblins = client.get("/goblins")
+    unauthenticated = client.get("/goblins")
+    goblins = client.get("/goblins", headers=auth_headers())
 
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
+    assert unauthenticated.status_code == 401
     assert goblins.status_code == 200
     assert goblins.json()[0]["kind"] == "example.echo"
     assert goblins.json()[0]["worker_mapped"] is True
@@ -85,7 +105,7 @@ def test_goblins_endpoint_uses_project_settings(tmp_path: Path) -> None:
     )
     client = TestClient(create_app(settings))
 
-    response = client.get("/goblins")
+    response = client.get("/goblins", headers=auth_headers())
 
     assert response.status_code == 200
     assert response.json()[0]["kind"] == "project.echo"
@@ -101,7 +121,7 @@ def test_jobs_endpoint_queues_without_running(tmp_path: Path) -> None:
         json={"kind": "example.echo", "input": {"message": "hello api"}},
         headers=auth_headers(),
     )
-    listed = client.get("/jobs")
+    listed = client.get("/jobs", headers=auth_headers())
     loaded = store.get_job(created.json()["id"])
 
     assert unauthorized.status_code == 401
@@ -110,10 +130,14 @@ def test_jobs_endpoint_queues_without_running(tmp_path: Path) -> None:
     assert loaded is not None
     assert loaded.status == "queued"
     assert listed.status_code == 200
-    assert listed.json()[0]["id"] == created.json()["id"]
-    events = client.get("/events", params={"job_id": created.json()["id"]})
+    assert listed.json()["items"][0]["id"] == created.json()["id"]
+    events = client.get(
+        "/events",
+        params={"job_id": created.json()["id"]},
+        headers=auth_headers(),
+    )
     assert events.status_code == 200
-    assert events.json()[0]["event_type"] == "job.queued"
+    assert events.json()["items"][0]["event_type"] == "job.queued"
 
 
 def test_fanout_api_creates_and_reads_batch(tmp_path: Path) -> None:
@@ -133,8 +157,8 @@ def test_fanout_api_creates_and_reads_batch(tmp_path: Path) -> None:
         headers=auth_headers(),
     )
     fanout_id = created.json()["fanout"]["id"]
-    shown = client.get(f"/fanouts/{fanout_id}")
-    listed = client.get("/fanouts")
+    shown = client.get(f"/fanouts/{fanout_id}", headers=auth_headers())
+    listed = client.get("/fanouts", headers=auth_headers())
 
     assert unauthorized.status_code == 401
     assert created.status_code == 200
@@ -194,7 +218,7 @@ def test_get_job_and_cancel_job(tmp_path: Path) -> None:
     )
     store.save_job(job)
 
-    fetched = client.get("/jobs/job-1")
+    fetched = client.get("/jobs/job-1", headers=auth_headers())
     cancelled = client.post("/jobs/job-1/cancel", headers=auth_headers())
 
     assert fetched.status_code == 200
@@ -202,7 +226,7 @@ def test_get_job_and_cancel_job(tmp_path: Path) -> None:
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == "cancelled"
     assert client.post("/jobs/job-1/cancel", headers=auth_headers()).status_code == 409
-    assert client.get("/jobs/missing").status_code == 404
+    assert client.get("/jobs/missing", headers=auth_headers()).status_code == 404
 
 
 def test_schedule_create_list_and_patch(tmp_path: Path) -> None:
@@ -225,7 +249,7 @@ def test_schedule_create_list_and_patch(tmp_path: Path) -> None:
         json={"enabled": False, "priority": 200},
         headers=auth_headers(),
     )
-    listed = client.get("/schedules")
+    listed = client.get("/schedules", headers=auth_headers())
 
     assert created.status_code == 200
     assert patched.status_code == 200
@@ -239,8 +263,12 @@ def test_schedule_create_list_and_patch(tmp_path: Path) -> None:
         headers=auth_headers(),
     )
     assert invalid.status_code == 422
-    schedule_events = client.get("/events", params={"schedule_id": schedule_id})
-    assert [event["event_type"] for event in schedule_events.json()] == [
+    schedule_events = client.get(
+        "/events",
+        params={"schedule_id": schedule_id},
+        headers=auth_headers(),
+    )
+    assert [event["event_type"] for event in schedule_events.json()["items"]] == [
         "schedule.created",
         "schedule.updated",
     ]
@@ -259,9 +287,9 @@ def test_heartbeat_endpoints(tmp_path: Path) -> None:
     )
     store.upsert_heartbeat(heartbeat)
 
-    listed = client.get("/heartbeats")
-    fetched = client.get("/heartbeats/worker-1")
-    missing = client.get("/heartbeats/missing")
+    listed = client.get("/heartbeats", headers=auth_headers())
+    fetched = client.get("/heartbeats/worker-1", headers=auth_headers())
+    missing = client.get("/heartbeats/missing", headers=auth_headers())
 
     assert listed.status_code == 200
     assert listed.json()[0]["owner_id"] == "worker-1"
@@ -297,7 +325,7 @@ def test_websocket_streams_pubsub_events(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("goblin_king.api.Redis.from_url", lambda _url: FakeRedis())
     client, _, _ = build_client(tmp_path)
 
-    with client.websocket_connect("/ws/runs") as websocket:
+    with client.websocket_connect("/ws/runs?token=test-token") as websocket:
         assert json.loads(websocket.receive_text()) == event
 
 
@@ -331,9 +359,9 @@ def test_run_and_artifact_endpoints(tmp_path: Path) -> None:
         )
     )
 
-    run = client.get("/runs/run-1")
-    artifacts = client.get("/runs/run-1/artifacts")
-    download = client.get("/runs/run-1/artifacts/report.txt")
+    run = client.get("/runs/run-1", headers=auth_headers())
+    artifacts = client.get("/runs/run-1/artifacts", headers=auth_headers())
+    download = client.get("/runs/run-1/artifacts/report.txt", headers=auth_headers())
 
     assert run.status_code == 200
     assert run.json()["id"] == "run-1"
@@ -341,5 +369,125 @@ def test_run_and_artifact_endpoints(tmp_path: Path) -> None:
     assert artifacts.json()[0]["download_url"] == "/runs/run-1/artifacts/report.txt"
     assert download.status_code == 200
     assert download.text == "hello artifact"
-    assert client.get("/runs/missing").status_code == 404
-    assert client.get("/runs/run-1/artifacts/missing.txt").status_code == 404
+    assert client.get("/runs/missing", headers=auth_headers()).status_code == 404
+    assert (
+        client.get("/runs/run-1/artifacts/missing.txt", headers=auth_headers()).status_code
+        == 404
+    )
+
+
+def test_admin_creates_user_project_and_hashed_token(tmp_path: Path) -> None:
+    """Verify admin setup creates users, projects, and hashed API tokens."""
+    client, store, _ = build_client(tmp_path)
+
+    user = client.post(
+        "/admin/users",
+        json={"email": "dev@example.test", "display_name": "Dev"},
+        headers=auth_headers(),
+    )
+    project = client.post(
+        "/admin/projects",
+        json={"name": "Project A"},
+        headers=auth_headers(),
+    )
+    token = client.post(
+        "/admin/tokens",
+        json={
+            "name": "project-token",
+            "user_id": user.json()["id"],
+            "project_id": project.json()["id"],
+            "role": "member",
+        },
+        headers=auth_headers(),
+    )
+
+    raw_token = token.json()["raw_token"]
+    stored = store.get_api_token_by_hash(hash_api_token(raw_token))
+
+    assert user.status_code == 200
+    assert project.status_code == 200
+    assert token.status_code == 200
+    assert stored is not None
+    assert stored.token_hash == hash_api_token(raw_token)
+    assert raw_token not in stored.model_dump_json()
+
+
+def test_project_scoped_token_cannot_cross_project(tmp_path: Path) -> None:
+    """Verify project-scoped tokens can only access their own project resources."""
+    client, _, _ = build_client(tmp_path)
+    user = client.post(
+        "/admin/users",
+        json={"email": "dev@example.test", "display_name": "Dev"},
+        headers=auth_headers(),
+    ).json()
+    project_a = client.post(
+        "/admin/projects",
+        json={"name": "Project A"},
+        headers=auth_headers(),
+    ).json()
+    project_b = client.post(
+        "/admin/projects",
+        json={"name": "Project B"},
+        headers=auth_headers(),
+    ).json()
+    token_a = client.post(
+        "/admin/tokens",
+        json={
+            "name": "token-a",
+            "user_id": user["id"],
+            "project_id": project_a["id"],
+            "role": "member",
+        },
+        headers=auth_headers(),
+    ).json()["raw_token"]
+    token_b = client.post(
+        "/admin/tokens",
+        json={
+            "name": "token-b",
+            "user_id": user["id"],
+            "project_id": project_b["id"],
+            "role": "member",
+        },
+        headers=auth_headers(),
+    ).json()["raw_token"]
+
+    created = client.post(
+        "/jobs",
+        json={"kind": "example.echo", "input": {"message": "scoped"}},
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    allowed = client.get(
+        f"/jobs/{created.json()['id']}",
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    denied = client.get(
+        f"/jobs/{created.json()['id']}",
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+
+    assert created.status_code == 200
+    assert created.json()["project_id"] == project_a["id"]
+    assert allowed.status_code == 200
+    assert denied.status_code == 403
+
+
+def test_audit_logs_rate_limit_pagination_and_openapi(tmp_path: Path) -> None:
+    """Verify audit logs, local rate limits, pagination metadata, and OpenAPI hardening."""
+    client, store = build_client_with_limit(tmp_path, rate_limit_per_minute=1)
+
+    first = client.get("/goblins", headers=auth_headers())
+    limited = client.get("/goblins", headers=auth_headers())
+    audit_logs = client.get("/audit-logs", headers=auth_headers())
+    jobs = client.get("/jobs", params={"limit": 1, "offset": 0}, headers=auth_headers())
+    openapi = client.get("/openapi.json")
+
+    assert first.status_code == 200
+    assert limited.status_code == 429
+    assert any(log.action == "rate_limit.denied" for log in store.list_audit_logs())
+    assert audit_logs.status_code in {200, 429}
+    assert jobs.status_code in {200, 429}
+    if jobs.status_code == 200:
+        assert jobs.json()["meta"]["limit"] == 1
+    assert openapi.status_code == 200
+    assert "HTTPBearer" in openapi.json()["components"]["securitySchemes"]
+    assert "createJob" in str(openapi.json())

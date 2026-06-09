@@ -56,6 +56,48 @@ def test_project_goblins_list_and_validate() -> None:
     assert "goblins\t1" in validated.stdout
 
 
+def test_auth_setup_commands_create_user_project_and_token(tmp_path: Path) -> None:
+    """Verify auth CLI commands create local users, projects, and hashed tokens."""
+    db_path = tmp_path / "goblin.sqlite3"
+    user = runner.invoke(
+        app,
+        [
+            "auth",
+            "create-user",
+            "--email",
+            "dev@example.test",
+            "--display-name",
+            "Dev",
+            "--db",
+            str(db_path),
+        ],
+    )
+    project = runner.invoke(
+        app,
+        ["auth", "create-project", "--name", "Project A", "--db", str(db_path)],
+    )
+    token = runner.invoke(
+        app,
+        [
+            "auth",
+            "create-token",
+            "--name",
+            "token",
+            "--user-id",
+            json.loads(user.stdout)["id"],
+            "--project-id",
+            json.loads(project.stdout)["id"],
+            "--db",
+            str(db_path),
+        ],
+    )
+
+    assert user.exit_code == 0
+    assert project.exit_code == 0
+    assert token.exit_code == 0
+    assert json.loads(token.stdout)["raw_token"].startswith("gk_")
+
+
 def test_project_init_package_creates_template(tmp_path: Path) -> None:
     """Verify the package template generator is reachable from the CLI."""
     result = runner.invoke(
