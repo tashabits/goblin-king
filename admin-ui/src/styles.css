@@ -1,0 +1,386 @@
+:root {
+  color: #e9edf4;
+  background: #12151d;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(circle at top left, rgba(74, 222, 128, 0.18), transparent 34rem),
+    linear-gradient(135deg, #11141c 0%, #1b2230 48%, #11141c 100%);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  align-items: center;
+  background: #4ade80;
+  border: 0;
+  border-radius: 8px;
+  color: #0e1511;
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 750;
+  gap: 0.45rem;
+  justify-content: center;
+  min-height: 2.35rem;
+  padding: 0.55rem 0.8rem;
+}
+
+button:hover {
+  filter: brightness(1.08);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  filter: saturate(0.35);
+  opacity: 0.55;
+}
+
+button.ghost {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e9edf4;
+}
+
+button.danger {
+  background: #fb7185;
+  color: #21070c;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+input,
+select,
+textarea {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  color: #f8fafc;
+  min-height: 2.35rem;
+  padding: 0.55rem 0.65rem;
+  width: 100%;
+}
+
+textarea {
+  min-height: 10rem;
+  resize: vertical;
+}
+
+label {
+  color: #aab6c7;
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin: 0.8rem 0 0.3rem;
+}
+
+.check-row {
+  align-items: center;
+  display: flex;
+  gap: 0.55rem;
+}
+
+.check-row input {
+  min-height: auto;
+  width: auto;
+}
+
+code,
+pre {
+  font-family: "JetBrains Mono", "Cascadia Code", monospace;
+}
+
+.login-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 1rem;
+}
+
+.login-card {
+  background: rgba(18, 21, 29, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+  max-width: 30rem;
+  padding: 2rem;
+  width: 100%;
+}
+
+.login-crown,
+.brand-mark {
+  color: #facc15;
+}
+
+.login-card h1 {
+  font-size: 2rem;
+  margin: 0.2rem 0 0.4rem;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 17rem minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+aside {
+  background: rgba(10, 14, 21, 0.92);
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 1.2rem;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+aside h1 {
+  font-size: 1.35rem;
+  margin: 0.3rem 0 0;
+}
+
+aside p {
+  color: #8fa0b8;
+  margin-top: 0.2rem;
+}
+
+nav {
+  display: grid;
+  gap: 0.3rem;
+  margin: 2rem 0;
+}
+
+nav a {
+  border-radius: 8px;
+  color: #dbe7f6;
+  padding: 0.6rem 0.7rem;
+  text-decoration: none;
+}
+
+nav a:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+main {
+  padding: 1.5rem;
+}
+
+.hero,
+.panel,
+.stat {
+  background: rgba(20, 27, 39, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+}
+
+.hero {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  padding: 1.2rem;
+}
+
+.hero h2 {
+  font-size: clamp(1.8rem, 3vw, 3rem);
+  line-height: 1.02;
+  margin: 0.2rem 0 0.4rem;
+  max-width: 52rem;
+}
+
+.eyebrow {
+  color: #86efac;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.quote,
+.muted,
+.empty {
+  color: #aab6c7;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.grid.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.stat {
+  min-height: 8rem;
+  padding: 1rem;
+}
+
+.stat svg {
+  color: #93c5fd;
+}
+
+.stat span {
+  color: #aab6c7;
+  display: block;
+  margin-top: 0.75rem;
+}
+
+.stat strong {
+  display: block;
+  font-size: 2rem;
+  margin-top: 0.2rem;
+}
+
+.panel {
+  margin-bottom: 1rem;
+  padding: 1rem;
+}
+
+.panel h3 {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  margin: 0 0 0.9rem;
+}
+
+.two-column {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+
+.cards {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+
+.task {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 8px;
+  padding: 0.9rem;
+}
+
+.task span {
+  color: #86efac;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.task.failed span,
+.task.cancelled span,
+.task.stopped span {
+  color: #fda4af;
+}
+
+.task h4 {
+  margin: 0.25rem 0;
+}
+
+.task code {
+  color: #bfdbfe;
+  overflow-wrap: anywhere;
+}
+
+.task pre,
+.traffic {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  color: #dbeafe;
+  max-height: 24rem;
+  overflow: auto;
+  padding: 0.8rem;
+  white-space: pre-wrap;
+}
+
+.table-wrap {
+  overflow: auto;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: #dbe7f6;
+  max-width: 24rem;
+  overflow-wrap: anywhere;
+  padding: 0.55rem 0.45rem;
+  vertical-align: top;
+}
+
+.error {
+  background: rgba(251, 113, 133, 0.15);
+  border: 1px solid rgba(251, 113, 133, 0.5);
+  border-radius: 8px;
+  color: #fecdd3;
+  margin-bottom: 1rem;
+  padding: 0.8rem;
+}
+
+@media (max-width: 980px) {
+  .app-shell,
+  .two-column {
+    grid-template-columns: 1fr;
+  }
+
+  aside {
+    height: auto;
+    position: static;
+  }
+
+  .grid.four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hero {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 1rem;
+  }
+}
+
+@media (max-width: 560px) {
+  .grid.four {
+    grid-template-columns: 1fr;
+  }
+
+  main {
+    padding: 0.75rem;
+  }
+}

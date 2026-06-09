@@ -12,6 +12,7 @@ scheduler:
   enabled: true
   replicas: 1
   intervalSeconds: 5
+  runtime: kubernetes
 
 redis:
   image: redis:7-alpine
@@ -31,6 +32,12 @@ config:
 
 admin:
   enabled: true
+  image:
+    repository: goblin-king-admin-ui
+    tag: local
+    pullPolicy: IfNotPresent
+  port: 8080
+  longHelloUrl: http://goblin-king-long-hello
   ingress:
     enabled: true
     className: nginx

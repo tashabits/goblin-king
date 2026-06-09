@@ -67,14 +67,34 @@ Start the API:
 goblin-king api run --settings goblin-king-api.json
 ```
 
-Open the admin UI:
+Start the React admin lab bench with Docker Compose:
 
-```text
-http://127.0.0.1:8000/admin?token=local-dev-token
+```bash
+make admin-build
+make admin-up
 ```
 
-The admin UI is served by the FastAPI process in both Docker and Helm deployments. It
-lists goblins, worker images, jobs, long-running services, events, and heartbeats.
+Open:
+
+```text
+http://127.0.0.1:8080/admin
+```
+
+Log in with `local-dev-token`. The same React admin image is used by Docker and Helm.
+It lists goblins, worker images, jobs, schedules, runs, fanouts, long-running services,
+events, heartbeats, artifacts, audit logs, and rate-limit proof panels. The lab bench
+captures request payloads, responses, durable events, and live WebSocket messages. The
+King-side kill controls cancel jobs or stop registered services; they do not hard-kill
+containers or pods.
+
+For a screenshot walkthrough of each admin panel, see
+[Goblin King Admin Guide](ADMIN_GUIDE.md).
+
+Use the Admin/Auth cleanup controls to remove old runtime rows after a testing pass.
+Always preview first; removal clears terminal jobs and runs, completed fanouts, captured
+events, worker heartbeats, and stopped or unprobed long-service rows. It preserves
+schedules, users, projects, API tokens, active jobs, running services, and scheduler
+heartbeat.
 
 The API requires bearer auth for everything except `/health`:
 
@@ -103,6 +123,10 @@ curl -X POST http://127.0.0.1:8000/services/long-running/<service-id>/probe \
 ```
 
 Each probe returns `Hello World from long running service` with a fresh timestamp.
+In Docker Compose, register `http://long-hello:8080` from the admin UI because the API
+container resolves that service name. In Helm, register `http://goblin-king-long-hello`.
+The React admin preloads the correct default from `/admin/config.json` for each
+deployment.
 
 ## Optional Kubernetes Deployment
 
@@ -124,6 +148,31 @@ Disable ingress when another deployment layer owns routing:
 ```bash
 helm template goblin-king charts/goblin-king --set admin.ingress.enabled=false
 ```
+
+When deployed with the default ingress, open:
+
+```text
+http://goblin-king.local/admin
+```
+
+The admin service proxies API traffic through `/admin-api/*` and live run events through
+`/admin-ws/runs`, so the browser uses the same UI paths in Docker and Kubernetes.
+
+For a Docker Desktop Kubernetes smoke test, make sure the cluster can see the locally
+built images. Some local clusters use a separate containerd image store from `docker
+image ls`. If pods report `ErrImageNeverPull` or appear to use stale `:local` images,
+save the rebuilt API/admin/worker images, copy them into a node debug pod under
+`/host/tmp`, and import them with:
+
+```bash
+chroot /host ctr -n k8s.io images import /tmp/goblin-king-local.tar
+chroot /host ctr -n k8s.io images import /tmp/goblin-king-admin-local.tar
+chroot /host ctr -n k8s.io images import /tmp/goblin-king-workers.tar
+```
+
+The Kubernetes proof flow should include a completed `example.hello` run returning
+`Hello World` and two `example.long-hello` probes returning `Hello World from long
+running service` with different timestamps.
 
 ## Sample Goblins
 

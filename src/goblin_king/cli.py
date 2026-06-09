@@ -24,7 +24,7 @@ from goblin_king.fanout import (
 )
 from goblin_king.project import ProjectSettings, ProjectSettingsError
 from goblin_king.registry import GoblinRegistry, RegistryError
-from goblin_king.runtime import DockerRuntime, InProcessRuntime, new_run_context
+from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRuntime, new_run_context
 from goblin_king.scheduler import DEFAULT_INTERVAL_SECONDS, Scheduler, next_run_after
 from goblin_king.store import DEFAULT_DB_PATH, SQLiteStore
 from goblin_king.templates import TemplateError, init_package
@@ -58,7 +58,7 @@ app.add_typer(schedules_app, name="schedules")
 app.add_typer(scheduler_app, name="scheduler")
 app.add_typer(workers_app, name="workers")
 
-RuntimeOption = Literal["docker", "in-process"]
+RuntimeOption = Literal["docker", "kubernetes", "in-process"]
 DEFAULT_IMAGES_PATH = Path("goblin-images.json")
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 DEFAULT_PROJECT_PATH = Path("goblin-king-project.json")
@@ -237,6 +237,17 @@ def submit_job(
     started_at = utc_now()
     if runtime == "docker":
         result = DockerRuntime(
+            workers=_load_workers(images),
+            redis_url=redis_url,
+        ).run(
+            definition,
+            entrypoint,
+            input_payload,
+            context,
+            timeout_seconds=definition.timeout_seconds,
+        )
+    elif runtime == "kubernetes":
+        result = KubernetesRuntime(
             workers=_load_workers(images),
             redis_url=redis_url,
         ).run(
@@ -506,7 +517,7 @@ def scheduler_run_once(
         registry=_load_registry(registry),
         store=SQLiteStore(db),
         runtime_mode=runtime,
-        workers=_load_workers(images) if runtime == "docker" else None,
+        workers=_load_workers(images) if runtime in {"docker", "kubernetes"} else None,
         redis_url=redis_url,
     )
     runs = scheduler.run_once()
@@ -542,7 +553,7 @@ def scheduler_run(
         registry=_load_registry(registry),
         store=SQLiteStore(db),
         runtime_mode=runtime,
-        workers=_load_workers(images) if runtime == "docker" else None,
+        workers=_load_workers(images) if runtime in {"docker", "kubernetes"} else None,
         redis_url=redis_url,
     )
     try:

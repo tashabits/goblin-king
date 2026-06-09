@@ -13,9 +13,12 @@ from goblin_king.api_settings import ApiSettings
 from goblin_king.auth import hash_api_token
 from goblin_king.contracts import (
     ArtifactRecord,
+    EventRecord,
+    FanoutRecord,
     GoblinResult,
     HeartbeatRecord,
     JobRecord,
+    LongServiceRecord,
     RunRecord,
     utc_now,
 )
@@ -360,11 +363,14 @@ def test_run_and_artifact_endpoints(tmp_path: Path) -> None:
     )
 
     run = client.get("/runs/run-1", headers=auth_headers())
+    runs = client.get("/runs", headers=auth_headers())
     artifacts = client.get("/runs/run-1/artifacts", headers=auth_headers())
     download = client.get("/runs/run-1/artifacts/report.txt", headers=auth_headers())
 
     assert run.status_code == 200
     assert run.json()["id"] == "run-1"
+    assert runs.status_code == 200
+    assert runs.json()["items"][0]["id"] == "run-1"
     assert artifacts.status_code == 200
     assert artifacts.json()[0]["download_url"] == "/runs/run-1/artifacts/report.txt"
     assert download.status_code == 200
@@ -410,6 +416,124 @@ def test_admin_creates_user_project_and_hashed_token(tmp_path: Path) -> None:
     assert stored is not None
     assert stored.token_hash == hash_api_token(raw_token)
     assert raw_token not in stored.model_dump_json()
+
+
+def test_admin_cleanup_runtime_rows_dry_run_and_delete(tmp_path: Path) -> None:
+    """Verify admins can preview and remove historical runtime rows safely."""
+    client, store, _ = build_client(tmp_path)
+    now = utc_now()
+    store.save_fanout(FanoutRecord(id="fanout-1", created_at=now, created_by="test"))
+    store.save_job(
+        JobRecord(
+            id="terminal-job",
+            kind="example.echo",
+            input={},
+            created_at=now,
+            status="completed",
+            fanout_id="fanout-1",
+        )
+    )
+    store.save_job(
+        JobRecord(
+            id="live-job",
+            kind="example.echo",
+            input={},
+            created_at=now,
+            status="queued",
+            fanout_id="fanout-live",
+        )
+    )
+    store.save_run(
+        RunRecord(
+            id="run-1",
+            job_id="terminal-job",
+            kind="example.echo",
+            status="completed",
+            started_at=now,
+            result=GoblinResult.ok(
+                artifacts=[
+                    ArtifactRecord(
+                        name="artifact-proof.txt",
+                        uri="artifact-proof.txt",
+                        media_type="text/plain",
+                    )
+                ]
+            ),
+        )
+    )
+    store.save_event(
+        EventRecord(
+            id="event-1",
+            created_at=now,
+            event_type="job.completed",
+            source="api",
+        )
+    )
+    store.upsert_heartbeat(
+        HeartbeatRecord(
+            owner_id="worker-1",
+            owner_type="worker",
+            status="completed",
+            last_seen_at=now,
+            job_id="terminal-job",
+            run_id="run-1",
+        )
+    )
+    store.upsert_heartbeat(
+        HeartbeatRecord(
+            owner_id="scheduler-1",
+            owner_type="scheduler",
+            status="alive",
+            last_seen_at=now,
+        )
+    )
+    store.save_long_service(
+        LongServiceRecord(
+            id="stopped-service",
+            kind="example.long-hello",
+            base_url="http://long-hello:8080",
+            status="stopped",
+            created_at=now,
+        )
+    )
+    store.save_long_service(
+        LongServiceRecord(
+            id="running-service",
+            kind="example.long-hello",
+            base_url="http://long-hello:8080",
+            status="running",
+            created_at=now,
+            last_probe_at=now,
+        )
+    )
+
+    unauthorized = client.post("/admin/cleanup/runtime", json={"dry_run": True})
+    preview = client.post(
+        "/admin/cleanup/runtime",
+        json={"dry_run": True},
+        headers=auth_headers(),
+    )
+    deleted = client.post(
+        "/admin/cleanup/runtime",
+        json={"dry_run": False},
+        headers=auth_headers(),
+    )
+
+    assert unauthorized.status_code == 401
+    assert preview.status_code == 200
+    assert preview.json()["deleted"] is False
+    assert preview.json()["counts"]["jobs"] == 1
+    assert preview.json()["counts"]["runs"] == 1
+    assert preview.json()["counts"]["long_services"] == 1
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted"] is True
+    assert store.get_job("terminal-job") is None
+    assert store.get_run("run-1") is None
+    assert store.get_job("live-job") is not None
+    assert store.get_heartbeat("scheduler-1") is not None
+    assert store.get_heartbeat("worker-1") is None
+    assert store.get_long_service("stopped-service") is None
+    assert store.get_long_service("running-service") is not None
 
 
 def test_project_scoped_token_cannot_cross_project(tmp_path: Path) -> None:

@@ -17,6 +17,7 @@ from sqlalchemy import (
     Table,
     Text,
     create_engine,
+    delete,
     inspect,
     or_,
     select,
@@ -691,6 +692,163 @@ class SQLiteStore:
             )
         return self.get_long_service(service_id)
 
+    def update_long_service_status(
+        self,
+        service_id: str,
+        *,
+        status: str,
+        last_probe_json: dict[str, Any] | None = None,
+    ) -> LongServiceRecord | None:
+        """Update the lifecycle status for a registered long-running service goblin."""
+        values: dict[str, Any] = {"status": status}
+        if last_probe_json is not None:
+            values["last_probe_json"] = json.dumps(last_probe_json)
+        with self.engine.begin() as connection:
+            connection.execute(
+                update(long_services_table)
+                .where(long_services_table.c.id == service_id)
+                .values(**values)
+            )
+        return self.get_long_service(service_id)
+
+    def cleanup_runtime_rows(
+        self,
+        *,
+        project_id: str | None = None,
+        dry_run: bool = True,
+        include_unprobed_services: bool = True,
+    ) -> dict[str, int]:
+        """Delete historical runtime rows while preserving active work and auth state."""
+        terminal_statuses = ["completed", "failed", "timed_out", "cancelled"]
+        with self.engine.begin() as connection:
+            terminal_jobs_query = select(jobs_table.c.id).where(
+                jobs_table.c.status.in_(terminal_statuses)
+            )
+            if project_id is not None:
+                terminal_jobs_query = terminal_jobs_query.where(
+                    jobs_table.c.project_id == project_id
+                )
+            terminal_job_ids = [
+                row[0] for row in connection.execute(terminal_jobs_query).all()
+            ]
+
+            run_query = select(runs_table.c.id).where(runs_table.c.status.in_(terminal_statuses))
+            if terminal_job_ids:
+                run_query = run_query.where(runs_table.c.job_id.in_(terminal_job_ids))
+            elif project_id is not None:
+                run_query = run_query.where(runs_table.c.project_id == project_id)
+            run_ids = [row[0] for row in connection.execute(run_query).all()]
+
+            fanout_query = select(fanouts_table.c.id)
+            if project_id is not None:
+                fanout_query = fanout_query.where(fanouts_table.c.project_id == project_id)
+            candidate_fanout_ids = [
+                row[0] for row in connection.execute(fanout_query).all()
+            ]
+            fanout_ids: list[str] = []
+            for fanout_id in candidate_fanout_ids:
+                active_child = connection.execute(
+                    select(jobs_table.c.id)
+                    .where(jobs_table.c.fanout_id == fanout_id)
+                    .where(jobs_table.c.status.not_in(terminal_statuses))
+                    .limit(1)
+                ).first()
+                if active_child is None:
+                    fanout_ids.append(fanout_id)
+
+            service_ids = [
+                row[0]
+                for row in connection.execute(
+                    select(long_services_table.c.id).where(
+                        long_services_table.c.status.in_(["failed", "stopped"])
+                    )
+                ).all()
+            ]
+            if include_unprobed_services:
+                service_ids.extend(
+                    row[0]
+                    for row in connection.execute(
+                        select(long_services_table.c.id)
+                        .where(long_services_table.c.status == "registered")
+                        .where(long_services_table.c.last_probe_at.is_(None))
+                    ).all()
+                )
+            service_ids = list(dict.fromkeys(service_ids))
+            if project_id is not None:
+                scoped_service_ids = {
+                    row[0]
+                    for row in connection.execute(
+                        select(long_services_table.c.id).where(
+                            long_services_table.c.project_id == project_id
+                        )
+                    ).all()
+                }
+                service_ids = [
+                    service_id
+                    for service_id in service_ids
+                    if service_id in scoped_service_ids
+                ]
+
+            event_query = select(events_table.c.id)
+            if project_id is not None:
+                event_query = event_query.where(events_table.c.project_id == project_id)
+            event_ids = [row[0] for row in connection.execute(event_query).all()]
+
+            worker_heartbeat_ids = [
+                row[0]
+                for row in connection.execute(
+                    select(heartbeats_table.c.owner_id).where(
+                        heartbeats_table.c.owner_type == "worker"
+                    )
+                ).all()
+            ]
+
+            counts = {
+                "artifacts": 0,
+                "handoffs": 0,
+                "runs": len(run_ids),
+                "jobs": len(terminal_job_ids),
+                "fanouts": len(fanout_ids),
+                "events": len(event_ids),
+                "worker_heartbeats": len(worker_heartbeat_ids),
+                "long_services": len(service_ids),
+            }
+            if run_ids:
+                counts["artifacts"] = len(
+                    connection.execute(
+                        select(artifacts_table.c.id).where(artifacts_table.c.run_id.in_(run_ids))
+                    ).all()
+                )
+                counts["handoffs"] = len(
+                    connection.execute(
+                        select(handoffs_table.c.id).where(handoffs_table.c.run_id.in_(run_ids))
+                    ).all()
+                )
+            if dry_run:
+                return counts
+
+            if run_ids:
+                connection.execute(delete(artifacts_table).where(artifacts_table.c.run_id.in_(run_ids)))
+                connection.execute(delete(handoffs_table).where(handoffs_table.c.run_id.in_(run_ids)))
+                connection.execute(delete(runs_table).where(runs_table.c.id.in_(run_ids)))
+            if terminal_job_ids:
+                connection.execute(delete(jobs_table).where(jobs_table.c.id.in_(terminal_job_ids)))
+            if fanout_ids:
+                connection.execute(delete(fanouts_table).where(fanouts_table.c.id.in_(fanout_ids)))
+            if event_ids:
+                connection.execute(delete(events_table).where(events_table.c.id.in_(event_ids)))
+            if worker_heartbeat_ids:
+                connection.execute(
+                    delete(heartbeats_table).where(
+                        heartbeats_table.c.owner_id.in_(worker_heartbeat_ids)
+                    )
+                )
+            if service_ids:
+                connection.execute(
+                    delete(long_services_table).where(long_services_table.c.id.in_(service_ids))
+                )
+            return counts
+
     def save_fanout(self, fanout: FanoutRecord) -> None:
         """Insert one durable fanout batch record."""
         with self.engine.begin() as connection:
@@ -911,7 +1069,7 @@ class SQLiteStore:
     ) -> list[JobRecord]:
         """Return a bounded page of jobs for API responses."""
         with self.engine.connect() as connection:
-            query = select(jobs_table).order_by(jobs_table.c.created_at)
+            query = select(jobs_table).order_by(jobs_table.c.created_at.desc())
             if project_id is not None:
                 query = query.where(jobs_table.c.project_id == project_id)
             if status is not None:
@@ -1030,6 +1188,31 @@ class SQLiteStore:
         if row is None:
             return None
         return _row_to_run(dict(row))
+
+    def list_runs_page(
+        self,
+        *,
+        project_id: str | None = None,
+        status: str | None = None,
+        kind: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[RunRecord]:
+        """Return a bounded page of runs for API and admin UI inspection."""
+        with self.engine.connect() as connection:
+            query = select(runs_table).order_by(runs_table.c.started_at.desc())
+            if project_id is not None:
+                query = query.where(runs_table.c.project_id == project_id)
+            if status is not None:
+                query = query.where(runs_table.c.status == status)
+            if kind is not None:
+                query = query.where(runs_table.c.kind == kind)
+            rows = (
+                connection.execute(query.offset(max(offset, 0)).limit(max(1, min(limit, 500))))
+                .mappings()
+                .all()
+            )
+        return [_row_to_run(dict(row)) for row in rows]
 
     def get_job(self, job_id: str) -> JobRecord | None:
         """Load one job record by ID for tests and CLI inspection."""

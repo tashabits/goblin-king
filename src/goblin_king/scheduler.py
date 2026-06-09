@@ -20,14 +20,14 @@ from goblin_king.contracts import (
 )
 from goblin_king.events import EventBus
 from goblin_king.registry import GoblinRegistry
-from goblin_king.runtime import DockerRuntime, InProcessRuntime, new_run_context
+from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRuntime, new_run_context
 from goblin_king.store import SQLiteStore
 from goblin_king.workers import WorkerImageMap
 
 DEFAULT_LEASE_SECONDS = 60
 DEFAULT_CLAIM_LIMIT = 10
 DEFAULT_INTERVAL_SECONDS = 5
-RuntimeMode = Literal["docker", "in-process"]
+RuntimeMode = Literal["docker", "kubernetes", "in-process"]
 
 
 class Scheduler:
@@ -52,14 +52,23 @@ class Scheduler:
         self.lease_seconds = lease_seconds
         self.claim_limit = claim_limit
         self.runtime_mode = runtime_mode
-        if runtime_mode == "docker" and workers is None:
-            raise ValueError("workers image map is required when runtime_mode='docker'")
+        if runtime_mode in {"docker", "kubernetes"} and workers is None:
+            raise ValueError(f"workers image map is required when runtime_mode={runtime_mode!r}")
         self.event_bus = event_bus or EventBus(store=store, redis_url=redis_url)
-        self.runtime = (
-            DockerRuntime(workers=workers, redis_url=redis_url, event_bus=self.event_bus)
-            if runtime_mode == "docker"
-            else InProcessRuntime()
-        )
+        if runtime_mode == "docker":
+            self.runtime = DockerRuntime(
+                workers=workers,
+                redis_url=redis_url,
+                event_bus=self.event_bus,
+            )
+        elif runtime_mode == "kubernetes":
+            self.runtime = KubernetesRuntime(
+                workers=workers,
+                redis_url=redis_url,
+                event_bus=self.event_bus,
+            )
+        else:
+            self.runtime = InProcessRuntime()
 
     def materialize_due_schedules(self, now: datetime | None = None) -> list[JobRecord]:
         """Create queued jobs for enabled schedules whose next run is due."""
@@ -136,7 +145,7 @@ class Scheduler:
             payload={"kind": job.kind, "attempt": attempt},
         )
 
-        if self.runtime_mode == "docker":
+        if self.runtime_mode in {"docker", "kubernetes"}:
             definition = self.registry.get(job.kind)
             entrypoint = None
         else:
@@ -146,7 +155,7 @@ class Scheduler:
             context = context.model_copy(
                 update={"metadata": {**context.metadata, "project_id": job.project_id}}
             )
-        if isinstance(self.runtime, DockerRuntime):
+        if isinstance(self.runtime, DockerRuntime | KubernetesRuntime):
             result = self.runtime.run(
                 definition,
                 entrypoint,

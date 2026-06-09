@@ -5,44 +5,60 @@ services:
       - "6379:6379"
 
   scheduler:
-    image: python:3.12-slim
+    image: goblin-king:local
+    build:
+      context: .
+      dockerfile: Dockerfile
     profiles: ["scheduler"]
     working_dir: /app
     depends_on:
       - redis
+    environment:
+      GOBLIN_KING_DOCKER_DATA_VOLUME: ${COMPOSE_PROJECT_NAME:-goblin-king}_goblin-king-data
+      GOBLIN_KING_DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-goblin-king}_default
     volumes:
       - .:/app
       - goblin-king-data:/app/.goblin-king
+      - /var/run/docker.sock:/var/run/docker.sock
     command:
-      - sh
-      - -c
-      - >
-        pip install -e . &&
-        goblin-king scheduler run
-        --registry examples/goblins.json
-        --images goblin-images.json
-        --db .goblin-king/goblin-king.sqlite3
-        --redis-url redis://redis:6379/0
+      - scheduler
+      - run
+      - --registry
+      - examples/goblins.json
+      - --images
+      - goblin-images.json
+      - --db
+      - .goblin-king/goblin-king.sqlite3
+      - --redis-url
+      - redis://redis:6379/0
 
   scheduler-run-once:
-    image: python:3.12-slim
+    image: goblin-king:local
+    build:
+      context: .
+      dockerfile: Dockerfile
     profiles: ["run-once"]
     working_dir: /app
     depends_on:
       - redis
+    environment:
+      GOBLIN_KING_DOCKER_DATA_VOLUME: ${COMPOSE_PROJECT_NAME:-goblin-king}_goblin-king-data
+      GOBLIN_KING_DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-goblin-king}_default
     volumes:
       - .:/app
       - goblin-king-data:/app/.goblin-king
+      - /var/run/docker.sock:/var/run/docker.sock
     command:
-      - sh
-      - -c
-      - >
-        pip install -e . &&
-        goblin-king scheduler run-once
-        --registry examples/goblins.json
-        --images goblin-images.json
-        --db .goblin-king/goblin-king.sqlite3
-        --redis-url redis://redis:6379/0
+      - scheduler
+      - run-once
+      - --registry
+      - examples/goblins.json
+      - --images
+      - goblin-images.json
+      - --db
+      - .goblin-king/goblin-king.sqlite3
+      - --redis-url
+      - redis://redis:6379/0
 
   api:
     image: python:3.12-slim
@@ -66,6 +82,21 @@ services:
         --settings goblin-king-api.json
         --host 0.0.0.0
         --port 8000
+
+  admin:
+    image: goblin-king-admin-ui:local
+    profiles: ["admin"]
+    build:
+      context: admin-ui
+      dockerfile: Dockerfile
+    depends_on:
+      - api
+    environment:
+      API_UPSTREAM: api:8000
+      DEPLOYMENT_SCOPE: docker-compose
+      LONG_HELLO_URL: http://long-hello:8080
+    ports:
+      - "8080:8080"
 
   worker-example-echo:
     image: goblin-king-example-echo:local
