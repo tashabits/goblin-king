@@ -8,7 +8,7 @@ Goblin King code should stay easy to review, test, and reuse across projects.
 - Submit changes through pull requests into `main`.
 - Do not commit directly to `main`.
 - Keep each pull request scoped to one coherent change.
-- Include a short summary, local CI test evidence, and any known follow-up work in every pull request.
+- Include a short summary, local CI test evidence, phase objective proof, and any known follow-up work in every pull request.
 
 ## Local CI
 
@@ -23,6 +23,14 @@ python -m ruff check .
 ```
 
 Add any extra manual CLI smoke-test commands to the pull request description when they are relevant.
+
+Pull request bodies must prove that phase objectives were met. For phase work,
+include a concrete evidence section that maps each objective to the code, tests,
+or manual smoke output that verifies it. Local CI proof should include the exact
+commands run and their results, for example `python -m pytest - 25 passed` and
+`python -m ruff check . - passed`. When a phase includes CLI behavior, persistence,
+or scheduler behavior, include the relevant manual commands and a short statement
+of what the command proved.
 
 ## Commenting Standards
 

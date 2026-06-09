@@ -312,7 +312,7 @@ Required standards:
 
 - All code work happens on feature branches. Use the `codex/` prefix by default for agent-created branches unless a maintainer asks for another naming scheme.
 - Changes are submitted through pull requests into `main`. Do not commit directly to `main`.
-- PRs should include a short summary, test evidence, and any known follow-up work.
+- PRs should include a short summary, local CI test evidence, phase objective proof, and any known follow-up work.
 - Keep implementation PRs scoped to one coherent change. Avoid mixing unrelated refactors with feature work.
 - New public modules should start with a concise file-level comment describing purpose and ownership.
 - Public functions, runtime entrypoints, goblin contracts, persistence boundaries, and non-obvious helpers should have function-level comments explaining purpose, inputs, outputs, and important failure behavior.
@@ -342,6 +342,11 @@ This should be clearly marked as a local/dev adapter. Production should prefer K
 ## Testing Plan
 
 All phases use local CI unless the project explicitly changes this policy later. Local CI means the developer runs the verification commands on their machine before opening a PR. Do not rely on GitHub Actions CI runs as a required quality gate.
+
+Phase PR bodies must prove that objectives were met with concrete evidence. Include
+an objective-by-objective proof section that points to implementation areas,
+automated tests, and manual smoke output where relevant. The local CI section must
+include the exact commands run and the observed results.
 
 Local CI commands:
 
