@@ -268,6 +268,8 @@ updates to Redis pub/sub for live subscribers.
 | [Goblin King Scheduler Plan](docs/goblin-king-plan.md) | Architecture, phases, contracts, runtime direction, testing plan, and implementation roadmap. |
 | [User Guide](docs/USER_GUIDE.md) | End-to-end operator and developer guide for Docker, admin UI, sample goblins, API, scheduler, and optional Helm deployment. |
 | [Admin Guide](docs/ADMIN_GUIDE.md) | Screenshot walkthrough for logging in, spawning goblins, watching tasks, probing long services, reading events, and cleaning old rows. |
+| [Public API Boundary](docs/PUBLIC_API.md) | Stable root imports, semi-public commands, internal modules, and internal wheel compatibility policy. |
+| [Adopting Projects](docs/ADOPTING_PROJECTS.md) | How another project installs Goblin King, defines goblin plugins, builds workers, and proves the integration. |
 | [Contributing](docs/CONTRIBUTING.md) | Branch, PR, local CI, commenting, goblin documentation, and test expectations. |
 | [API Roadmap](docs/api-roadmap.md) | API endpoints deferred beyond Phase 4 and their intended target phases. |
 | [Project Adoption](docs/project-adoption.md) | Notes for adapting existing queue, worker, heartbeat, and operator proof flows. |
@@ -280,5 +282,6 @@ project-scoped API control plane with local bearer-token auth. It can also disco
 goblins from multiple registry files and installed package entry points, queue
 mixed-kind fanout batches, create retry jobs from terminal jobs, stream events over
 WebSockets, track scheduler/worker heartbeats, audit API activity, and expose
-client-oriented OpenAPI metadata. Kubernetes, Redis durability guarantees, and
-deployment hardening are optional follow-up work beyond the local Helm proof.
+client-oriented OpenAPI metadata. It now documents a stable internal package boundary
+for adopting projects and internal wheel reuse. Kubernetes, Redis durability guarantees,
+and deployment hardening are optional follow-up work beyond the local Helm proof.
