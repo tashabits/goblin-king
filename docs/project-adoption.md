@@ -1,6 +1,6 @@
-# Nomena Alignment Notes
+# Project Adoption Notes
 
-Goblin King keeps the model that worked well in Nomena-style maintenance tooling:
+Goblin King keeps a project-friendly maintenance tooling model:
 
 - A control API coordinates work and exposes operator proof flows.
 - Goblin King supervises queued jobs, schedules, events, and heartbeats.
@@ -11,7 +11,7 @@ Goblin King keeps the model that worked well in Nomena-style maintenance tooling
 
 ## Mapping Existing Concepts
 
-Nomena-style queue workers can map their task names to `GoblinDefinition.kind` values.
+Existing queue workers can map their task names to `GoblinDefinition.kind` values.
 Existing worker images can become self-contained worker folders with a `Dockerfile` and
 the Goblin King worker contract. Queue payloads become job `input` JSON. Existing result
 keys and fanout proofs become durable jobs, fanouts, runs, events, and heartbeats.
@@ -26,13 +26,13 @@ Projects can start with Docker Compose, then opt into the Helm chart when Kubern
 required. The same registry, image map, API, scheduler, event, heartbeat, and admin UI
 concepts apply in both deployment modes.
 
-The project-ready adoption roadmap keeps Nomena-style projects in a plugin model:
+The project-ready adoption roadmap keeps existing projects in a plugin model:
 Goblin King is installed as an internal wheel, while the host project owns goblin plugin
 packages, registry files, worker folders, and image maps. The admin/API should discover
 those project goblins at deploy time and support runtime reload, so newly deployed
 goblin types appear in the admin without rebuilding the React UI.
 
-For Nomena-like maintenance work, the migration path should be:
+For existing maintenance work, the migration path should be:
 
 1. Turn each task name into a stable `GoblinDefinition.kind`.
 2. Move queue payloads into typed job input JSON.

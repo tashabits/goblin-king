@@ -467,9 +467,9 @@ Integration tests:
 
 The current roadmap gets Goblin King to a reusable scheduler, API, Docker/Kubernetes
 runtime, and admin proof surface. The next roadmap extension makes it practical for
-another project, such as Nomena, to install Goblin King as an internal dependency,
-define project-owned goblins, deploy them, and have the admin/API discover those goblin
-types without rebuilding the React admin.
+another project to install Goblin King as an internal dependency, define project-owned
+goblins, deploy them, and have the admin/API discover those goblin types without
+rebuilding the React admin.
 
 Primary direction:
 
@@ -505,7 +505,7 @@ Primary direction:
 - Add project-level examples for multiple goblin packages in one adopting repo.
 - Add validation commands for plugin metadata, entry-point discovery, duplicate kinds,
   worker image map coverage, worker Dockerfiles, and local worker buildability.
-- Update Nomena-style adoption docs to map existing queue workers into goblin kinds,
+- Update project adoption docs to map existing queue workers into goblin kinds,
   inputs, results, heartbeats, artifacts, and handoffs.
 
 ### Phase 13: Deploy-Time Discovery And Runtime Reload

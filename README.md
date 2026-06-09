@@ -270,7 +270,7 @@ updates to Redis pub/sub for live subscribers.
 | [Admin Guide](docs/ADMIN_GUIDE.md) | Screenshot walkthrough for logging in, spawning goblins, watching tasks, probing long services, reading events, and cleaning old rows. |
 | [Contributing](docs/CONTRIBUTING.md) | Branch, PR, local CI, commenting, goblin documentation, and test expectations. |
 | [API Roadmap](docs/api-roadmap.md) | API endpoints deferred beyond Phase 4 and their intended target phases. |
-| [Nomena Alignment](docs/nomena-alignment.md) | Notes for adapting Nomena-style queue, worker, heartbeat, and operator proof flows. |
+| [Project Adoption](docs/project-adoption.md) | Notes for adapting existing queue, worker, heartbeat, and operator proof flows. |
 
 ## Current Scope
 
