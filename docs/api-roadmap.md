@@ -60,6 +60,13 @@ target phase below.
 - Internal release and upgrade proof APIs or commands as needed for package compatibility
   checks, sample adopting-project smoke tests, and version matrix reporting.
 
+## Covered In Phase 16
+
+- Production Kubernetes hardening in the optional Helm chart: resources, autoscaling,
+  disruption budgets, pod placement, security contexts, image pull secrets, service
+  accounts/RBAC, NetworkPolicy, ingress TLS/options, PVC access modes, and
+  externally managed bootstrap secrets.
+
 ## Later Infrastructure Follow-Up
 
 - Kubernetes runtime APIs.
@@ -67,5 +74,5 @@ target phase below.
 - Worker image registry promotion APIs.
 - Artifact storage provider APIs.
 - External webhook callbacks.
-- Production Kubernetes hardening beyond the optional chart, such as managed ingress,
-  external secret stores, autoscaling, cloud storage classes, and image promotion.
+- Cloud-specific Kubernetes recipes, such as managed ingress controllers, external
+  secret operators, cloud storage classes, and registry-specific image promotion.

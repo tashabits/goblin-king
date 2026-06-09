@@ -11,33 +11,37 @@ spec:
   {{- if .Values.admin.ingress.className }}
   ingressClassName: {{ .Values.admin.ingress.className }}
   {{- end }}
+  {{- with .Values.admin.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   rules:
     - host: {{ .Values.admin.ingress.host }}
       http:
         paths:
           - path: /admin
-            pathType: Prefix
+            pathType: {{ .Values.admin.ingress.pathType }}
             backend:
               service:
                 name: {{ include "goblin-king.fullname" . }}-admin
                 port:
                   number: {{ .Values.admin.port }}
           - path: /admin-api
-            pathType: Prefix
+            pathType: {{ .Values.admin.ingress.pathType }}
             backend:
               service:
                 name: {{ include "goblin-king.fullname" . }}-admin
                 port:
                   number: {{ .Values.admin.port }}
           - path: /admin-ws
-            pathType: Prefix
+            pathType: {{ .Values.admin.ingress.pathType }}
             backend:
               service:
                 name: {{ include "goblin-king.fullname" . }}-admin
                 port:
                   number: {{ .Values.admin.port }}
           - path: {{ .Values.admin.ingress.path }}
-            pathType: Prefix
+            pathType: {{ .Values.admin.ingress.pathType }}
             backend:
               service:
                 name: {{ include "goblin-king.fullname" . }}-api

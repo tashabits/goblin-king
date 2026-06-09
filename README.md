@@ -224,6 +224,32 @@ The Helm chart exposes the admin/API service through an ingress by default using
 helm template goblin-king charts/goblin-king --set admin.ingress.enabled=false
 ```
 
+The chart also includes cloud-neutral production controls for teams that need a more
+formal cluster deployment without changing Docker Compose as the default local path:
+
+- API, scheduler, and admin resource requests/limits, autoscaling, disruption budgets,
+  node selectors, tolerations, and affinity.
+- Shared pod/container security contexts and image pull secrets.
+- Configurable PVC access modes, storage class, and size for SQLite/artifacts.
+- Optional NetworkPolicy.
+- Ingress class, annotations, path type, and TLS blocks.
+- `api.existingSecret` for externally managed bootstrap credentials.
+
+For example:
+
+```bash
+helm template goblin-king charts/goblin-king \
+  --set api.existingSecret=goblin-king-secrets \
+  --set api.autoscaling.enabled=true \
+  --set admin.ingress.tls[0].secretName=goblin-king-tls \
+  --set admin.ingress.tls[0].hosts[0]=goblin-king.local \
+  --set networkPolicy.enabled=true
+```
+
+External secret controllers, managed ingress details, storage classes, and registry
+credentials remain deployment-specific choices; the chart exposes neutral hooks for
+those systems instead of assuming one cloud.
+
 For Docker Desktop Kubernetes, install a local ingress controller for port 80 traffic:
 
 ```bash

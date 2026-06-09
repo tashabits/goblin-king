@@ -179,3 +179,48 @@ def test_helm_chart_includes_optional_default_on_ingress() -> None:
     assert "project-goblin-config" in host_values
     assert "--project" in compose_extension
     assert "worker-project-maintenance-hello" in compose_extension
+
+
+def test_helm_chart_includes_cloud_neutral_production_controls() -> None:
+    """Verify the chart exposes generic production hardening knobs."""
+    values = Path("charts/goblin-king/values.yaml").read_text(encoding="utf-8")
+    helpers = Path("charts/goblin-king/templates/_helpers.tpl").read_text(encoding="utf-8")
+    api = Path("charts/goblin-king/templates/api.yaml").read_text(encoding="utf-8")
+    scheduler = Path("charts/goblin-king/templates/scheduler.yaml").read_text(
+        encoding="utf-8"
+    )
+    serviceaccounts = Path("charts/goblin-king/templates/serviceaccounts.yaml").read_text(
+        encoding="utf-8"
+    )
+    pvc = Path("charts/goblin-king/templates/pvc.yaml").read_text(encoding="utf-8")
+    hpa = Path("charts/goblin-king/templates/hpa.yaml").read_text(encoding="utf-8")
+    pdb = Path("charts/goblin-king/templates/pdb.yaml").read_text(encoding="utf-8")
+    network_policy = Path("charts/goblin-king/templates/networkpolicy.yaml").read_text(
+        encoding="utf-8"
+    )
+    ingress = Path("charts/goblin-king/templates/ingress.yaml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "pullSecrets: []" in values
+    assert "existingSecretBootstrapTokenKey" in values
+    assert "podSecurityContext" in values
+    assert "securityContext" in values
+    assert "autoscaling:" in values
+    assert "podDisruptionBudget:" in values
+    assert "networkPolicy:" in values
+    assert "accessModes:" in values
+    assert "goblin-king.podPlacement" in helpers
+    assert "goblin-king.serviceAccountName" in helpers
+    assert "secretKeyRef" in api
+    assert "serviceAccountName" in api
+    assert "resources:" in api
+    assert "nodeSelector:" in helpers
+    assert "RoleBinding" in scheduler
+    assert "kind: ServiceAccount" in serviceaccounts
+    assert "toYaml .Values.persistence.accessModes" in pvc
+    assert "kind: HorizontalPodAutoscaler" in hpa
+    assert "autoscaling/v2" in hpa
+    assert "kind: PodDisruptionBudget" in pdb
+    assert "kind: NetworkPolicy" in network_policy
+    assert "tls:" in ingress

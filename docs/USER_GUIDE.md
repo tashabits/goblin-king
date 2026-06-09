@@ -182,6 +182,25 @@ Disable ingress when another deployment layer owns routing:
 helm template goblin-king charts/goblin-king --set admin.ingress.enabled=false
 ```
 
+For production-like Kubernetes installs, keep the same chart and set the neutral
+hardening values your cluster expects:
+
+```bash
+helm template goblin-king charts/goblin-king \
+  --set api.resources.requests.cpu=100m \
+  --set api.resources.requests.memory=256Mi \
+  --set api.autoscaling.enabled=true \
+  --set scheduler.podDisruptionBudget.enabled=true \
+  --set persistence.storageClassName=standard \
+  --set api.existingSecret=goblin-king-secrets \
+  --set networkPolicy.enabled=true
+```
+
+The chart supports resource limits, HPAs, PDBs, node selectors, tolerations, affinity,
+image pull secrets, pod/container security contexts, PVC access modes, ingress TLS, and
+externally managed Kubernetes Secrets. Cloud-specific managed ingress, external secret
+controllers, and storage class choices are intentionally left to the deploying project.
+
 When deployed with the default ingress, open:
 
 ```text

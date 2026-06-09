@@ -1,7 +1,64 @@
 {{- define "goblin-king.name" -}}
-{{- .Chart.Name | trunc 63 | trimSuffix "-" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "goblin-king.fullname" -}}
-{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- default .Release.Name .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "goblin-king.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "goblin-king.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}
+
+{{- define "goblin-king.componentLabels" -}}
+{{ include "goblin-king.selectorLabels" .root }}
+app.kubernetes.io/component: {{ .component }}
+{{- end -}}
+
+{{- define "goblin-king.imagePullSecrets" -}}
+{{- with .Values.image.pullSecrets }}
+imagePullSecrets:
+{{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end -}}
+
+{{- define "goblin-king.podSecurityContext" -}}
+{{- with .Values.podSecurityContext }}
+securityContext:
+{{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end -}}
+
+{{- define "goblin-king.containerSecurityContext" -}}
+{{- with .Values.securityContext }}
+securityContext:
+{{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end -}}
+
+{{- define "goblin-king.serviceAccountName" -}}
+{{- $root := .root -}}
+{{- $component := .component -}}
+{{- $settings := index $root.Values $component -}}
+{{- if $settings.serviceAccount.create -}}
+{{- default (printf "%s-%s" (include "goblin-king.fullname" $root) $component) $settings.serviceAccount.name -}}
+{{- else -}}
+{{- default "default" $settings.serviceAccount.name -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "goblin-king.podPlacement" -}}
+{{- with .nodeSelector }}
+nodeSelector:
+{{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .affinity }}
+affinity:
+{{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .tolerations }}
+tolerations:
+{{- toYaml . | nindent 2 }}
+{{- end }}
 {{- end -}}
