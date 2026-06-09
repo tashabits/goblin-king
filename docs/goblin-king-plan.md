@@ -577,7 +577,7 @@ Primary direction:
 
 ### Phase 19: Volume-Backed Artifact Management
 
-- Status: planned.
+- Status: implemented in Phase 19.
 - Keep artifact bytes on Docker volumes and Kubernetes PVCs.
 - Add artifact health/status, dry-run cleanup, retention policies, project-scoped
   cleanup, and admin artifact management.

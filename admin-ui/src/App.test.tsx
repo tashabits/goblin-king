@@ -55,6 +55,22 @@ const fixtures = {
   schedules: [],
   fanouts: [],
   audits: { items: [], meta: { limit: 20, offset: 0, count: 0 } },
+  artifactStorage: {
+    root: ".goblin-king/artifacts",
+    exists: true,
+    writable: true,
+    file_count: 1,
+    total_bytes: 12,
+    metadata_count: 1,
+  },
+  artifactCleanup: {
+    dry_run: true,
+    deleted: false,
+    root: ".goblin-king/artifacts",
+    files_selected: 1,
+    bytes_selected: 12,
+    files: ["proof.txt"],
+  },
   discoveryStatus: {
     active_goblin_count: 2,
     worker_mapped_count: 2,
@@ -118,6 +134,14 @@ function mockFetch() {
     if (url.includes("/schedules")) return jsonResponse(fixtures.schedules);
     if (url.includes("/fanouts")) return jsonResponse(fixtures.fanouts);
     if (url.includes("/audit-logs")) return jsonResponse(fixtures.audits);
+    if (url.includes("/admin/artifacts/storage")) return jsonResponse(fixtures.artifactStorage);
+    if (url.includes("/admin/artifacts/cleanup")) {
+      return jsonResponse({
+        ...fixtures.artifactCleanup,
+        dry_run: init?.body ? JSON.parse(String(init.body)).dry_run : true,
+        deleted: init?.body ? !JSON.parse(String(init.body)).dry_run : false,
+      });
+    }
     if (url.includes("/admin/discovery/reload")) {
       return jsonResponse({ ...fixtures.discoveryStatus, discovery_version: 2 });
     }
@@ -182,6 +206,7 @@ describe("App", () => {
     expect(screen.getAllByText("Task Board").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Schedules").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Runs & Results").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Artifact Volume").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Fanout & Retry").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Long Services").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Durable Events").length).toBeGreaterThan(0);

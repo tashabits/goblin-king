@@ -224,6 +224,37 @@ class RuntimeCleanupResponse(BaseModel):
     counts: dict[str, int]
 
 
+class ArtifactStorageStatusResponse(BaseModel):
+    """Filesystem-backed artifact storage status."""
+
+    root: str
+    exists: bool
+    writable: bool
+    file_count: int
+    total_bytes: int
+    metadata_count: int
+
+
+class ArtifactCleanupRequest(BaseModel):
+    """Admin request for pruning files from the artifact volume."""
+
+    dry_run: bool = True
+    project_id: str | None = None
+    max_age_seconds: int | None = Field(default=None, ge=0)
+    max_total_bytes: int | None = Field(default=None, ge=0)
+
+
+class ArtifactCleanupResponse(BaseModel):
+    """Artifact cleanup counts and selected file paths."""
+
+    dry_run: bool
+    deleted: bool
+    root: str
+    files_selected: int
+    bytes_selected: int
+    files: list[str]
+
+
 class DiscoveryStatusResponse(BaseModel):
     """Current deploy-time discovery state exposed to operators."""
 
@@ -577,6 +608,53 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             deleted=not request.dry_run,
             counts=counts,
         )
+
+    @app.get(
+        "/admin/artifacts/storage",
+        response_model=ArtifactStorageStatusResponse,
+        tags=["admin"],
+        operation_id="getArtifactStorageStatus",
+    )
+    def get_artifact_storage_status(
+        principal: Principal = Depends(require_principal),
+    ) -> ArtifactStorageStatusResponse:
+        """Return status for the configured volume/PVC artifact root."""
+        project_id = project_for_request(principal)
+        return ArtifactStorageStatusResponse.model_validate(
+            _artifact_storage_status(state, project_id=project_id)
+        )
+
+    @app.post(
+        "/admin/artifacts/cleanup",
+        response_model=ArtifactCleanupResponse,
+        tags=["admin"],
+        operation_id="cleanupArtifactFiles",
+    )
+    def cleanup_artifact_files(
+        request: ArtifactCleanupRequest,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> ArtifactCleanupResponse:
+        """Preview or delete artifact files from the configured volume/PVC."""
+        project_id = project_for_request(principal, request.project_id)
+        result = _cleanup_artifact_files(state, request, project_id=project_id)
+        action = "artifacts.cleanup.preview" if request.dry_run else "artifacts.cleanup"
+        audit(
+            state.store,
+            action=action,
+            outcome="success",
+            principal=principal,
+            project_id=project_id,
+            resource_type="artifact_files",
+            detail=result,
+        )
+        if not request.dry_run:
+            state.event_bus.emit(
+                "admin.artifacts.cleaned",
+                source="api",
+                project_id=project_id,
+                payload=result,
+            )
+        return ArtifactCleanupResponse.model_validate(result)
 
     @app.get(
         "/admin/discovery/status",
@@ -1445,3 +1523,103 @@ def _artifact_file_path(root: Path, artifact: ArtifactRecord) -> Path | None:
     except ValueError:
         return None
     return resolved
+
+
+def _artifact_storage_status(
+    state: AppState,
+    *,
+    project_id: str | None,
+) -> dict[str, Any]:
+    """Return volume/PVC artifact root status and scoped metadata counts."""
+    root = state.artifact_root
+    files = _artifact_files_under(root)
+    return {
+        "root": str(root),
+        "exists": root.exists(),
+        "writable": _path_is_writable(root),
+        "file_count": len(files),
+        "total_bytes": sum(path.stat().st_size for path in files),
+        "metadata_count": len(state.store.list_artifacts_for_project(project_id)),
+    }
+
+
+def _cleanup_artifact_files(
+    state: AppState,
+    request: ArtifactCleanupRequest,
+    *,
+    project_id: str | None,
+) -> dict[str, Any]:
+    """Select and optionally delete artifact files from the configured volume/PVC."""
+    candidates = _project_artifact_paths(state, project_id=project_id)
+    selected = _select_artifact_cleanup_candidates(
+        candidates,
+        max_age_seconds=request.max_age_seconds,
+        max_total_bytes=request.max_total_bytes,
+    )
+    bytes_selected = sum(path.stat().st_size for path in selected if path.exists())
+    if not request.dry_run:
+        for path in selected:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                continue
+    return {
+        "dry_run": request.dry_run,
+        "deleted": not request.dry_run,
+        "root": str(state.artifact_root),
+        "files_selected": len(selected),
+        "bytes_selected": bytes_selected,
+        "files": [str(path.relative_to(state.artifact_root)) for path in selected],
+    }
+
+
+def _project_artifact_paths(state: AppState, *, project_id: str | None) -> list[Path]:
+    """Resolve scoped artifact metadata into safe local files."""
+    paths: list[Path] = []
+    for artifact in state.store.list_artifacts_for_project(project_id):
+        path = _artifact_file_path(state.artifact_root, artifact)
+        if path is not None and path.exists() and path.is_file():
+            paths.append(path)
+    return sorted(set(paths), key=lambda item: item.stat().st_mtime)
+
+
+def _select_artifact_cleanup_candidates(
+    paths: list[Path],
+    *,
+    max_age_seconds: int | None,
+    max_total_bytes: int | None,
+) -> list[Path]:
+    """Apply age and volume-size cleanup policies to artifact files."""
+    selected: set[Path] = set()
+    now = datetime.now().timestamp()
+    if max_age_seconds is not None:
+        selected.update(
+            path for path in paths if now - path.stat().st_mtime >= max_age_seconds
+        )
+    if max_total_bytes is not None:
+        total = sum(path.stat().st_size for path in paths)
+        for path in paths:
+            if total <= max_total_bytes:
+                break
+            selected.add(path)
+            total -= path.stat().st_size
+    return sorted(selected, key=lambda item: item.stat().st_mtime)
+
+
+def _artifact_files_under(root: Path) -> list[Path]:
+    """Return files below the artifact root without following external references."""
+    if not root.exists():
+        return []
+    return [path for path in root.rglob("*") if path.is_file()]
+
+
+def _path_is_writable(root: Path) -> bool:
+    """Return whether the artifact root can accept files."""
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        probe = root / ".goblin-king-write-probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return True
+    except OSError:
+        return False

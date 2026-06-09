@@ -80,13 +80,22 @@ target phase below.
 - Claim mapping from external identity tokens into local roles and project scope.
 - Local API tokens remain supported and take precedence when a token hash matches.
 
+## Covered In Phase 19
+
+- Volume/PVC-backed artifact storage management without adding object storage providers.
+- `GET /admin/artifacts/storage`: inspect configured artifact root health, file counts,
+  byte totals, and metadata counts.
+- `POST /admin/artifacts/cleanup`: dry-run or execute project-scoped artifact cleanup
+  from the configured filesystem root.
+- Admin UI artifact-volume status and cleanup proof controls.
+
 ## Later Infrastructure Follow-Up
 
 - Kubernetes runtime APIs.
 - Deployment and build orchestration APIs.
 - Worker image registry promotion APIs.
-- Artifact storage provider APIs.
 - External webhook callbacks.
 - Cloud-specific Kubernetes recipes, such as managed ingress controllers, external
   secret operators, cloud storage classes, and registry-specific image promotion.
 - External identity providers beyond generic OIDC/JWT.
+- Object storage providers beyond Docker volumes and Kubernetes PVCs.
