@@ -60,6 +60,7 @@ def create_fanout(
     registry: GoblinRegistry,
     request: FanoutCreateRequest,
     created_by: str,
+    project_id: str | None = None,
 ) -> FanoutDetail:
     """Validate all fanout items, then create the batch and queued child jobs."""
     definitions = [registry.get(item.kind) for item in request.items]
@@ -68,6 +69,7 @@ def create_fanout(
         id=str(uuid4()),
         created_at=now,
         created_by=created_by,
+        project_id=project_id,
         correlation_id=request.correlation_id or str(uuid4()),
         description=request.description,
     )
@@ -79,6 +81,7 @@ def create_fanout(
             created_at=now,
             created_by=created_by,
             correlation_id=fanout.correlation_id,
+            project_id=project_id,
             fanout_id=fanout.id,
             status="queued",
             priority=item.priority,
@@ -118,6 +121,7 @@ def retry_job(
         created_at=utc_now(),
         created_by=created_by,
         correlation_id=source.correlation_id,
+        project_id=source.project_id,
         fanout_id=source.fanout_id,
         status="queued",
         priority=source.priority if request.priority is None else request.priority,

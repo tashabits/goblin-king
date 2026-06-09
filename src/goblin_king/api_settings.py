@@ -22,7 +22,15 @@ class ApiSettings(BaseModel):
     redis_url: str = "redis://localhost:6379/0"
     artifact_root: Path = Path(".goblin-king/artifacts")
     auth_token: str = Field(default="local-dev-token", min_length=1)
+    bootstrap_admin_token: str = Field(default="local-dev-token", min_length=1)
+    default_project_id: str | None = None
+    rate_limit_per_minute: int = Field(default=120, ge=0)
     project: Path | None = None
+
+    def model_post_init(self, __context: object) -> None:
+        """Keep explicit legacy auth_token settings usable as bootstrap tokens."""
+        if self.bootstrap_admin_token == "local-dev-token" and self.auth_token != "local-dev-token":
+            self.bootstrap_admin_token = self.auth_token
 
     @classmethod
     def from_path(cls, path: str | Path) -> ApiSettings:
@@ -40,6 +48,10 @@ class ApiSettings(BaseModel):
         token = os.environ.get("GOBLIN_KING_API_TOKEN")
         if token:
             payload["auth_token"] = token
+            payload["bootstrap_admin_token"] = token
+        bootstrap = os.environ.get("GOBLIN_KING_BOOTSTRAP_ADMIN_TOKEN")
+        if bootstrap:
+            payload["bootstrap_admin_token"] = bootstrap
         try:
             settings = cls.model_validate(payload)
         except ValidationError as error:

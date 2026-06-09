@@ -72,6 +72,7 @@ class Scheduler:
                 input=schedule.input,
                 created_at=current,
                 created_by="scheduler",
+                project_id=schedule.project_id,
                 status="queued",
                 priority=schedule.priority,
                 schedule_id=schedule.id,
@@ -88,6 +89,7 @@ class Scheduler:
             self.event_bus.emit(
                 "schedule.materialized",
                 source="scheduler",
+                project_id=schedule.project_id,
                 job_id=job.id,
                 schedule_id=schedule.id,
                 scheduler_id=self.worker_id,
@@ -109,6 +111,7 @@ class Scheduler:
             self.event_bus.emit(
                 "job.leased",
                 source="scheduler",
+                project_id=job.project_id,
                 job_id=job.id,
                 schedule_id=job.schedule_id,
                 fanout_id=job.fanout_id,
@@ -125,6 +128,7 @@ class Scheduler:
         self.event_bus.emit(
             "job.running",
             source="scheduler",
+            project_id=job.project_id,
             job_id=job.id,
             schedule_id=job.schedule_id,
             fanout_id=job.fanout_id,
@@ -138,6 +142,10 @@ class Scheduler:
         else:
             definition, entrypoint = self.registry.resolve(job.kind)
         context = new_run_context(job.id, job.kind, attempt)
+        if job.project_id is not None:
+            context = context.model_copy(
+                update={"metadata": {**context.metadata, "project_id": job.project_id}}
+            )
         if isinstance(self.runtime, DockerRuntime):
             result = self.runtime.run(
                 definition,
@@ -159,6 +167,7 @@ class Scheduler:
             id=context.run_id,
             job_id=job.id,
             kind=job.kind,
+            project_id=job.project_id,
             attempt=attempt,
             status=status,
             started_at=started_at,
@@ -181,6 +190,7 @@ class Scheduler:
             self.event_bus.emit(
                 "job.retrying",
                 source="scheduler",
+                project_id=job.project_id,
                 job_id=job.id,
                 run_id=run.id,
                 schedule_id=job.schedule_id,
@@ -193,6 +203,7 @@ class Scheduler:
             self.event_bus.emit(
                 f"job.{status}",
                 source="scheduler",
+                project_id=job.project_id,
                 job_id=job.id,
                 run_id=run.id,
                 schedule_id=job.schedule_id,

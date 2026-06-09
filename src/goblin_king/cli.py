@@ -11,6 +11,7 @@ import typer
 from redis import Redis
 from redis.exceptions import RedisError
 
+from goblin_king.auth import create_api_token, create_project, create_user
 from goblin_king.contracts import JobRecord, RunRecord, ScheduleRecord, utc_now
 from goblin_king.events import DEFAULT_EVENT_CHANNEL
 from goblin_king.fanout import (
@@ -31,6 +32,7 @@ from goblin_king.workers import WorkerConfigError, WorkerImageMap
 
 app = typer.Typer(help="Run and inspect Goblin King jobs.")
 api_app = typer.Typer(help="Run the HTTP API control plane.")
+auth_app = typer.Typer(help="Manage local API users, projects, and tokens.")
 goblins_app = typer.Typer(help="Inspect registered goblins.")
 jobs_app = typer.Typer(help="Submit goblin jobs.")
 fanouts_app = typer.Typer(help="Inspect fanout batches.")
@@ -43,6 +45,7 @@ schedules_app = typer.Typer(help="Create and inspect schedules.")
 scheduler_app = typer.Typer(help="Run scheduler passes.")
 workers_app = typer.Typer(help="Build Docker worker images.")
 app.add_typer(api_app, name="api")
+app.add_typer(auth_app, name="auth")
 app.add_typer(goblins_app, name="goblins")
 app.add_typer(jobs_app, name="jobs")
 app.add_typer(fanouts_app, name="fanouts")
@@ -59,6 +62,49 @@ RuntimeOption = Literal["docker", "in-process"]
 DEFAULT_IMAGES_PATH = Path("goblin-images.json")
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 DEFAULT_PROJECT_PATH = Path("goblin-king-project.json")
+
+
+@auth_app.command("create-user")
+def create_auth_user(
+    email: Annotated[str, typer.Option("--email", help="User email.")],
+    display_name: Annotated[str, typer.Option("--display-name", help="Display name.")],
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+) -> None:
+    """Create a local API user."""
+    user = create_user(SQLiteStore(db), email=email, display_name=display_name)
+    typer.echo(user.model_dump_json(indent=2))
+
+
+@auth_app.command("create-project")
+def create_auth_project(
+    name: Annotated[str, typer.Option("--name", help="Project name.")],
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+) -> None:
+    """Create a local project boundary."""
+    project = create_project(SQLiteStore(db), name=name)
+    typer.echo(project.model_dump_json(indent=2))
+
+
+@auth_app.command("create-token")
+def create_auth_token(
+    name: Annotated[str, typer.Option("--name", help="Token name.")],
+    user_id: Annotated[str, typer.Option("--user-id", help="User ID.")],
+    project_id: Annotated[
+        str | None,
+        typer.Option("--project-id", help="Optional project scope."),
+    ] = None,
+    role: Annotated[str, typer.Option("--role", help="Token role.")] = "member",
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+) -> None:
+    """Create a local API token and print the raw token once."""
+    token, raw = create_api_token(
+        SQLiteStore(db),
+        name=name,
+        user_id=user_id,
+        project_id=project_id,
+        role=role,
+    )
+    typer.echo(json.dumps({"token": token.model_dump(mode="json"), "raw_token": raw}, indent=2))
 
 
 @api_app.command("run")

@@ -4,5 +4,8 @@
   "db": ".goblin-king/goblin-king.sqlite3",
   "redis_url": "redis://localhost:6379/0",
   "artifact_root": ".goblin-king/artifacts",
-  "auth_token": "local-dev-token"
+  "auth_token": "local-dev-token",
+  "bootstrap_admin_token": "local-dev-token",
+  "default_project_id": null,
+  "rate_limit_per_minute": 120
 }

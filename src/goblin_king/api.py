@@ -1,4 +1,5 @@
 """FastAPI control plane for Goblin King jobs, schedules, runs, and artifacts."""
+# ruff: noqa: B008
 
 from __future__ import annotations
 
@@ -9,19 +10,37 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import CroniterBadCronError, croniter
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, WebSocket
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, Security, WebSocket
 from fastapi.responses import FileResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from redis import Redis
 from redis.exceptions import RedisError
 
 from goblin_king.api_settings import ApiSettings
+from goblin_king.auth import (
+    AuthError,
+    Principal,
+    RateLimitExceeded,
+    audit,
+    authenticate_token,
+    check_rate_limit,
+    create_api_token,
+    create_project,
+    create_user,
+    require_admin,
+    require_project_access,
+)
 from goblin_king.contracts import (
+    ApiTokenRecord,
     ArtifactRecord,
+    AuditLogRecord,
     EventRecord,
     HeartbeatRecord,
     JobRecord,
+    ProjectRecord,
     ScheduleRecord,
+    UserRecord,
     utc_now,
 )
 from goblin_king.events import EventBus
@@ -41,6 +60,49 @@ from goblin_king.store import SQLiteStore
 from goblin_king.workers import WorkerImageMap
 
 TERMINAL_JOB_STATUSES = {"completed", "failed", "timed_out", "cancelled"}
+bearer_scheme = HTTPBearer(auto_error=False)
+
+
+class ErrorEnvelope(BaseModel):
+    """Consistent API error response shape for generated clients."""
+
+    detail: str
+
+
+class PageMeta(BaseModel):
+    """Pagination metadata shared by list responses."""
+
+    limit: int
+    offset: int
+    count: int
+
+
+class JobListResponse(BaseModel):
+    """Paginated job list response."""
+
+    items: list[JobRecord]
+    meta: PageMeta
+
+
+class EventListResponse(BaseModel):
+    """Paginated event list response."""
+
+    items: list[EventRecord]
+    meta: PageMeta
+
+
+class AuditLogListResponse(BaseModel):
+    """Paginated audit log list response."""
+
+    items: list[AuditLogRecord]
+    meta: PageMeta
+
+
+class TokenCreateResponse(BaseModel):
+    """API token create response that returns the raw token only once."""
+
+    token: ApiTokenRecord
+    raw_token: str
 
 
 class JobCreateRequest(BaseModel):
@@ -49,6 +111,7 @@ class JobCreateRequest(BaseModel):
     kind: str
     input: dict[str, Any] = Field(default_factory=dict)
     priority: int = 100
+    project_id: str | None = None
     correlation_id: str | None = None
     max_retries: int = Field(default=0, ge=0)
     timeout_seconds: int | None = Field(default=None, gt=0)
@@ -61,6 +124,7 @@ class ScheduleCreateRequest(BaseModel):
     cron: str
     input: dict[str, Any] = Field(default_factory=dict)
     timezone: str = "UTC"
+    project_id: str | None = None
     enabled: bool = True
     priority: int = 100
     max_retries: int = Field(default=0, ge=0)
@@ -78,6 +142,28 @@ class SchedulePatchRequest(BaseModel):
     priority: int | None = None
     max_retries: int | None = Field(default=None, ge=0)
     timeout_seconds: int | None = Field(default=None, gt=0)
+
+
+class UserCreateRequest(BaseModel):
+    """Admin request for creating a local API user."""
+
+    email: str
+    display_name: str
+
+
+class ProjectCreateRequest(BaseModel):
+    """Admin request for creating a local project."""
+
+    name: str
+
+
+class TokenCreateRequest(BaseModel):
+    """Admin request for creating a local API token."""
+
+    name: str
+    user_id: str
+    project_id: str | None = None
+    role: str = "member"
 
 
 class AppState:
@@ -103,16 +189,89 @@ class AppState:
 def create_app(settings: ApiSettings | None = None) -> FastAPI:
     """Create the FastAPI app with loaded Goblin King dependencies."""
     state = AppState(settings or ApiSettings.from_path("goblin-king-api.json"))
-    app = FastAPI(title="Goblin King API", version="0.1.0")
+    app = FastAPI(
+        title="Goblin King API",
+        version="0.1.0",
+        responses={401: {"model": ErrorEnvelope}, 403: {"model": ErrorEnvelope}},
+    )
     app.state.goblin_king = state
 
-    def require_token(authorization: str | None = Header(default=None)) -> None:
-        """Require the configured bearer token for mutating endpoints."""
-        expected = f"Bearer {state.settings.auth_token}"
-        if authorization != expected:
+    def require_principal(
+        request: Request,
+        credentials: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
+    ) -> Principal:
+        """Require a valid bearer token and apply local route rate limits."""
+        if credentials is None:
+            audit(
+                state.store,
+                action="auth.failure",
+                outcome="denied",
+                detail={"route": request.url.path, "reason": "missing token"},
+            )
             raise HTTPException(status_code=401, detail="missing or invalid bearer token")
+        try:
+            principal = authenticate_token(
+                state.store,
+                credentials.credentials,
+                bootstrap_token=state.settings.bootstrap_admin_token,
+            )
+            check_rate_limit(
+                state.store,
+                principal=principal,
+                route=request.url.path,
+                max_per_minute=state.settings.rate_limit_per_minute,
+            )
+            return principal
+        except AuthError as error:
+            audit(
+                state.store,
+                action="auth.failure",
+                outcome="denied",
+                detail={"route": request.url.path, "reason": str(error)},
+            )
+            raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+        except RateLimitExceeded as error:
+            raise HTTPException(status_code=429, detail=str(error)) from error
 
-    @app.get("/health")
+    def require_admin_principal(principal: Principal = Depends(require_principal)) -> Principal:
+        """Require an authenticated admin principal."""
+        try:
+            require_admin(principal)
+            return principal
+        except AuthError as error:
+            audit(
+                state.store,
+                action="auth.forbidden",
+                outcome="denied",
+                principal=principal,
+                detail={"reason": str(error)},
+            )
+            raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+
+    def project_for_request(
+        principal: Principal,
+        requested_project_id: str | None = None,
+    ) -> str | None:
+        """Resolve and authorize the project ID for a request."""
+        project_id = (
+            requested_project_id
+            or principal.project_id
+            or state.settings.default_project_id
+        )
+        try:
+            require_project_access(principal, project_id)
+        except AuthError as error:
+            audit(
+                state.store,
+                action="project.access_denied",
+                outcome="denied",
+                principal=principal,
+                project_id=project_id,
+            )
+            raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+        return project_id
+
+    @app.get("/health", tags=["health"], operation_id="getHealth")
     def health() -> dict[str, str]:
         """Return API health and key local storage paths."""
         return {
@@ -121,8 +280,102 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             "artifact_root": str(state.artifact_root),
         }
 
-    @app.get("/goblins")
-    def list_goblins() -> list[dict[str, Any]]:
+    @app.post(
+        "/admin/users",
+        response_model=UserRecord,
+        tags=["admin"],
+        operation_id="createUser",
+    )
+    def create_admin_user(
+        request: UserCreateRequest,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> UserRecord:
+        """Create one local API user."""
+        user = create_user(state.store, email=request.email, display_name=request.display_name)
+        audit(
+            state.store,
+            action="user.created",
+            outcome="success",
+            principal=principal,
+            resource_type="user",
+            resource_id=user.id,
+        )
+        return user
+
+    @app.post(
+        "/admin/projects",
+        response_model=ProjectRecord,
+        tags=["admin"],
+        operation_id="createProject",
+    )
+    def create_admin_project(
+        request: ProjectCreateRequest,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> ProjectRecord:
+        """Create one local project."""
+        project = create_project(state.store, name=request.name)
+        audit(
+            state.store,
+            action="project.created",
+            outcome="success",
+            principal=principal,
+            project_id=project.id,
+            resource_type="project",
+            resource_id=project.id,
+        )
+        return project
+
+    @app.post(
+        "/admin/tokens",
+        response_model=TokenCreateResponse,
+        tags=["admin"],
+        operation_id="createApiToken",
+    )
+    def create_admin_token(
+        request: TokenCreateRequest,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> TokenCreateResponse:
+        """Create a hashed API token and return the raw token once."""
+        token, raw_token = create_api_token(
+            state.store,
+            name=request.name,
+            user_id=request.user_id,
+            project_id=request.project_id,
+            role=request.role,
+        )
+        audit(
+            state.store,
+            action="token.created",
+            outcome="success",
+            principal=principal,
+            project_id=token.project_id,
+            resource_type="token",
+            resource_id=token.id,
+        )
+        return TokenCreateResponse(token=token, raw_token=raw_token)
+
+    @app.get(
+        "/audit-logs",
+        response_model=AuditLogListResponse,
+        tags=["admin"],
+        operation_id="listAuditLogs",
+    )
+    def list_audit_logs(
+        limit: int = Query(default=100, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        project_id: str | None = None,
+        principal: Principal = Depends(require_principal),
+    ) -> AuditLogListResponse:
+        """Return audit logs visible to the authenticated principal."""
+        scoped_project = project_for_request(principal, project_id)
+        items = state.store.list_audit_logs(project_id=scoped_project, limit=limit, offset=offset)
+        return AuditLogListResponse(
+            items=items,
+            meta=PageMeta(limit=limit, offset=offset, count=len(items)),
+        )
+
+    @app.get("/goblins", tags=["goblins"], operation_id="listGoblins")
+    def list_goblins(_principal: Principal = Depends(require_principal)) -> list[dict[str, Any]]:
         """Return registered goblins plus Docker worker mapping availability."""
         payload = []
         mapped = {kind: worker for kind, worker in state.workers.items()}
@@ -137,20 +390,25 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             )
         return payload
 
-    @app.post("/jobs", dependencies=[Depends(require_token)])
-    def create_job(request: JobCreateRequest) -> JobRecord:
+    @app.post("/jobs", response_model=JobRecord, tags=["jobs"], operation_id="createJob")
+    def create_job(
+        request: JobCreateRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> JobRecord:
         """Queue one job for later scheduler execution."""
         try:
             definition = state.registry.get(request.kind)
         except RegistryError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
+        project_id = project_for_request(principal, request.project_id)
         job = JobRecord(
             id=str(uuid4()),
             kind=definition.kind,
             input=request.input,
             created_at=utc_now(),
-            created_by="api",
+            created_by=principal.user_id,
             correlation_id=request.correlation_id,
+            project_id=project_id,
             status="queued",
             priority=request.priority,
             due_at=utc_now(),
@@ -161,30 +419,69 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         state.event_bus.emit(
             "job.queued",
             source="api",
+            project_id=project_id,
             job_id=job.id,
             payload={"kind": job.kind, "created_by": job.created_by},
         )
+        audit(
+            state.store,
+            action="job.created",
+            outcome="success",
+            principal=principal,
+            project_id=project_id,
+            resource_type="job",
+            resource_id=job.id,
+        )
         return job
 
-    @app.get("/jobs")
-    def list_jobs() -> list[JobRecord]:
+    @app.get("/jobs", response_model=JobListResponse, tags=["jobs"], operation_id="listJobs")
+    def list_jobs(
+        limit: int = Query(default=100, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        status: str | None = None,
+        project_id: str | None = None,
+        principal: Principal = Depends(require_principal),
+    ) -> JobListResponse:
         """Return all persisted jobs."""
-        return state.store.list_jobs()
+        scoped_project = project_for_request(principal, project_id)
+        items = state.store.list_jobs_page(
+            project_id=scoped_project,
+            status=status,
+            limit=limit,
+            offset=offset,
+        )
+        return JobListResponse(
+            items=items,
+            meta=PageMeta(limit=limit, offset=offset, count=len(items)),
+        )
 
-    @app.get("/jobs/{job_id}")
-    def get_job(job_id: str) -> JobRecord:
+    @app.get("/jobs/{job_id}", response_model=JobRecord, tags=["jobs"], operation_id="getJob")
+    def get_job(
+        job_id: str,
+        principal: Principal = Depends(require_principal),
+    ) -> JobRecord:
         """Return one persisted job."""
         job = state.store.get_job(job_id)
         if job is None:
             raise HTTPException(status_code=404, detail=f"job not found: {job_id}")
+        project_for_request(principal, job.project_id)
         return job
 
-    @app.post("/jobs/{job_id}/cancel", dependencies=[Depends(require_token)])
-    def cancel_job(job_id: str) -> JobRecord:
+    @app.post(
+        "/jobs/{job_id}/cancel",
+        response_model=JobRecord,
+        tags=["jobs"],
+        operation_id="cancelJob",
+    )
+    def cancel_job(
+        job_id: str,
+        principal: Principal = Depends(require_principal),
+    ) -> JobRecord:
         """Cancel one non-terminal job."""
         before = state.store.get_job(job_id)
         if before is None:
             raise HTTPException(status_code=404, detail=f"job not found: {job_id}")
+        project_for_request(principal, before.project_id)
         if before.status in TERMINAL_JOB_STATUSES:
             raise HTTPException(status_code=409, detail=f"job is terminal: {before.status}")
         cancelled = state.store.cancel_job(job_id)
@@ -193,26 +490,47 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         state.event_bus.emit(
             "job.cancelled",
             source="api",
+            project_id=cancelled.project_id,
             job_id=cancelled.id,
             fanout_id=cancelled.fanout_id,
             schedule_id=cancelled.schedule_id,
             payload={"kind": cancelled.kind},
         )
+        audit(
+            state.store,
+            action="job.cancelled",
+            outcome="success",
+            principal=principal,
+            project_id=cancelled.project_id,
+            resource_type="job",
+            resource_id=cancelled.id,
+        )
         return cancelled
 
-    @app.post("/jobs/fanout", dependencies=[Depends(require_token)])
-    def create_jobs_fanout(request: FanoutCreateRequest) -> FanoutDetail:
+    @app.post(
+        "/jobs/fanout",
+        response_model=FanoutDetail,
+        tags=["fanouts"],
+        operation_id="createFanout",
+    )
+    def create_jobs_fanout(
+        request: FanoutCreateRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> FanoutDetail:
         """Create a mixed-kind fanout batch of queued jobs."""
+        project_id = project_for_request(principal)
         try:
             detail = create_fanout(
                 store=state.store,
                 registry=state.registry,
                 request=request,
-                created_by="api",
+                created_by=principal.user_id,
+                project_id=project_id,
             )
             state.event_bus.emit(
                 "fanout.created",
                 source="api",
+                project_id=project_id,
                 fanout_id=detail.fanout.id,
                 payload={"jobs": [job.id for job in detail.jobs], "count": len(detail.jobs)},
             )
@@ -220,40 +538,72 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                 state.event_bus.emit(
                     "job.queued",
                     source="api",
+                    project_id=project_id,
                     job_id=job.id,
                     fanout_id=job.fanout_id,
                     payload={"kind": job.kind, "created_by": job.created_by},
                 )
+            audit(
+                state.store,
+                action="fanout.created",
+                outcome="success",
+                principal=principal,
+                project_id=project_id,
+                resource_type="fanout",
+                resource_id=detail.fanout.id,
+            )
             return detail
         except RegistryError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
-    @app.get("/fanouts")
-    def get_fanouts() -> list[FanoutDetail]:
+    @app.get("/fanouts", tags=["fanouts"], operation_id="listFanouts")
+    def get_fanouts(principal: Principal = Depends(require_principal)) -> list[FanoutDetail]:
         """Return all fanout batches with derived status."""
-        return list_fanout_details(state.store)
+        details = list_fanout_details(state.store)
+        if principal.is_admin and principal.project_id is None:
+            return details
+        return [detail for detail in details if detail.fanout.project_id == principal.project_id]
 
-    @app.get("/fanouts/{fanout_id}")
-    def get_fanout(fanout_id: str) -> FanoutDetail:
+    @app.get("/fanouts/{fanout_id}", tags=["fanouts"], operation_id="getFanout")
+    def get_fanout(
+        fanout_id: str,
+        principal: Principal = Depends(require_principal),
+    ) -> FanoutDetail:
         """Return one fanout batch with child jobs and runs."""
         try:
-            return fanout_detail(state.store, fanout_id)
+            detail = fanout_detail(state.store, fanout_id)
+            project_for_request(principal, detail.fanout.project_id)
+            return detail
         except KeyError as error:
             raise HTTPException(status_code=404, detail=f"fanout not found: {fanout_id}") from error
 
-    @app.post("/jobs/{job_id}/retry", dependencies=[Depends(require_token)])
-    def retry_api_job(job_id: str, request: RetryCreateRequest) -> JobRecord:
+    @app.post(
+        "/jobs/{job_id}/retry",
+        response_model=JobRecord,
+        tags=["jobs"],
+        operation_id="retryJob",
+    )
+    def retry_api_job(
+        job_id: str,
+        request: RetryCreateRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> JobRecord:
         """Queue a fresh retry job copied from a terminal source job."""
         try:
+            source = state.store.get_job(job_id)
+            if source is None:
+                raise KeyError(job_id)
+            project_for_request(principal, source.project_id)
             retry = retry_job(
                 store=state.store,
                 job_id=job_id,
                 request=request,
-                created_by="api-retry",
+                created_by=principal.user_id,
             )
             state.event_bus.emit(
                 "job.retry_queued",
                 source="api",
+                project_id=retry.project_id,
                 job_id=retry.id,
                 fanout_id=retry.fanout_id,
                 payload={
@@ -262,36 +612,79 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                     "reason": request.reason,
                 },
             )
+            audit(
+                state.store,
+                action="job.retry_queued",
+                outcome="success",
+                principal=principal,
+                project_id=retry.project_id,
+                resource_type="job",
+                resource_id=retry.id,
+            )
             return retry
         except KeyError as error:
             raise HTTPException(status_code=404, detail=f"job not found: {job_id}") from error
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
 
-    @app.post("/schedules", dependencies=[Depends(require_token)])
-    def create_schedule(request: ScheduleCreateRequest) -> ScheduleRecord:
+    @app.post(
+        "/schedules",
+        response_model=ScheduleRecord,
+        tags=["schedules"],
+        operation_id="createSchedule",
+    )
+    def create_schedule(
+        request: ScheduleCreateRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> ScheduleRecord:
         """Create one recurring schedule."""
-        schedule = _schedule_from_request(state.registry, request)
+        project_id = project_for_request(principal, request.project_id)
+        schedule = _schedule_from_request(state.registry, request).model_copy(
+            update={"project_id": project_id}
+        )
         state.store.save_schedule(schedule)
         state.event_bus.emit(
             "schedule.created",
             source="api",
+            project_id=project_id,
             schedule_id=schedule.id,
             payload={"kind": schedule.kind, "next_run_at": schedule.next_run_at.isoformat()},
         )
+        audit(
+            state.store,
+            action="schedule.created",
+            outcome="success",
+            principal=principal,
+            project_id=project_id,
+            resource_type="schedule",
+            resource_id=schedule.id,
+        )
         return schedule
 
-    @app.get("/schedules")
-    def list_schedules() -> list[ScheduleRecord]:
+    @app.get("/schedules", tags=["schedules"], operation_id="listSchedules")
+    def list_schedules(principal: Principal = Depends(require_principal)) -> list[ScheduleRecord]:
         """Return all persisted schedules."""
-        return state.store.list_schedules()
+        schedules = state.store.list_schedules()
+        if principal.is_admin and principal.project_id is None:
+            return schedules
+        return [schedule for schedule in schedules if schedule.project_id == principal.project_id]
 
-    @app.patch("/schedules/{schedule_id}", dependencies=[Depends(require_token)])
-    def patch_schedule(schedule_id: str, request: SchedulePatchRequest) -> ScheduleRecord:
+    @app.patch(
+        "/schedules/{schedule_id}",
+        response_model=ScheduleRecord,
+        tags=["schedules"],
+        operation_id="patchSchedule",
+    )
+    def patch_schedule(
+        schedule_id: str,
+        request: SchedulePatchRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> ScheduleRecord:
         """Patch mutable fields on one schedule."""
         schedule = state.store.get_schedule(schedule_id)
         if schedule is None:
             raise HTTPException(status_code=404, detail=f"schedule not found: {schedule_id}")
+        project_for_request(principal, schedule.project_id)
 
         update = request.model_dump(exclude_unset=True)
         _validate_cron(update.get("cron", schedule.cron))
@@ -304,14 +697,21 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         state.event_bus.emit(
             "schedule.updated",
             source="api",
+            project_id=patched.project_id,
             schedule_id=patched.id,
             payload={"kind": patched.kind, "enabled": patched.enabled},
         )
         return patched
 
-    @app.get("/events")
+    @app.get(
+        "/events",
+        response_model=EventListResponse,
+        tags=["events"],
+        operation_id="listEvents",
+    )
     def list_events(
         limit: int = Query(default=100, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
         event_type: str | None = None,
         after_id: str | None = None,
         job_id: str | None = None,
@@ -320,10 +720,14 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         schedule_id: str | None = None,
         worker_id: str | None = None,
         scheduler_id: str | None = None,
-    ) -> list[EventRecord]:
+        project_id: str | None = None,
+        principal: Principal = Depends(require_principal),
+    ) -> EventListResponse:
         """Return durable event history with simple bounded filters."""
-        return state.store.list_events(
+        scoped_project = project_for_request(principal, project_id)
+        items = state.store.list_events(
             limit=limit,
+            offset=offset,
             event_type=event_type,
             after_id=after_id,
             job_id=job_id,
@@ -332,11 +736,29 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             schedule_id=schedule_id,
             worker_id=worker_id,
             scheduler_id=scheduler_id,
+            project_id=scoped_project,
+        )
+        return EventListResponse(
+            items=items,
+            meta=PageMeta(limit=limit, offset=offset, count=len(items)),
         )
 
     @app.websocket("/ws/runs")
     async def stream_runs(websocket: WebSocket) -> None:
         """Stream live event envelopes from Redis pub/sub to WebSocket clients."""
+        token = websocket.query_params.get("token")
+        if token is None:
+            await websocket.close(code=1008)
+            return
+        try:
+            authenticate_token(
+                state.store,
+                token,
+                bootstrap_token=state.settings.bootstrap_admin_token,
+            )
+        except AuthError:
+            await websocket.close(code=1008)
+            return
         await websocket.accept()
         pubsub = Redis.from_url(state.settings.redis_url).pubsub()
         try:
@@ -353,32 +775,48 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         finally:
             await asyncio.to_thread(pubsub.close)
 
-    @app.get("/heartbeats")
-    def list_heartbeats() -> list[HeartbeatRecord]:
+    @app.get("/heartbeats", tags=["heartbeats"], operation_id="listHeartbeats")
+    def list_heartbeats(
+        _principal: Principal = Depends(require_principal),
+    ) -> list[HeartbeatRecord]:
         """Return scheduler and worker heartbeat records."""
         return state.store.list_heartbeats()
 
-    @app.get("/heartbeats/{owner_id}")
-    def get_heartbeat(owner_id: str) -> HeartbeatRecord:
+    @app.get("/heartbeats/{owner_id}", tags=["heartbeats"], operation_id="getHeartbeat")
+    def get_heartbeat(
+        owner_id: str,
+        _principal: Principal = Depends(require_principal),
+    ) -> HeartbeatRecord:
         """Return one scheduler or worker heartbeat."""
         heartbeat = state.store.get_heartbeat(owner_id)
         if heartbeat is None:
             raise HTTPException(status_code=404, detail=f"heartbeat not found: {owner_id}")
         return heartbeat
 
-    @app.get("/runs/{run_id}")
-    def get_run(run_id: str) -> Any:
+    @app.get("/runs/{run_id}", tags=["runs"], operation_id="getRun")
+    def get_run(
+        run_id: str,
+        principal: Principal = Depends(require_principal),
+    ) -> Any:
         """Return one persisted run."""
         run = state.store.get_run(run_id)
         if run is None:
             raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+        job = state.store.get_job(run.job_id)
+        project_for_request(principal, job.project_id if job else run.project_id)
         return run
 
-    @app.get("/runs/{run_id}/artifacts")
-    def list_run_artifacts(run_id: str) -> list[dict[str, Any]]:
+    @app.get("/runs/{run_id}/artifacts", tags=["runs"], operation_id="listRunArtifacts")
+    def list_run_artifacts(
+        run_id: str,
+        principal: Principal = Depends(require_principal),
+    ) -> list[dict[str, Any]]:
         """Return artifact metadata plus download links for one run."""
-        if state.store.get_run(run_id) is None:
+        run = state.store.get_run(run_id)
+        if run is None:
             raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+        job = state.store.get_job(run.job_id)
+        project_for_request(principal, job.project_id if job else run.project_id)
         return [
             {
                 **artifact.model_dump(mode="json"),
@@ -387,9 +825,22 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             for artifact in state.store.list_run_artifacts(run_id)
         ]
 
-    @app.get("/runs/{run_id}/artifacts/{artifact_name}")
-    def download_artifact(run_id: str, artifact_name: str) -> Response:
+    @app.get(
+        "/runs/{run_id}/artifacts/{artifact_name}",
+        tags=["runs"],
+        operation_id="downloadArtifact",
+    )
+    def download_artifact(
+        run_id: str,
+        artifact_name: str,
+        principal: Principal = Depends(require_principal),
+    ) -> Response:
         """Serve one artifact file if it stays inside the configured artifact root."""
+        run = state.store.get_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+        job = state.store.get_job(run.job_id)
+        project_for_request(principal, job.project_id if job else run.project_id)
         artifacts = state.store.list_run_artifacts(run_id)
         artifact = next((item for item in artifacts if item.name == artifact_name), None)
         if artifact is None:

@@ -22,6 +22,7 @@ JobStatus = Literal[
 RunStatus = Literal["running", "completed", "failed", "timed_out"]
 EventSource = Literal["api", "scheduler", "runtime", "worker", "cli"]
 HeartbeatOwnerType = Literal["scheduler", "worker"]
+PrincipalRole = Literal["admin", "member", "viewer"]
 
 
 def utc_now() -> datetime:
@@ -132,6 +133,7 @@ class JobRecord(BaseModel):
     created_at: datetime
     created_by: str = "cli"
     correlation_id: str | None = None
+    project_id: str | None = None
     fanout_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     status: JobStatus = "queued"
@@ -152,6 +154,7 @@ class FanoutRecord(BaseModel):
     id: str
     created_at: datetime
     created_by: str = "api"
+    project_id: str | None = None
     correlation_id: str | None = None
     description: str | None = None
 
@@ -163,6 +166,7 @@ class EventRecord(BaseModel):
     created_at: datetime
     event_type: str = Field(min_length=1)
     source: EventSource
+    project_id: str | None = None
     job_id: str | None = None
     run_id: str | None = None
     fanout_id: str | None = None
@@ -190,6 +194,7 @@ class RunRecord(BaseModel):
     id: str
     job_id: str
     kind: str
+    project_id: str | None = None
     attempt: int = 1
     status: RunStatus
     started_at: datetime
@@ -206,6 +211,7 @@ class ScheduleRecord(BaseModel):
 
     id: str
     kind: str
+    project_id: str | None = None
     input: dict[str, Any] = Field(default_factory=dict)
     cron: str
     timezone: str = "UTC"
@@ -216,3 +222,76 @@ class ScheduleRecord(BaseModel):
     last_materialized_at: datetime | None = None
     max_retries: int = 0
     timeout_seconds: int | None = None
+
+
+class UserRecord(BaseModel):
+    """Represent a local API user principal."""
+
+    id: str
+    email: str
+    display_name: str
+    created_at: datetime
+    disabled: bool = False
+
+
+class TeamRecord(BaseModel):
+    """Represent a local team used for project membership."""
+
+    id: str
+    name: str
+    created_at: datetime
+
+
+class ProjectRecord(BaseModel):
+    """Represent an owned project boundary for API resources."""
+
+    id: str
+    name: str
+    created_at: datetime
+
+
+class MembershipRecord(BaseModel):
+    """Represent a user or team role within a project."""
+
+    id: str
+    project_id: str
+    role: PrincipalRole
+    user_id: str | None = None
+    team_id: str | None = None
+    created_at: datetime
+
+
+class ApiTokenRecord(BaseModel):
+    """Represent a hashed bearer token scoped to a user and optional project."""
+
+    id: str
+    name: str
+    token_hash: str
+    created_at: datetime
+    user_id: str
+    project_id: str | None = None
+    role: PrincipalRole = "member"
+    revoked_at: datetime | None = None
+
+
+class AuditLogRecord(BaseModel):
+    """Capture an authenticated security or mutation event."""
+
+    id: str
+    created_at: datetime
+    action: str
+    outcome: str
+    user_id: str | None = None
+    token_id: str | None = None
+    project_id: str | None = None
+    resource_type: str | None = None
+    resource_id: str | None = None
+    detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class RateLimitRecord(BaseModel):
+    """Track one local per-token route window."""
+
+    key: str
+    window_started_at: datetime
+    count: int = 0

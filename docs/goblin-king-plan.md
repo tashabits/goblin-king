@@ -440,12 +440,22 @@ Integration tests:
 - Extend Docker worker contracts so workers publish heartbeat envelopes while running.
 - Keep production auth, pagination hardening, and OpenAPI customization deferred to Phase 8.
 
+### Phase 8: Production API Hardening
+
+- Add local SQLite users, teams, projects, memberships, hashed API tokens, and role grants.
+- Require bearer-token authentication for all non-health API and WebSocket surfaces.
+- Enforce project-scoped access for jobs, schedules, fanouts, runs, events, and artifacts.
+- Add audit logs for mutations, auth failures, token operations, and rate-limit denials.
+- Add SQLite-backed local rate limits for deterministic development proof.
+- Add paginated/filterable list envelopes and client-quality OpenAPI response contracts.
+
 ### Final Optional Phase: Kubernetes Deployment
 
 - Keep Docker and Compose as the default local/development path.
 - Add Kubernetes as an optional runtime/deployment path only for projects that require it.
 - Add Helm chart support for API, scheduler, Redis configuration, worker image settings, volumes, secrets, and service exposure.
 - Add a web admin interface for Kubernetes deployments that reads the current goblin list, lets operators spawn goblins, captures inbound and outbound traffic plus messaging, and proves deployed goblins work.
+- Add a web admin interface for docker deployments that reads the current goblin list, lets operators spawn goblins, captures inbound and outbound 
 - Add documentation for when to choose Kubernetes and how to keep local Docker workflows unchanged.
 - Add local chart validation and, where practical, kind/minikube smoke tests with explicit PR proof.
 

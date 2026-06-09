@@ -13,6 +13,9 @@ Phase 6 adds durable fanout batches and retry APIs/CLI commands for queueing rel
 work without executing it inline.
 Phase 7 adds durable event history, Redis pub/sub streaming, WebSocket run updates,
 and scheduler/worker heartbeat tracking.
+Phase 8 adds local API users, projects, hashed API tokens, project-scoped access,
+audit logs, local rate limits, paginated list responses, and client-quality OpenAPI
+metadata.
 
 ## Quick Start
 
@@ -59,12 +62,30 @@ Smoke the API from another terminal:
 
 ```bash
 curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:8000/goblins
+curl -H "Authorization: Bearer local-dev-token" http://127.0.0.1:8000/goblins
 curl -X POST http://127.0.0.1:8000/jobs \
   -H "Authorization: Bearer local-dev-token" \
   -H "Content-Type: application/json" \
   -d "{\"kind\":\"example.echo\",\"input\":{\"message\":\"hello api\"}}"
 ```
+
+Create local API principals and scoped tokens:
+
+```bash
+goblin-king auth create-user --email dev@example.test --display-name Dev
+goblin-king auth create-project --name "Local Project"
+goblin-king auth create-token --name local-token --user-id <user-id> --project-id <project-id>
+```
+
+Only `GET /health` is open. Other HTTP endpoints and `WS /ws/runs` require bearer
+tokens. API list endpoints return paginated envelopes such as:
+
+```bash
+curl -H "Authorization: Bearer local-dev-token" "http://127.0.0.1:8000/jobs?limit=20&offset=0"
+```
+
+OpenAPI metadata is available at `/openapi.json` with bearer auth schemes, stable
+operation IDs, response models, and error response shapes for generated clients.
 
 Use `--runtime in-process` on `jobs submit`, `scheduler run-once`, or `scheduler run`
 when debugging trusted local Python goblins without Docker.
@@ -145,8 +166,9 @@ updates to Redis pub/sub for live subscribers.
 
 The current kernel stores durable state in SQLite, schedules due jobs, executes Docker
 workers by default, uses Redis as result and live event transport, and exposes a
-local/dev API control plane. It can also discover goblins from multiple registry files
-and installed package entry points, queue mixed-kind fanout batches, create retry jobs
-from terminal jobs, stream events over WebSockets, and track scheduler/worker
-heartbeats. Kubernetes, Redis durability guarantees, production auth, and deployment
-hardening are planned for later phases.
+project-scoped API control plane with local bearer-token auth. It can also discover
+goblins from multiple registry files and installed package entry points, queue
+mixed-kind fanout batches, create retry jobs from terminal jobs, stream events over
+WebSockets, track scheduler/worker heartbeats, audit API activity, and expose
+client-oriented OpenAPI metadata. Kubernetes, Redis durability guarantees, and
+deployment hardening are planned for later phases.

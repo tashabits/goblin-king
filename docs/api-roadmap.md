@@ -23,7 +23,7 @@ target phase below.
 - Redis pub/sub status streaming.
 - Scheduler and worker heartbeat APIs.
 
-## Phase 8
+## Covered In Phase 8
 
 - Production authentication and authorization.
 - Users, teams, projects, API tokens, audit logs, and rate limits.
