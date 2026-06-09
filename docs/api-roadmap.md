@@ -38,6 +38,28 @@ target phase below.
 - Optional Helm chart with API/admin, scheduler, Redis, persistence, sample worker
   service, and default-on configurable ingress.
 
+## Planned For Phase 13
+
+- `POST /admin/discovery/reload`: reload project settings, registry files, entry points,
+  and worker image maps without rebuilding the React admin.
+- `GET /admin/discovery/status`: return active goblin count, image map coverage, current
+  discovery version, last successful reload, last failed reload, and validation status.
+- `GET /admin/discovery/sources`: list loaded sources, entry-point goblins, rejected
+  definitions, duplicate kind errors, and worker image map coverage.
+- Scheduler discovery refresh through the same discovery version marker.
+- Admin Discovery panel that calls these endpoints and displays reload proof.
+
+## Planned For Phase 14
+
+- Host-project deployment integration for extra registries, worker image maps, plugin
+  wheels, and long-running services in Docker Compose and Helm.
+- Post-deploy or post-upgrade discovery reload proof for newly deployed project goblins.
+
+## Planned For Phase 15
+
+- Internal release and upgrade proof APIs or commands as needed for package compatibility
+  checks, sample adopting-project smoke tests, and version matrix reporting.
+
 ## Later Infrastructure Follow-Up
 
 - Kubernetes runtime APIs.

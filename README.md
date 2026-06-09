@@ -19,6 +19,9 @@ metadata.
 The final optional phase adds sample proof goblins, a FastAPI-served admin UI for
 Docker and Helm deployments, long-running service probes, and an optional Kubernetes
 Helm chart. Docker and Compose remain the default local path.
+The next roadmap extension focuses on project-ready adoption: internal wheel reuse,
+host-project goblin plugin packages, deploy-time discovery reload, and admin/API pickup
+of newly deployed goblin types without a React rebuild.
 
 ## Quick Start
 
@@ -267,7 +270,7 @@ updates to Redis pub/sub for live subscribers.
 | [Admin Guide](docs/ADMIN_GUIDE.md) | Screenshot walkthrough for logging in, spawning goblins, watching tasks, probing long services, reading events, and cleaning old rows. |
 | [Contributing](docs/CONTRIBUTING.md) | Branch, PR, local CI, commenting, goblin documentation, and test expectations. |
 | [API Roadmap](docs/api-roadmap.md) | API endpoints deferred beyond Phase 4 and their intended target phases. |
-| [Nomena Alignment](docs/nomena-alignment.md) | Notes for adapting Nomena-style queue, worker, heartbeat, and operator proof flows. |
+| [Project Adoption](docs/project-adoption.md) | Notes for adapting existing queue, worker, heartbeat, and operator proof flows. |
 
 ## Current Scope
 
