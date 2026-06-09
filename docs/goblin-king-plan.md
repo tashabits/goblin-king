@@ -571,7 +571,7 @@ Primary direction:
 
 ### Phase 18: OIDC Authentication
 
-- Status: planned.
+- Status: implemented in Phase 18.
 - Add OIDC/JWT bearer validation with issuer, audience, JWKS cache, clock skew, and
   claim-to-role/project mapping while preserving local API tokens.
 

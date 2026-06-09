@@ -13,6 +13,21 @@ class ApiSettingsError(ValueError):
     """Raised when API settings cannot be loaded or validated."""
 
 
+class OidcSettings(BaseModel):
+    """OIDC/JWT validation settings for external bearer tokens."""
+
+    enabled: bool = False
+    issuer: str | None = None
+    audience: str | None = None
+    jwks_url: str | None = None
+    clock_skew_seconds: int = Field(default=60, ge=0)
+    user_claim: str = "sub"
+    email_claim: str = "email"
+    role_claim: str = "goblin_king_role"
+    project_claim: str = "goblin_king_project_id"
+    admin_roles: list[str] = Field(default_factory=lambda: ["admin"])
+
+
 class ApiSettings(BaseModel):
     """Resolve settings needed by the API app and its dependencies."""
 
@@ -26,6 +41,7 @@ class ApiSettings(BaseModel):
     default_project_id: str | None = None
     rate_limit_per_minute: int = Field(default=120, ge=0)
     project: Path | None = None
+    oidc: OidcSettings = Field(default_factory=OidcSettings)
 
     def model_post_init(self, __context: object) -> None:
         """Keep explicit legacy auth_token settings usable as bootstrap tokens."""

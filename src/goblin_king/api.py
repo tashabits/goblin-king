@@ -376,6 +376,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                 state.store,
                 credentials.credentials,
                 bootstrap_token=state.settings.bootstrap_admin_token,
+                oidc=state.settings.oidc,
             )
             check_rate_limit(
                 state.store,
@@ -1256,6 +1257,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                 state.store,
                 token,
                 bootstrap_token=state.settings.bootstrap_admin_token,
+                oidc=state.settings.oidc,
             )
         except AuthError:
             await websocket.close(code=1008)

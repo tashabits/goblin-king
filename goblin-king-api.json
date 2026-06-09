@@ -7,5 +7,17 @@
   "auth_token": "local-dev-token",
   "bootstrap_admin_token": "local-dev-token",
   "default_project_id": null,
-  "rate_limit_per_minute": 120
+  "rate_limit_per_minute": 120,
+  "oidc": {
+    "enabled": false,
+    "issuer": null,
+    "audience": null,
+    "jwks_url": null,
+    "clock_skew_seconds": 60,
+    "user_claim": "sub",
+    "email_claim": "email",
+    "role_claim": "goblin_king_role",
+    "project_claim": "goblin_king_project_id",
+    "admin_roles": ["admin"]
+  }
 }
