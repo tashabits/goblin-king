@@ -1,9 +1,57 @@
 {
   "goblins": [
     {
+      "kind": "example.artifact",
+      "display_name": "Example Artifact",
+      "module": "examples.goblins.artifact",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.controlled-failure",
+      "display_name": "Example Controlled Failure",
+      "module": "examples.goblins.controlled_failure",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
       "kind": "example.echo",
       "display_name": "Example Echo",
       "module": "examples.goblins.echo",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.environment",
+      "display_name": "Example Environment",
+      "module": "examples.goblins.environment",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello",
+      "display_name": "Example Hello",
+      "module": "examples.goblins.hello",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.long-hello",
+      "display_name": "Example Long Hello Service",
+      "module": "examples.goblins.long_hello",
+      "entrypoint": "run",
+      "timeout_seconds": 10,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.progress",
+      "display_name": "Example Progress",
+      "module": "examples.goblins.progress",
       "entrypoint": "run",
       "timeout_seconds": 30,
       "max_retries": 0
