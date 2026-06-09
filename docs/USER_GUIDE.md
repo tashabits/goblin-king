@@ -207,6 +207,16 @@ The Kubernetes proof flow should include a completed `example.hello` run returni
 `Hello World` and two `example.long-hello` probes returning `Hello World from long
 running service` with different timestamps.
 
+## Release And Upgrade
+
+For project-ready adoption, use:
+
+- [First Hour Guide](FIRST_HOUR.md)
+- [Release Checklist](RELEASE_CHECKLIST.md)
+- [Compatibility Matrix](COMPATIBILITY.md)
+- [Upgrade Guide](UPGRADING.md)
+- [Migration Guide](MIGRATION_GUIDE.md)
+
 ## Sample Goblins
 
 - `example.hello`: short-running Hello World proof.

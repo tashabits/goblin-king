@@ -1,0 +1,9 @@
+{
+  "workers": {
+    "compat.hello": {
+      "context": "../../../workers/example.hello",
+      "dockerfile": "Dockerfile",
+      "image": "compat-hello:local"
+    }
+  }
+}

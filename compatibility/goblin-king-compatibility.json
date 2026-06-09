@@ -1,0 +1,16 @@
+{
+  "goblin_king_version": "0.1.0",
+  "goblin_contract_version": "1",
+  "registry_schema_version": "1",
+  "worker_image_map_schema_version": "1",
+  "worker_result_contract_version": "1",
+  "worker_heartbeat_contract_version": "1",
+  "api_settings_schema_version": "1",
+  "project_settings_schema_version": "1",
+  "notes": [
+    "Goblin definitions use GoblinDefinition fields from the public root package.",
+    "Registry files use a top-level goblins array.",
+    "Worker image maps use a top-level workers object keyed by goblin kind.",
+    "SQLite auto-create and auto-alter behavior is internal and not a compatibility promise."
+  ]
+}

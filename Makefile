@@ -10,8 +10,9 @@ PROJECT ?= $(HOST_PROJECT)/goblin-king-project.json
 PROJECT_IMAGES ?= $(HOST_PROJECT)/goblin-images.json
 ADMIN_BASE ?= http://127.0.0.1:8080
 ADMIN_TOKEN ?= local-dev-token
+DIST ?= dist
 
-.PHONY: help install test lint local-ci build-workers admin-build redis-up redis-down deploy run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke project-validate project-build-workers project-discovery-reload project-admin-proof helm-template helm-admin-smoke kind-smoke clean docker-clean
+.PHONY: help install test lint local-ci build-workers admin-build redis-up redis-down deploy run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke project-validate project-build-workers project-discovery-reload project-admin-proof release-wheel release-check helm-template helm-admin-smoke kind-smoke clean docker-clean
 
 help:
 	@echo "Targets:"
@@ -37,6 +38,8 @@ help:
 	@echo "  project-build-workers Build host-project worker images"
 	@echo "  project-discovery-reload Reload host-project discovery through admin API"
 	@echo "  project-admin-proof Prove host-project goblins are visible through admin API"
+	@echo "  release-wheel  Build the internal wheel into DIST"
+	@echo "  release-check  Run local release/adoption proof commands"
 	@echo "  helm-template  Render the optional Helm chart"
 	@echo "  helm-admin-smoke Exercise Helm React admin through goblin-king.local"
 	@echo "  kind-smoke     Render Helm and report whether kind is available"
@@ -110,6 +113,13 @@ project-discovery-reload:
 
 project-admin-proof:
 	$(PYTHON) -c "import urllib.request; base='$(ADMIN_BASE)'; token='$(ADMIN_TOKEN)'; req=urllib.request.Request(base+'/admin-api/goblins', headers={'Authorization':'Bearer '+token}); print(urllib.request.urlopen(req).read().decode())"
+
+release-wheel:
+	$(PYTHON) -m pip wheel . -w $(DIST)
+
+release-check: local-ci project-validate helm-template
+	cd admin-ui && npm test -- --run
+	cd admin-ui && npm run build
 
 helm-template:
 	helm template goblin-king charts/goblin-king

@@ -541,6 +541,7 @@ Primary direction:
 
 ### Phase 15: Project-Ready Release And Upgrade Story
 
+- Status: implemented in Phase 15.
 - Add an internal release checklist for building the wheel, API/scheduler/admin Docker
   images, sample plugin package, local CI, Docker adoption smoke, and Helm adoption smoke.
 - Add upgrade compatibility tests using a sample adopting-project fixture.

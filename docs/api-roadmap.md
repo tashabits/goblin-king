@@ -55,7 +55,7 @@ target phase below.
   wheels, and long-running services in Docker Compose and Helm.
 - Post-deploy or post-upgrade discovery reload proof for newly deployed project goblins.
 
-## Planned For Phase 15
+## Covered In Phase 15
 
 - Internal release and upgrade proof APIs or commands as needed for package compatibility
   checks, sample adopting-project smoke tests, and version matrix reporting.
