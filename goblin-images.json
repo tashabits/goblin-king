@@ -1,0 +1,9 @@
+{
+  "workers": {
+    "example.echo": {
+      "context": "workers/example.echo",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-king-example-echo:local"
+    }
+  }
+}

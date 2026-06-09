@@ -32,6 +32,10 @@ commands run and their results, for example `python -m pytest - 25 passed` and
 or scheduler behavior, include the relevant manual commands and a short statement
 of what the command proved.
 
+When a phase includes Docker behavior, PR evidence must include real local Docker proof.
+Mocked Docker tests are useful, but they do not replace building the worker image,
+running the Docker-backed path, and recording the observed result in the PR body.
+
 ## Commenting Standards
 
 - New public modules should start with a concise file-level comment describing purpose and ownership.
@@ -42,3 +46,5 @@ of what the command proved.
 ## Tests
 
 Add or update local tests for new contracts, registry behavior, runtime behavior, persistence behavior, and CLI behavior.
+Docker runtime phases must also include local Docker tests that fail clearly when Docker
+is unavailable.

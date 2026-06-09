@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import uuid4
 
 import typer
 
-from goblin_king.contracts import GoblinContext, JobRecord, RunRecord, ScheduleRecord, utc_now
+from goblin_king.contracts import JobRecord, RunRecord, ScheduleRecord, utc_now
 from goblin_king.registry import GoblinRegistry, RegistryError
-from goblin_king.runtime import InProcessRuntime
+from goblin_king.runtime import DockerRuntime, InProcessRuntime, new_run_context
 from goblin_king.scheduler import DEFAULT_INTERVAL_SECONDS, Scheduler, next_run_after
 from goblin_king.store import DEFAULT_DB_PATH, SQLiteStore
+from goblin_king.workers import WorkerConfigError, WorkerImageMap
 
 app = typer.Typer(help="Run and inspect Goblin King jobs.")
 goblins_app = typer.Typer(help="Inspect registered goblins.")
@@ -21,11 +22,17 @@ jobs_app = typer.Typer(help="Submit goblin jobs.")
 runs_app = typer.Typer(help="Inspect goblin runs.")
 schedules_app = typer.Typer(help="Create and inspect schedules.")
 scheduler_app = typer.Typer(help="Run scheduler passes.")
+workers_app = typer.Typer(help="Build Docker worker images.")
 app.add_typer(goblins_app, name="goblins")
 app.add_typer(jobs_app, name="jobs")
 app.add_typer(runs_app, name="runs")
 app.add_typer(schedules_app, name="schedules")
 app.add_typer(scheduler_app, name="scheduler")
+app.add_typer(workers_app, name="workers")
+
+RuntimeOption = Literal["docker", "in-process"]
+DEFAULT_IMAGES_PATH = Path("goblin-images.json")
+DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 
 
 @goblins_app.command("list")
@@ -50,13 +57,26 @@ def submit_job(
         typer.Option("--registry", help="Registry JSON path."),
     ] = Path("goblins.json"),
     db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+    runtime: Annotated[
+        RuntimeOption,
+        typer.Option("--runtime", help="Execution runtime."),
+    ] = "docker",
+    images: Annotated[
+        Path,
+        typer.Option("--images", help="Worker image map path for Docker runtime."),
+    ] = DEFAULT_IMAGES_PATH,
+    redis_url: Annotated[
+        str,
+        typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
+    ] = DEFAULT_REDIS_URL,
 ) -> None:
-    """Submit and immediately execute one job through the in-process runtime."""
+    """Submit and immediately execute one job through the selected runtime."""
     loaded = _load_registry(registry)
     input_payload = _load_input(input_path)
     try:
-        definition, entrypoint = loaded.resolve(kind)
-    except RegistryError as error:
+        definition = loaded.get(kind)
+        entrypoint = loaded.resolve(kind)[1] if runtime == "in-process" else None
+    except (RegistryError, WorkerConfigError) as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
     store = SQLiteStore(db)
@@ -67,19 +87,26 @@ def submit_job(
         input=input_payload,
         created_at=utc_now(),
     )
-    run_id = str(uuid4())
-    context = GoblinContext(
-        run_id=run_id,
-        artifact_root=str(Path(".goblin-king") / "artifacts" / run_id),
-        metadata={"job_id": job.id, "kind": definition.kind},
-    )
+    context = new_run_context(job.id, definition.kind)
 
     store.save_job(job)
     started_at = utc_now()
-    result = InProcessRuntime().run(definition, entrypoint, input_payload, context)
+    if runtime == "docker":
+        result = DockerRuntime(
+            workers=_load_workers(images),
+            redis_url=redis_url,
+        ).run(
+            definition,
+            entrypoint,
+            input_payload,
+            context,
+            timeout_seconds=definition.timeout_seconds,
+        )
+    else:
+        result = InProcessRuntime().run(definition, entrypoint, input_payload, context)
     finished_at = utc_now()
     run = RunRecord(
-        id=run_id,
+        id=context.run_id,
         job_id=job.id,
         kind=definition.kind,
         status="completed" if result.status == "success" else "failed",
@@ -189,9 +216,27 @@ def scheduler_run_once(
         typer.Option("--registry", help="Registry JSON path."),
     ] = Path("goblins.json"),
     db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+    runtime: Annotated[
+        RuntimeOption,
+        typer.Option("--runtime", help="Execution runtime."),
+    ] = "docker",
+    images: Annotated[
+        Path,
+        typer.Option("--images", help="Worker image map path for Docker runtime."),
+    ] = DEFAULT_IMAGES_PATH,
+    redis_url: Annotated[
+        str,
+        typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
+    ] = DEFAULT_REDIS_URL,
 ) -> None:
     """Run one deterministic scheduler pass and print any created runs."""
-    scheduler = Scheduler(registry=_load_registry(registry), store=SQLiteStore(db))
+    scheduler = Scheduler(
+        registry=_load_registry(registry),
+        store=SQLiteStore(db),
+        runtime_mode=runtime,
+        workers=_load_workers(images) if runtime == "docker" else None,
+        redis_url=redis_url,
+    )
     runs = scheduler.run_once()
     typer.echo(json.dumps([run.model_dump(mode="json") for run in runs], indent=2))
 
@@ -207,13 +252,51 @@ def scheduler_run(
         int,
         typer.Option("--interval-seconds", help="Seconds between scheduler passes."),
     ] = DEFAULT_INTERVAL_SECONDS,
+    runtime: Annotated[
+        RuntimeOption,
+        typer.Option("--runtime", help="Execution runtime."),
+    ] = "docker",
+    images: Annotated[
+        Path,
+        typer.Option("--images", help="Worker image map path for Docker runtime."),
+    ] = DEFAULT_IMAGES_PATH,
+    redis_url: Annotated[
+        str,
+        typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
+    ] = DEFAULT_REDIS_URL,
 ) -> None:
     """Run scheduler passes until interrupted."""
-    scheduler = Scheduler(registry=_load_registry(registry), store=SQLiteStore(db))
+    scheduler = Scheduler(
+        registry=_load_registry(registry),
+        store=SQLiteStore(db),
+        runtime_mode=runtime,
+        workers=_load_workers(images) if runtime == "docker" else None,
+        redis_url=redis_url,
+    )
     try:
         scheduler.run_loop(interval_seconds=interval_seconds)
     except KeyboardInterrupt:
         typer.echo("scheduler stopped")
+
+
+@workers_app.command("build")
+def build_workers(
+    images: Annotated[
+        Path,
+        typer.Option("--images", help="Worker image map path."),
+    ] = DEFAULT_IMAGES_PATH,
+    kind: Annotated[
+        str | None,
+        typer.Option("--kind", help="Build only one goblin worker kind."),
+    ] = None,
+) -> None:
+    """Build configured Docker worker images for local deployment."""
+    worker_map = _load_workers(images)
+    runtime = DockerRuntime(workers=worker_map)
+    targets = [(kind, worker_map.get(kind))] if kind else worker_map.items()
+    for worker_kind, worker in targets:
+        runtime.build_image(worker_kind)
+        typer.echo(f"built {worker_kind}\t{worker.image}")
 
 
 def _load_registry(path: Path) -> GoblinRegistry:
@@ -221,6 +304,15 @@ def _load_registry(path: Path) -> GoblinRegistry:
     try:
         return GoblinRegistry.from_path(path)
     except RegistryError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+
+
+def _load_workers(path: Path) -> WorkerImageMap:
+    """Load worker image settings and translate errors into CLI exits."""
+    try:
+        return WorkerImageMap.from_path(path)
+    except WorkerConfigError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
 

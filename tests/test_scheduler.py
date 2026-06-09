@@ -18,6 +18,7 @@ def build_scheduler(tmp_path: Path) -> tuple[Scheduler, SQLiteStore]:
         registry=GoblinRegistry.from_path("examples/goblins.json"),
         store=store,
         worker_id="test-worker",
+        runtime_mode="in-process",
     )
     return scheduler, store
 
@@ -84,6 +85,7 @@ def test_failing_goblin_retries_then_fails(tmp_path: Path) -> None:
         registry=GoblinRegistry.from_path("tests/fixtures/failing-registry.json"),
         store=store,
         worker_id="test-worker",
+        runtime_mode="in-process",
     )
     store.save_schedule(
         ScheduleRecord(
