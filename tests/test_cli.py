@@ -8,7 +8,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from goblin_king.cli import app
-from goblin_king.contracts import JobRecord, utc_now
+from goblin_king.contracts import EventRecord, HeartbeatRecord, JobRecord, utc_now
 from goblin_king.store import SQLiteStore
 
 runner = CliRunner()
@@ -302,3 +302,34 @@ def test_scheduler_run_once_executes_due_schedule(tmp_path: Path) -> None:
     assert json.loads(run_once.stdout)[0]["status"] == "completed"
     assert jobs.exit_code == 0
     assert "completed" in jobs.stdout
+
+
+def test_events_and_heartbeats_list_commands(tmp_path: Path) -> None:
+    """Verify CLI inspection commands print durable events and heartbeats."""
+    db_path = tmp_path / "goblin.sqlite3"
+    store = SQLiteStore(db_path)
+    store.save_event(
+        EventRecord(
+            id="event-1",
+            created_at=utc_now(),
+            event_type="job.completed",
+            source="scheduler",
+            job_id="job-1",
+        )
+    )
+    store.upsert_heartbeat(
+        HeartbeatRecord(
+            owner_id="scheduler-1",
+            owner_type="scheduler",
+            status="running",
+            last_seen_at=utc_now(),
+        )
+    )
+
+    events = runner.invoke(app, ["events", "list", "--db", str(db_path), "--limit", "1"])
+    heartbeats = runner.invoke(app, ["heartbeats", "list", "--db", str(db_path)])
+
+    assert events.exit_code == 0
+    assert json.loads(events.stdout)["event_type"] == "job.completed"
+    assert heartbeats.exit_code == 0
+    assert json.loads(heartbeats.stdout)["owner_id"] == "scheduler-1"

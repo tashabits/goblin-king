@@ -8,8 +8,11 @@ from typing import Annotated, Literal
 from uuid import uuid4
 
 import typer
+from redis import Redis
+from redis.exceptions import RedisError
 
 from goblin_king.contracts import JobRecord, RunRecord, ScheduleRecord, utc_now
+from goblin_king.events import DEFAULT_EVENT_CHANNEL
 from goblin_king.fanout import (
     FanoutCreateRequest,
     RetryCreateRequest,
@@ -31,6 +34,8 @@ api_app = typer.Typer(help="Run the HTTP API control plane.")
 goblins_app = typer.Typer(help="Inspect registered goblins.")
 jobs_app = typer.Typer(help="Submit goblin jobs.")
 fanouts_app = typer.Typer(help="Inspect fanout batches.")
+events_app = typer.Typer(help="Inspect and watch durable events.")
+heartbeats_app = typer.Typer(help="Inspect scheduler and worker heartbeats.")
 project_app = typer.Typer(help="Inspect and scaffold reusable Goblin King projects.")
 project_goblins_app = typer.Typer(help="Inspect project-discovered goblins.")
 runs_app = typer.Typer(help="Inspect goblin runs.")
@@ -41,6 +46,8 @@ app.add_typer(api_app, name="api")
 app.add_typer(goblins_app, name="goblins")
 app.add_typer(jobs_app, name="jobs")
 app.add_typer(fanouts_app, name="fanouts")
+app.add_typer(events_app, name="events")
+app.add_typer(heartbeats_app, name="heartbeats")
 project_app.add_typer(project_goblins_app, name="goblins")
 app.add_typer(project_app, name="project")
 app.add_typer(runs_app, name="runs")
@@ -291,6 +298,65 @@ def show_fanout(
         typer.echo(f"fanout not found: {fanout_id}", err=True)
         raise typer.Exit(1) from error
     typer.echo(detail.model_dump_json(indent=2))
+
+
+@events_app.command("list")
+def list_events(
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+    limit: Annotated[int, typer.Option("--limit", help="Maximum events to print.")] = 100,
+) -> None:
+    """Print durable events as JSON lines."""
+    store = SQLiteStore(db)
+    for event in store.list_events(limit=limit):
+        typer.echo(event.model_dump_json())
+
+
+@events_app.command("watch")
+def watch_events(
+    redis_url: Annotated[
+        str,
+        typer.Option("--redis-url", help="Redis URL used by event pub/sub."),
+    ] = DEFAULT_REDIS_URL,
+    channel: Annotated[
+        str,
+        typer.Option("--channel", help="Redis event channel."),
+    ] = DEFAULT_EVENT_CHANNEL,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", help="Stop after this many events."),
+    ] = None,
+) -> None:
+    """Watch live event envelopes from Redis pub/sub."""
+    seen = 0
+    try:
+        pubsub = Redis.from_url(redis_url).pubsub()
+        pubsub.subscribe(channel)
+        for message in pubsub.listen():
+            if message.get("type") != "message":
+                continue
+            data = message.get("data")
+            typer.echo(data.decode("utf-8") if isinstance(data, bytes) else str(data))
+            seen += 1
+            if limit is not None and seen >= limit:
+                break
+    except RedisError as error:
+        typer.echo(f"redis pubsub failed: {error}", err=True)
+        raise typer.Exit(1) from error
+    finally:
+        try:
+            pubsub.close()
+        except UnboundLocalError:
+            pass
+
+
+@heartbeats_app.command("list")
+def list_heartbeats(
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+) -> None:
+    """Print scheduler and worker heartbeat records."""
+    store = SQLiteStore(db)
+    for heartbeat in store.list_heartbeats():
+        typer.echo(heartbeat.model_dump_json())
 
 
 @runs_app.command("show")
