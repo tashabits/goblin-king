@@ -202,6 +202,57 @@ def test_discovery_reload_adds_project_goblin_without_restart(tmp_path: Path) ->
     assert sources.json()["worker_unmapped_kinds"] == []
 
 
+def test_admin_image_promotion_and_deployment_records(tmp_path: Path) -> None:
+    """Verify admin deployment endpoints persist proof and emit operator records."""
+    client, store, _ = build_client(tmp_path)
+
+    planned = client.post(
+        "/admin/images/promotions",
+        headers=auth_headers(),
+        json={
+            "kind": "example.hello",
+            "target_image": "registry.example/example-hello:prod",
+            "build": True,
+            "push": True,
+            "dry_run": True,
+        },
+    )
+    assert planned.status_code == 200
+    promotion_id = planned.json()["id"]
+    assert planned.json()["detail"]["commands"][0][0] == "docker"
+
+    marked = client.post(
+        f"/admin/images/promotions/{promotion_id}/mark",
+        headers=auth_headers(),
+        json={"status": "promoted", "digest": "sha256:abc"},
+    )
+    promotions = client.get("/admin/images/promotions", headers=auth_headers())
+    helm = client.post(
+        "/admin/deployments/helm-template",
+        headers=auth_headers(),
+        json={"name": "unit-test", "execute": False},
+    )
+    reload_record = client.post(
+        "/admin/deployments/reload-discovery",
+        headers=auth_headers(),
+    )
+    deployments = client.get("/admin/deployments", headers=auth_headers())
+
+    assert marked.status_code == 200
+    assert marked.json()["status"] == "promoted"
+    assert promotions.json()[0]["id"] == promotion_id
+    assert helm.status_code == 200
+    assert helm.json()["command"][:3] == ["helm", "template", "goblin-king"]
+    assert reload_record.status_code == 200
+    assert reload_record.json()["action"] == "discovery-reload"
+    assert deployments.status_code == 200
+    assert {record["action"] for record in deployments.json()} >= {
+        "helm-template",
+        "discovery-reload",
+    }
+    assert any(event.event_type == "admin.image_promotion.planned" for event in store.list_events())
+
+
 def test_failed_discovery_reload_preserves_previous_registry(tmp_path: Path) -> None:
     """Verify invalid deployed definitions are reported without replacing active discovery."""
     project_path = tmp_path / "goblin-king-project.json"

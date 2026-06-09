@@ -12,7 +12,15 @@ from redis import Redis
 from redis.exceptions import RedisError
 
 from goblin_king.auth import create_api_token, create_project, create_user
-from goblin_king.contracts import JobRecord, RunRecord, ScheduleRecord, utc_now
+from goblin_king.contracts import (
+    DeploymentRecord,
+    ImagePromotionRecord,
+    JobRecord,
+    RunRecord,
+    ScheduleRecord,
+    utc_now,
+)
+from goblin_king.deployment import helm_template_command, image_push_command, run_command
 from goblin_king.events import (
     DEFAULT_EVENT_CHANNEL,
     DEFAULT_EVENT_STREAM,
@@ -44,6 +52,8 @@ jobs_app = typer.Typer(help="Submit goblin jobs.")
 fanouts_app = typer.Typer(help="Inspect fanout batches.")
 events_app = typer.Typer(help="Inspect and watch durable events.")
 heartbeats_app = typer.Typer(help="Inspect scheduler and worker heartbeats.")
+deploy_app = typer.Typer(help="Record image promotion and deployment proof.")
+deploy_promotions_app = typer.Typer(help="Plan and inspect worker image promotions.")
 project_app = typer.Typer(help="Inspect and scaffold reusable Goblin King projects.")
 project_goblins_app = typer.Typer(help="Inspect project-discovered goblins.")
 runs_app = typer.Typer(help="Inspect goblin runs.")
@@ -57,6 +67,8 @@ app.add_typer(jobs_app, name="jobs")
 app.add_typer(fanouts_app, name="fanouts")
 app.add_typer(events_app, name="events")
 app.add_typer(heartbeats_app, name="heartbeats")
+deploy_app.add_typer(deploy_promotions_app, name="promotions")
+app.add_typer(deploy_app, name="deploy")
 project_app.add_typer(project_goblins_app, name="goblins")
 app.add_typer(project_app, name="project")
 app.add_typer(runs_app, name="runs")
@@ -678,6 +690,163 @@ def scheduler_run(
         scheduler.run_loop(interval_seconds=interval_seconds)
     except KeyboardInterrupt:
         typer.echo("scheduler stopped")
+
+
+@deploy_promotions_app.command("plan")
+def plan_image_promotion(
+    kind: Annotated[str, typer.Argument(help="Goblin kind whose worker image is promoted.")],
+    target_image: Annotated[str, typer.Option("--target-image", help="Target promoted image tag.")],
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+    images: Annotated[
+        Path,
+        typer.Option("--images", help="Worker image map path."),
+    ] = DEFAULT_IMAGES_PATH,
+    source_image: Annotated[
+        str | None,
+        typer.Option("--source-image", help="Override source image tag."),
+    ] = None,
+    build: Annotated[
+        bool,
+        typer.Option("--build/--no-build", help="Include Docker build command proof."),
+    ] = False,
+    push: Annotated[
+        bool,
+        typer.Option("--push/--no-push", help="Include Docker push command proof."),
+    ] = False,
+) -> None:
+    """Record one worker image promotion plan without pushing by default."""
+    worker_map = _load_workers(images)
+    worker = worker_map.get(kind)
+    source = source_image or worker.image
+    context = worker_map.resolved_context(worker)
+    commands: list[list[str]] = []
+    if build:
+        commands.append(
+            ["docker", "build", "-f", str(context / worker.dockerfile), "-t", source, str(context)]
+        )
+    if push:
+        commands.append(image_push_command(target_image))
+    now = utc_now()
+    promotion = ImagePromotionRecord(
+        id=str(uuid4()),
+        kind=kind,
+        source_image=source,
+        target_image=target_image,
+        status="planned",
+        actor="cli",
+        created_at=now,
+        updated_at=now,
+        detail={
+            "dry_run": True,
+            "commands": commands,
+            "worker_context": str(context),
+            "dockerfile": worker.dockerfile,
+        },
+    )
+    SQLiteStore(db).save_image_promotion(promotion)
+    typer.echo(json.dumps(promotion.model_dump(mode="json"), indent=2))
+
+
+@deploy_promotions_app.command("list")
+def list_image_promotions(
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+) -> None:
+    """Print recent worker image promotion records."""
+    promotions = SQLiteStore(db).list_image_promotions()
+    for promotion in promotions:
+        typer.echo(
+            f"{promotion.id}\t{promotion.kind}\t{promotion.status}\t"
+            f"{promotion.source_image} -> {promotion.target_image}"
+        )
+
+
+@deploy_promotions_app.command("mark")
+def mark_image_promotion(
+    promotion_id: Annotated[str, typer.Argument(help="Promotion record ID.")],
+    status: Annotated[str, typer.Option("--status", help="New promotion status.")] = "promoted",
+    digest: Annotated[
+        str | None,
+        typer.Option("--digest", help="Optional promoted image digest."),
+    ] = None,
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+) -> None:
+    """Mark an image promotion proof record as built, pushed, promoted, or failed."""
+    promotion = SQLiteStore(db).update_image_promotion(
+        promotion_id,
+        status=status,
+        digest=digest,
+        detail={"marked_by": "cli"},
+        updated_at=utc_now(),
+    )
+    if promotion is None:
+        typer.echo("image promotion not found", err=True)
+        raise typer.Exit(1)
+    typer.echo(json.dumps(promotion.model_dump(mode="json"), indent=2))
+
+
+@deploy_app.command("helm-template")
+def record_helm_template(
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+    chart: Annotated[
+        Path,
+        typer.Option("--chart", help="Helm chart path."),
+    ] = Path("charts/goblin-king"),
+    release: Annotated[str, typer.Option("--release", help="Helm release name.")] = "goblin-king",
+    namespace: Annotated[
+        str | None,
+        typer.Option("--namespace", help="Optional namespace."),
+    ] = None,
+    values: Annotated[
+        Path | None,
+        typer.Option("--values", help="Optional values file."),
+    ] = None,
+    execute: Annotated[
+        bool,
+        typer.Option(
+            "--execute/--record-only",
+            help="Run helm template instead of recording only.",
+        ),
+    ] = False,
+) -> None:
+    """Record or execute a Helm template proof command."""
+    command = helm_template_command(
+        chart=chart,
+        release=release,
+        namespace=namespace,
+        values=values,
+    )
+    output = None
+    status = "planned"
+    detail: dict[str, object] = {"execute": execute}
+    if execute:
+        code, output = run_command(command)
+        status = "rendered" if code == 0 else "failed"
+        detail["exit_code"] = code
+    now = utc_now()
+    record = DeploymentRecord(
+        id=str(uuid4()),
+        name=release,
+        action="helm-template",
+        status=status,
+        actor="cli",
+        command=command,
+        output=output,
+        created_at=now,
+        updated_at=now,
+        detail=detail,
+    )
+    SQLiteStore(db).save_deployment_record(record)
+    typer.echo(json.dumps(record.model_dump(mode="json"), indent=2))
+
+
+@deploy_app.command("records")
+def list_deployment_records(
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+) -> None:
+    """Print recent deployment orchestration records."""
+    records = SQLiteStore(db).list_deployment_records()
+    for record in records:
+        typer.echo(f"{record.id}\t{record.action}\t{record.status}\t{' '.join(record.command)}")
 
 
 @workers_app.command("build")

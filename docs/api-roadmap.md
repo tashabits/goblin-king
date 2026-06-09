@@ -99,10 +99,22 @@ target phase below.
 - `POST /admin/runtime/services/{service_id}/kill`: hard-stop registered long-running
   service presentation.
 
+## Covered In Phase 21
+
+- Image promotion and deployment orchestration proof records.
+- `GET /admin/images/promotions`: list worker image promotion history.
+- `POST /admin/images/promotions`: plan worker image promotion with build/push command
+  proof.
+- `POST /admin/images/promotions/{promotion_id}/mark`: mark promotions as built,
+  pushed, promoted, or failed.
+- `GET /admin/deployments`: list Helm render and discovery reload proof records.
+- `POST /admin/deployments/helm-template`: record or execute Helm template proof.
+- `POST /admin/deployments/reload-discovery`: reload discovery and record deploy proof.
+- Admin UI deployment panel for worker image coverage, promotion status, Helm render
+  intent, discovery reload, and proof trail.
+
 ## Later Infrastructure Follow-Up
 
-- Deployment and build orchestration APIs.
-- Worker image registry promotion APIs.
 - External webhook callbacks.
 - Cloud-specific Kubernetes recipes, such as managed ingress controllers, external
   secret operators, cloud storage classes, and registry-specific image promotion.

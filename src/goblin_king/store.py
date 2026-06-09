@@ -30,11 +30,13 @@ from goblin_king.contracts import (
     ApiTokenRecord,
     ArtifactRecord,
     AuditLogRecord,
+    DeploymentRecord,
     EventRecord,
     FanoutRecord,
     GoblinResult,
     HandoffRecord,
     HeartbeatRecord,
+    ImagePromotionRecord,
     JobRecord,
     LongServiceRecord,
     MembershipRecord,
@@ -256,6 +258,36 @@ long_services_table = Table(
     Column("created_by", String, nullable=False),
     Column("last_probe_at", DateTime(timezone=True), nullable=True),
     Column("last_probe_json", Text, nullable=True),
+)
+
+image_promotions_table = Table(
+    "image_promotions",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("kind", String, nullable=False),
+    Column("source_image", Text, nullable=False),
+    Column("target_image", Text, nullable=False),
+    Column("status", String, nullable=False),
+    Column("actor", String, nullable=False),
+    Column("digest", Text, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column("detail_json", Text, nullable=False, default="{}"),
+)
+
+deployment_records_table = Table(
+    "deployment_records",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("name", String, nullable=False),
+    Column("action", String, nullable=False),
+    Column("status", String, nullable=False),
+    Column("actor", String, nullable=False),
+    Column("command_json", Text, nullable=False, default="[]"),
+    Column("output", Text, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column("detail_json", Text, nullable=False, default="{}"),
 )
 
 
@@ -710,6 +742,121 @@ class SQLiteStore:
                 .values(**values)
             )
         return self.get_long_service(service_id)
+
+    def save_image_promotion(self, promotion: ImagePromotionRecord) -> None:
+        """Insert one worker image promotion proof record."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                image_promotions_table.insert().values(
+                    id=promotion.id,
+                    kind=promotion.kind,
+                    source_image=promotion.source_image,
+                    target_image=promotion.target_image,
+                    status=promotion.status,
+                    actor=promotion.actor,
+                    digest=promotion.digest,
+                    created_at=promotion.created_at,
+                    updated_at=promotion.updated_at,
+                    detail_json=json.dumps(promotion.detail),
+                )
+            )
+
+    def get_image_promotion(self, promotion_id: str) -> ImagePromotionRecord | None:
+        """Load one image promotion record by ID."""
+        with self.engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(image_promotions_table).where(
+                        image_promotions_table.c.id == promotion_id
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        return _row_to_image_promotion(dict(row)) if row else None
+
+    def list_image_promotions(self, *, limit: int = 100) -> list[ImagePromotionRecord]:
+        """Return recent worker image promotion records."""
+        with self.engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    select(image_promotions_table)
+                    .order_by(image_promotions_table.c.created_at.desc())
+                    .limit(max(1, min(limit, 500)))
+                )
+                .mappings()
+                .all()
+            )
+        return [_row_to_image_promotion(dict(row)) for row in rows]
+
+    def update_image_promotion(
+        self,
+        promotion_id: str,
+        *,
+        status: str,
+        updated_at: datetime,
+        digest: str | None = None,
+        detail: dict[str, Any] | None = None,
+    ) -> ImagePromotionRecord | None:
+        """Update image promotion status, digest, and operator proof details."""
+        values: dict[str, Any] = {"status": status, "updated_at": updated_at}
+        if digest is not None:
+            values["digest"] = digest
+        if detail is not None:
+            values["detail_json"] = json.dumps(detail)
+        with self.engine.begin() as connection:
+            connection.execute(
+                update(image_promotions_table)
+                .where(image_promotions_table.c.id == promotion_id)
+                .values(**values)
+            )
+        return self.get_image_promotion(promotion_id)
+
+    def save_deployment_record(self, record: DeploymentRecord) -> None:
+        """Insert one deployment orchestration proof record."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                deployment_records_table.insert().values(
+                    id=record.id,
+                    name=record.name,
+                    action=record.action,
+                    status=record.status,
+                    actor=record.actor,
+                    command_json=json.dumps(record.command),
+                    output=record.output,
+                    created_at=record.created_at,
+                    updated_at=record.updated_at,
+                    detail_json=json.dumps(record.detail),
+                )
+            )
+
+    def get_deployment_record(self, record_id: str) -> DeploymentRecord | None:
+        """Load one deployment orchestration record by ID."""
+        with self.engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(deployment_records_table).where(
+                        deployment_records_table.c.id == record_id
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        return _row_to_deployment_record(dict(row)) if row else None
+
+    def list_deployment_records(self, *, limit: int = 100) -> list[DeploymentRecord]:
+        """Return recent deployment orchestration records."""
+        with self.engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    select(deployment_records_table)
+                    .order_by(deployment_records_table.c.created_at.desc())
+                    .limit(max(1, min(limit, 500)))
+                )
+                .mappings()
+                .all()
+            )
+        return [_row_to_deployment_record(dict(row)) for row in rows]
 
     def cleanup_runtime_rows(
         self,
@@ -1499,6 +1646,38 @@ def _row_to_long_service(payload: dict[str, Any]) -> LongServiceRecord:
     )
 
 
+def _row_to_image_promotion(payload: dict[str, Any]) -> ImagePromotionRecord:
+    """Convert a SQLAlchemy row mapping into an ImagePromotionRecord."""
+    return ImagePromotionRecord(
+        id=payload["id"],
+        kind=payload["kind"],
+        source_image=payload["source_image"],
+        target_image=payload["target_image"],
+        status=payload["status"],
+        actor=payload["actor"],
+        digest=payload.get("digest"),
+        created_at=_coerce_datetime(payload["created_at"]),
+        updated_at=_coerce_datetime(payload["updated_at"]),
+        detail=json.loads(payload.get("detail_json") or "{}"),
+    )
+
+
+def _row_to_deployment_record(payload: dict[str, Any]) -> DeploymentRecord:
+    """Convert a SQLAlchemy row mapping into a DeploymentRecord."""
+    return DeploymentRecord(
+        id=payload["id"],
+        name=payload["name"],
+        action=payload["action"],
+        status=payload["status"],
+        actor=payload["actor"],
+        command=json.loads(payload.get("command_json") or "[]"),
+        output=payload.get("output"),
+        created_at=_coerce_datetime(payload["created_at"]),
+        updated_at=_coerce_datetime(payload["updated_at"]),
+        detail=json.loads(payload.get("detail_json") or "{}"),
+    )
+
+
 def _coerce_datetime(value: datetime | str) -> datetime:
     """Normalize SQLite-returned timestamp values for Pydantic models."""
     if isinstance(value, datetime):
@@ -1515,10 +1694,12 @@ __all__ = [
     "ApiTokenRecord",
     "AuditLogRecord",
     "DEFAULT_DB_PATH",
+    "DeploymentRecord",
     "EventRecord",
     "FanoutRecord",
     "HeartbeatRecord",
     "HandoffRecord",
+    "ImagePromotionRecord",
     "LongServiceRecord",
     "SQLiteStore",
 ]

@@ -40,8 +40,10 @@ from goblin_king.contracts import (
     ApiTokenRecord,
     ArtifactRecord,
     AuditLogRecord,
+    DeploymentRecord,
     EventRecord,
     HeartbeatRecord,
+    ImagePromotionRecord,
     JobRecord,
     LongServiceRecord,
     ProjectRecord,
@@ -50,6 +52,7 @@ from goblin_king.contracts import (
     UserRecord,
     utc_now,
 )
+from goblin_king.deployment import helm_template_command, image_push_command, run_command
 from goblin_king.events import DEFAULT_EVENT_STREAM, EventBus, stream_status
 from goblin_king.fanout import (
     FanoutCreateRequest,
@@ -254,6 +257,38 @@ class ArtifactCleanupResponse(BaseModel):
     files_selected: int
     bytes_selected: int
     files: list[str]
+
+
+class ImagePromotionCreateRequest(BaseModel):
+    """Admin request for planning or proving one worker image promotion."""
+
+    kind: str
+    target_image: str
+    source_image: str | None = None
+    actor: str = "api"
+    build: bool = False
+    push: bool = False
+    dry_run: bool = True
+
+
+class ImagePromotionUpdateRequest(BaseModel):
+    """Admin request for updating promotion status and digest proof."""
+
+    status: str = "promoted"
+    digest: str | None = None
+    detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class HelmTemplateRequest(BaseModel):
+    """Admin request for recording or executing Helm render proof."""
+
+    name: str = "goblin-king"
+    release: str = "goblin-king"
+    chart: str = "charts/goblin-king"
+    namespace: str | None = None
+    values: str | None = None
+    actor: str = "api"
+    execute: bool = False
 
 
 class RuntimeTerminationRequest(BaseModel):
@@ -741,6 +776,237 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             },
         )
         return status
+
+    @app.get(
+        "/admin/images/promotions",
+        response_model=list[ImagePromotionRecord],
+        tags=["admin"],
+        operation_id="listImagePromotions",
+    )
+    def list_image_promotions(
+        _principal: Principal = Depends(require_admin_principal),
+    ) -> list[ImagePromotionRecord]:
+        """Return worker image promotion history for deployment proof."""
+        return state.store.list_image_promotions()
+
+    @app.post(
+        "/admin/images/promotions",
+        response_model=ImagePromotionRecord,
+        tags=["admin"],
+        operation_id="planImagePromotion",
+    )
+    def plan_image_promotion(
+        request: ImagePromotionCreateRequest,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> ImagePromotionRecord:
+        """Plan or record generic worker image promotion steps."""
+        try:
+            worker = state.workers.get(request.kind)
+        except WorkerConfigError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        now = utc_now()
+        source_image = request.source_image or worker.image
+        commands: list[list[str]] = []
+        if request.build:
+            context = state.workers.resolved_context(worker)
+            commands.append(
+                [
+                    "docker",
+                    "build",
+                    "-f",
+                    str(context / worker.dockerfile),
+                    "-t",
+                    source_image,
+                    str(context),
+                ]
+            )
+        if request.push:
+            commands.append(image_push_command(request.target_image))
+        detail: dict[str, Any] = {
+            "dry_run": request.dry_run,
+            "commands": commands,
+            "worker_context": str(state.workers.resolved_context(worker)),
+            "dockerfile": worker.dockerfile,
+        }
+        promotion = ImagePromotionRecord(
+            id=str(uuid4()),
+            kind=request.kind,
+            source_image=source_image,
+            target_image=request.target_image,
+            status="planned",
+            actor=request.actor,
+            created_at=now,
+            updated_at=now,
+            detail=detail,
+        )
+        state.store.save_image_promotion(promotion)
+        state.event_bus.emit(
+            "admin.image_promotion.planned",
+            source="api",
+            payload=promotion.model_dump(mode="json"),
+        )
+        audit(
+            state.store,
+            action="image_promotion.planned",
+            outcome="success",
+            principal=principal,
+            resource_type="image_promotion",
+            resource_id=promotion.id,
+            detail=detail,
+        )
+        return promotion
+
+    @app.post(
+        "/admin/images/promotions/{promotion_id}/mark",
+        response_model=ImagePromotionRecord,
+        tags=["admin"],
+        operation_id="markImagePromotion",
+    )
+    def mark_image_promotion(
+        promotion_id: str,
+        request: ImagePromotionUpdateRequest,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> ImagePromotionRecord:
+        """Mark a worker image promotion as built, pushed, promoted, or failed."""
+        promotion = state.store.update_image_promotion(
+            promotion_id,
+            status=request.status,
+            digest=request.digest,
+            detail=request.detail,
+            updated_at=utc_now(),
+        )
+        if promotion is None:
+            raise HTTPException(status_code=404, detail="image promotion not found")
+        state.event_bus.emit(
+            f"admin.image_promotion.{promotion.status}",
+            source="api",
+            payload=promotion.model_dump(mode="json"),
+        )
+        audit(
+            state.store,
+            action="image_promotion.marked",
+            outcome="success",
+            principal=principal,
+            resource_type="image_promotion",
+            resource_id=promotion.id,
+            detail={"status": promotion.status, "digest": promotion.digest},
+        )
+        return promotion
+
+    @app.get(
+        "/admin/deployments",
+        response_model=list[DeploymentRecord],
+        tags=["admin"],
+        operation_id="listDeploymentRecords",
+    )
+    def list_deployment_records(
+        _principal: Principal = Depends(require_admin_principal),
+    ) -> list[DeploymentRecord]:
+        """Return deployment orchestration proof history."""
+        return state.store.list_deployment_records()
+
+    @app.post(
+        "/admin/deployments/helm-template",
+        response_model=DeploymentRecord,
+        tags=["admin"],
+        operation_id="recordHelmTemplate",
+    )
+    def record_helm_template(
+        request: HelmTemplateRequest,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> DeploymentRecord:
+        """Record or execute a Helm template proof command."""
+        command = helm_template_command(
+            chart=request.chart,
+            release=request.release,
+            namespace=request.namespace,
+            values=request.values,
+        )
+        status = "planned"
+        output = None
+        detail: dict[str, Any] = {"execute": request.execute}
+        if request.execute:
+            code, output = run_command(command)
+            status = "rendered" if code == 0 else "failed"
+            detail["exit_code"] = code
+        now = utc_now()
+        record = DeploymentRecord(
+            id=str(uuid4()),
+            name=request.name,
+            action="helm-template",
+            status=status,
+            actor=request.actor,
+            command=command,
+            output=output,
+            created_at=now,
+            updated_at=now,
+            detail=detail,
+        )
+        state.store.save_deployment_record(record)
+        state.event_bus.emit(
+            "admin.deployment.helm_template",
+            source="api",
+            payload=record.model_dump(mode="json"),
+        )
+        audit(
+            state.store,
+            action="deployment.helm_template",
+            outcome="success" if status != "failed" else "failed",
+            principal=principal,
+            resource_type="deployment",
+            resource_id=record.id,
+            detail=detail,
+        )
+        return record
+
+    @app.post(
+        "/admin/deployments/reload-discovery",
+        response_model=DeploymentRecord,
+        tags=["admin"],
+        operation_id="recordDiscoveryReloadDeployment",
+    )
+    def record_discovery_reload_deployment(
+        principal: Principal = Depends(require_admin_principal),
+    ) -> DeploymentRecord:
+        """Reload discovery and record the action in the deployment proof trail."""
+        try:
+            status = state.reload_discovery()
+            record_status = "applied"
+            detail: dict[str, Any] = status.model_dump(mode="json")
+        except (ProjectSettingsError, RegistryError, WorkerConfigError) as error:
+            record_status = "failed"
+            detail = {"error": str(error)}
+        now = utc_now()
+        record = DeploymentRecord(
+            id=str(uuid4()),
+            name="discovery-reload",
+            action="discovery-reload",
+            status=record_status,
+            actor="api",
+            command=["goblin-king", "api", "reload-discovery"],
+            output=json.dumps(detail),
+            created_at=now,
+            updated_at=now,
+            detail=detail,
+        )
+        state.store.save_deployment_record(record)
+        state.event_bus.emit(
+            "admin.deployment.discovery_reload",
+            source="api",
+            payload=record.model_dump(mode="json"),
+        )
+        audit(
+            state.store,
+            action="deployment.discovery_reload",
+            outcome="success" if record_status != "failed" else "failed",
+            principal=principal,
+            resource_type="deployment",
+            resource_id=record.id,
+            detail=detail,
+        )
+        if record_status == "failed":
+            raise HTTPException(status_code=400, detail=detail["error"])
+        return record
 
     @app.post(
         "/services/long-running",

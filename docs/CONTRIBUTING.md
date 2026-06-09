@@ -60,6 +60,11 @@ When a phase includes release or upgrade behavior, PR evidence must include whee
 proof, compatibility fixture validation, Docker/Helm adoption smoke or render proof,
 docs proof for release/migration/upgrade guides, and a compatibility matrix update.
 
+When a phase includes image promotion or deployment orchestration behavior, PR evidence
+must include image promotion lifecycle proof, recorded build/push or dry-run command
+proof, Helm render or dry-run proof, discovery reload proof, admin deployment panel
+proof, and the resulting audit/event records.
+
 When a phase includes fanout or retry behavior, PR evidence must include both API and CLI
 proof. Record fanout creation, fanout readback, scheduler execution, retry creation from
 a terminal job, and retry completion.
@@ -101,6 +106,9 @@ fixtures, Helm project values, scheduler project settings, and admin discovery p
 commands.
 Release/upgrade phases must include tests for compatibility fixtures, compatibility
 matrix shape, release documentation links, and first-hour adoption instructions.
+Image promotion/deployment phases must include tests for promotion records, status
+updates, Helm render records, CLI commands, admin API endpoints, admin UI controls, and
+event/audit proof.
 Fanout/retry phases must include tests for batch persistence, derived fanout status, API
 auth, CLI commands, retry lineage, rejected live-job retries, and scheduler execution.
 Event/heartbeat phases must include tests for event persistence, API event reads,
