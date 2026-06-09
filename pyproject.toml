@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "goblin-king"
 version = "0.1.0"
 description = "A reusable Python scheduler kernel for injectable goblin workers."
-readme = "docs/goblin-king-plan.md"
+readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.7,<3",
