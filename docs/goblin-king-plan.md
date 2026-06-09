@@ -396,11 +396,13 @@ Integration tests:
 
 ### Phase 3: Docker Execution
 
-- Add generic worker image.
-- Add DockerRuntime.
+- Add self-contained worker folders with a `Dockerfile` per worker.
+- Build worker images during deployment or local Compose setup.
+- Add DockerRuntime as the default runtime while keeping explicit in-process debugging.
+- Add worker image map configuration outside the goblin registry.
+- Add Redis result transport with file result fallback.
 - Add artifact directory convention.
-- Add worker result publishing.
-- Add Compose stack.
+- Add Compose stack and Makefile targets for build, deploy, test, simulate, and clean flows.
 
 ### Phase 4: API
 

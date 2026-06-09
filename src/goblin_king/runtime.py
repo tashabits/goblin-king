@@ -77,7 +77,14 @@ class DockerRuntime:
             str(dockerfile),
             str(context),
         ]
-        completed = subprocess.run(command, check=False, capture_output=True, text=True)
+        completed = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
         if completed.returncode != 0:
             raise WorkerConfigError(
                 f"failed to build worker image for {kind!r}: {completed.stderr.strip()}"
@@ -112,6 +119,8 @@ class DockerRuntime:
                 check=False,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout_seconds,
             )
         except subprocess.TimeoutExpired:
@@ -163,6 +172,8 @@ class DockerRuntime:
             "goblin-king.worker=true",
             "--label",
             f"goblin-king.run-id={context.run_id}",
+            "--add-host",
+            "host.docker.internal:host-gateway",
             "-e",
             f"GOBLIN_RUN_ID={context.run_id}",
             "-e",

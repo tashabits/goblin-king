@@ -56,6 +56,8 @@ def test_jobs_submit_persists_completed_run(tmp_path: Path) -> None:
             "examples/goblins.json",
             "--db",
             str(db_path),
+            "--runtime",
+            "in-process",
         ],
     )
 
@@ -90,6 +92,8 @@ def test_jobs_submit_persists_failed_run(tmp_path: Path) -> None:
             str(registry_path),
             "--db",
             str(db_path),
+            "--runtime",
+            "in-process",
         ],
     )
 
@@ -116,6 +120,8 @@ def test_runs_show_prints_stored_run(tmp_path: Path) -> None:
             "examples/goblins.json",
             "--db",
             str(db_path),
+            "--runtime",
+            "in-process",
         ],
     )
     run_id = json.loads(submit.stdout)["id"]
@@ -186,6 +192,8 @@ def test_scheduler_run_once_executes_due_schedule(tmp_path: Path) -> None:
             "examples/goblins.json",
             "--db",
             str(db_path),
+            "--runtime",
+            "in-process",
         ],
     )
     jobs = runner.invoke(app, ["jobs", "list", "--db", str(db_path)])
