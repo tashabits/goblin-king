@@ -455,3 +455,24 @@ def test_events_and_heartbeats_list_commands(tmp_path: Path) -> None:
     assert json.loads(events.stdout)["event_type"] == "job.completed"
     assert heartbeats.exit_code == 0
     assert json.loads(heartbeats.stdout)["owner_id"] == "scheduler-1"
+
+
+def test_event_stream_status_command(monkeypatch) -> None:
+    """Verify CLI operators can inspect Redis Stream delivery status."""
+
+    class FakeRedis:
+        def xinfo_stream(self, _stream: str) -> dict:
+            return {"length": 5, "last-generated-id": b"5-0"}
+
+        def xinfo_groups(self, _stream: str) -> list[dict]:
+            return [{b"name": b"operators", b"pending": 2}]
+
+    monkeypatch.setattr("goblin_king.events.Redis.from_url", lambda _url: FakeRedis())
+
+    result = runner.invoke(app, ["events", "stream-status"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["stream"] == "goblin-king:events:stream"
+    assert payload["length"] == 5
+    assert payload["pending"] == 2

@@ -5,24 +5,31 @@ modules called goblins. Goblins can run as self-contained Docker workers, which 
 worker use the language and runtime that fits its job while the King keeps scheduling,
 status, and result contracts consistent.
 
-Phase 4 adds a FastAPI control plane for discovering goblins, queueing jobs, managing
-schedules, inspecting runs, and serving local artifacts safely.
-Phase 5 adds reusable project integration through project settings, multiple registry
-files, Python package entry point discovery, and a package/worker template generator.
-Phase 6 adds durable fanout batches and retry APIs/CLI commands for queueing related
-work without executing it inline.
-Phase 7 adds durable event history, Redis pub/sub streaming, WebSocket run updates,
-and scheduler/worker heartbeat tracking.
-Phase 8 adds local API users, projects, hashed API tokens, project-scoped access,
-audit logs, local rate limits, paginated list responses, and client-quality OpenAPI
-metadata.
-The final optional phase adds sample proof goblins, a FastAPI-served admin UI for
-Docker and Helm deployments, long-running service probes, and an optional Kubernetes
-Helm chart. Docker and Compose remain the default local path.
-Phase 13 adds deploy-time discovery reload: API and admin operators can reload project
-settings, registry files, Python entry points, and worker image maps so newly deployed
-goblin types appear without rebuilding the React admin. Later adoption phases continue
-with host-project deployment examples and the internal release/upgrade story.
+The current implementation covers the Phase 1-17 roadmap: a SQLite-backed scheduler,
+Docker worker execution, FastAPI control plane, reusable project/plugin discovery,
+fanout and retry workflows, durable events, Redis pub/sub and Redis Streams delivery,
+WebSocket run updates, scheduler and worker heartbeats, local bearer-token auth,
+project scoping, audit/rate-limit proof, a Docker/Helm admin UI, deploy-time discovery
+reload, host-project adoption examples, internal release/upgrade checks, and
+cloud-neutral Helm hardening. Docker and Compose remain the default local path;
+Kubernetes is optional through the Helm chart.
+
+## Table Of Contents
+
+- [Goblin King](#goblin-king)
+- [Table Of Contents](#table-of-contents)
+- [Quick Start](#quick-start)
+- [Worker Images](#worker-images)
+- [Documentation](#documentation)
+- [Current Scope](#current-scope)
+- Deeper manuals:
+  - [User Guide](docs/USER_GUIDE.md)
+  - [Admin Guide](docs/ADMIN_GUIDE.md)
+  - [API Roadmap](docs/api-roadmap.md)
+  - [Scheduler Plan](docs/goblin-king-plan.md)
+  - [Adopting Projects](docs/ADOPTING_PROJECTS.md)
+  - [Public API Boundary](docs/PUBLIC_API.md)
+  - [Release Checklist](docs/RELEASE_CHECKLIST.md)
 
 ## Quick Start
 
@@ -167,8 +174,18 @@ Watch live event envelopes from Redis:
 goblin-king events watch --redis-url redis://localhost:6379/0
 ```
 
-The API exposes the same event data over `GET /events`, scheduler and worker liveness
-over `GET /heartbeats`, and live run updates over `WS /ws/runs`.
+Inspect Redis Streams delivery health and read stream events through a consumer group:
+
+```bash
+goblin-king events stream-status --redis-url redis://localhost:6379/0
+goblin-king events stream-read --redis-url redis://localhost:6379/0 --ack
+```
+
+The API exposes the same durable SQLite event data over `GET /events`, Redis Stream
+transport health over `GET /events/stream/status`, scheduler and worker liveness over
+`GET /heartbeats`, and live run updates over `WS /ws/runs`. SQLite remains the durable
+source of truth; Redis pub/sub is the live rail and Redis Streams provide replayable
+delivery for operators and integrations.
 
 Open the React admin lab bench with Docker Compose:
 
@@ -191,8 +208,8 @@ leaving schedules, auth/project data, active jobs, running services, and schedul
 heartbeat intact.
 
 The tester buttons labeled kill perform King-side cancellation or registered-service
-stop actions. They do not hard-kill Docker containers or Kubernetes pods. As the court
-scribe says: "A proper goblin returns receipts."
+stop actions. They do not hard-kill Docker containers or Kubernetes pods; the API
+records the requested state change through events and audit logs.
 
 Run the Docker admin proof flow:
 
@@ -349,5 +366,8 @@ mixed-kind fanout batches, create retry jobs from terminal jobs, stream events o
 WebSockets, track scheduler/worker heartbeats, audit API activity, and expose
 client-oriented OpenAPI metadata. It now documents a stable internal package boundary
 for adopting projects and internal wheel reuse, with a plugin SDK path for short-running
-and long-running goblin workers. Kubernetes, Redis durability guarantees, and deployment
-hardening are optional follow-up work beyond the local Helm proof.
+and long-running goblin workers. Redis Streams provide replayable delivery proof for
+event consumers, and the optional Helm chart includes cloud-neutral production
+hardening controls. Remaining follow-up work is limited to later roadmap items such as
+OIDC/JWT authentication, volume-backed artifact management, scoped hard runtime
+termination, image promotion/deployment orchestration, and cloud-specific recipes.

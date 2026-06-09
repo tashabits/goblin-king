@@ -55,9 +55,9 @@ cancel, this is King-side state control rather than hard runtime termination.
 
 ## Inspect Events And Heartbeats
 
-The **Events** panel shows durable SQLite-backed event history and the live WebSocket
-event rail. Heartbeats appear below this section and prove scheduler and worker liveness.
-If a goblin moves, the King writes it down.
+The **Events** panel shows durable SQLite-backed event history, Redis Stream delivery
+health, and the live WebSocket event rail. Heartbeats appear below this section and
+prove scheduler and worker liveness. If a goblin moves, the King writes it down.
 
 ![Events and live rail](images/admin/admin-events.png)
 
