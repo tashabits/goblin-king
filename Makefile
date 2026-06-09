@@ -4,8 +4,9 @@ REGISTRY ?= examples/goblins.json
 IMAGES ?= goblin-images.json
 INPUT ?= examples/input.json
 REDIS_URL ?= redis://localhost:6379/0
+LONG_HELLO_URL ?= http://long-hello:8080
 
-.PHONY: help install test lint local-ci build-workers redis-up redis-down deploy run-once schedule simulate events-smoke api api-smoke clean docker-clean
+.PHONY: help install test lint local-ci build-workers redis-up redis-down deploy run-once schedule simulate events-smoke api api-smoke long-hello-up long-hello-down admin-smoke helm-template kind-smoke clean docker-clean
 
 help:
 	@echo "Targets:"
@@ -23,6 +24,10 @@ help:
 	@echo "  events-smoke   Print recent events and heartbeats after simulation"
 	@echo "  api            Run the FastAPI control plane"
 	@echo "  api-smoke      Exercise local API health, auth, and queued jobs"
+	@echo "  long-hello-up  Start the long-running hello service with Compose"
+	@echo "  admin-smoke    Exercise Docker admin API proof flow"
+	@echo "  helm-template  Render the optional Helm chart"
+	@echo "  kind-smoke     Render Helm and report whether kind is available"
 	@echo "  clean          Remove local Goblin King runtime state"
 	@echo "  docker-clean   Stop Compose services and remove volumes"
 
@@ -66,6 +71,21 @@ api:
 
 api-smoke:
 	$(PYTHON) -c "import json, urllib.error, urllib.request; base='http://127.0.0.1:8000'; auth={'Authorization':'Bearer local-dev-token'}; print(urllib.request.urlopen(base + '/health').read().decode()); req=urllib.request.Request(base + '/goblins', headers=auth); print(urllib.request.urlopen(req).read().decode()); body=json.dumps({'kind':'example.echo','input':{'message':'hello api'}}).encode(); req=urllib.request.Request(base + '/jobs', data=body, headers={'Content-Type':'application/json'}, method='POST');\ntry:\n    urllib.request.urlopen(req)\nexcept urllib.error.HTTPError as e:\n    print('unauthenticated_status=' + str(e.code));\nreq=urllib.request.Request(base + '/jobs', data=body, headers={'Content-Type':'application/json','Authorization':'Bearer local-dev-token'}, method='POST'); print(urllib.request.urlopen(req).read().decode()); req=urllib.request.Request(base + '/jobs?limit=5', headers=auth); print(urllib.request.urlopen(req).read().decode()); req=urllib.request.Request(base + '/openapi.json'); data=json.loads(urllib.request.urlopen(req).read()); print('openapi_has_bearer=' + str('HTTPBearer' in data['components']['securitySchemes']))"
+
+long-hello-up:
+	docker compose --profile admin up -d long-hello
+
+long-hello-down:
+	docker compose stop long-hello
+
+admin-smoke:
+	$(PYTHON) -c "import json, time, urllib.request; base='http://127.0.0.1:8000'; token='local-dev-token'; service_url='$(LONG_HELLO_URL)'; headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'}; req=urllib.request.Request(base+'/admin?token='+token); print('admin_html_status=' + str(urllib.request.urlopen(req).status)); body=json.dumps({'kind':'example.hello','input':{'name':'World'}}).encode(); req=urllib.request.Request(base+'/jobs', data=body, headers=headers, method='POST'); job=json.loads(urllib.request.urlopen(req).read()); print('hello_job=' + job['id']); body=json.dumps({'kind':'example.long-hello','base_url':service_url}).encode(); req=urllib.request.Request(base+'/services/long-running', data=body, headers=headers, method='POST'); service=json.loads(urllib.request.urlopen(req).read()); print('service=' + service['id']); req=urllib.request.Request(base+'/services/long-running/'+service['id']+'/probe', headers=headers, method='POST'); first=json.loads(urllib.request.urlopen(req).read()); time.sleep(1); second=json.loads(urllib.request.urlopen(req).read()); print(first['response']['json']['message']); print('timestamp_changed=' + str(first['response']['json']['timestamp'] != second['response']['json']['timestamp'])); req=urllib.request.Request(base+'/events?limit=10', headers={'Authorization':'Bearer '+token}); print(urllib.request.urlopen(req).read().decode())"
+
+helm-template:
+	helm template goblin-king charts/goblin-king
+
+kind-smoke: helm-template
+	$(PYTHON) -c "import shutil; print('kind_available=' + str(shutil.which('kind') is not None))"
 
 clean:
 	$(PYTHON) -c "import shutil; shutil.rmtree('.goblin-king', ignore_errors=True)"

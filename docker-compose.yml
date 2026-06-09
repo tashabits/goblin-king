@@ -75,5 +75,56 @@ services:
       dockerfile: Dockerfile
     command: ["python", "-c", "print('example.echo worker image built')"]
 
+  worker-example-hello:
+    image: goblin-king-example-hello:local
+    profiles: ["workers"]
+    build:
+      context: workers/example.hello
+      dockerfile: Dockerfile
+    command: ["python", "-c", "print('example.hello worker image built')"]
+
+  worker-example-artifact:
+    image: goblin-king-example-artifact:local
+    profiles: ["workers"]
+    build:
+      context: workers/example.artifact
+      dockerfile: Dockerfile
+    command: ["python", "-c", "print('example.artifact worker image built')"]
+
+  worker-example-environment:
+    image: goblin-king-example-environment:local
+    profiles: ["workers"]
+    build:
+      context: workers/example.environment
+      dockerfile: Dockerfile
+    command: ["python", "-c", "print('example.environment worker image built')"]
+
+  worker-example-controlled-failure:
+    image: goblin-king-example-controlled-failure:local
+    profiles: ["workers"]
+    build:
+      context: workers/example.controlled-failure
+      dockerfile: Dockerfile
+    command: ["python", "-c", "print('example.controlled-failure worker image built')"]
+
+  worker-example-progress:
+    image: goblin-king-example-progress:local
+    profiles: ["workers"]
+    build:
+      context: workers/example.progress
+      dockerfile: Dockerfile
+    command: ["python", "-c", "print('example.progress worker image built')"]
+
+  long-hello:
+    image: goblin-king-example-long-hello:local
+    profiles: ["admin"]
+    build:
+      context: workers/example.long-hello
+      dockerfile: Dockerfile
+    ports:
+      - "8090:8080"
+    environment:
+      GOBLIN_WORKER_ID: example-long-hello-compose
+
 volumes:
   goblin-king-data:
