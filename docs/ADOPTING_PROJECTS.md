@@ -44,9 +44,12 @@ The generated package includes:
 
 - Python package metadata.
 - A `goblin_king.goblins` entry point.
-- `goblins.json`.
+- `goblins.json` for JSON-based integration.
 - `goblin-images.json`.
+- `goblin-king-project.json` using entry-point discovery by default.
+- `goblin-king-api.json`.
 - A self-contained worker folder with a Dockerfile.
+- A long-running service worker folder with a Dockerfile.
 - Local tests and README.
 
 ## Connect The Host Project
@@ -69,6 +72,15 @@ Validate discovery before deployment:
 goblin-king project validate --project goblin-king-project.json
 goblin-king project goblins list --project goblin-king-project.json
 ```
+
+Use `--check-worker-builds` when deployment proof needs real Docker builds as part of
+validation:
+
+```bash
+goblin-king project validate --project goblin-king-project.json --check-worker-builds
+```
+
+See `examples/adopting-project/` for a multi-registry host-project fixture.
 
 ## Use Docker Images
 

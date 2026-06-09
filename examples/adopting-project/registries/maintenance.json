@@ -1,0 +1,12 @@
+{
+  "goblins": [
+    {
+      "kind": "project.maintenance.hello",
+      "display_name": "Project Maintenance Hello",
+      "module": "examples.goblins.hello",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    }
+  ]
+}

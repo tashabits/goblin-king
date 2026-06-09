@@ -283,5 +283,6 @@ goblins from multiple registry files and installed package entry points, queue
 mixed-kind fanout batches, create retry jobs from terminal jobs, stream events over
 WebSockets, track scheduler/worker heartbeats, audit API activity, and expose
 client-oriented OpenAPI metadata. It now documents a stable internal package boundary
-for adopting projects and internal wheel reuse. Kubernetes, Redis durability guarantees,
-and deployment hardening are optional follow-up work beyond the local Helm proof.
+for adopting projects and internal wheel reuse, with a plugin SDK path for short-running
+and long-running goblin workers. Kubernetes, Redis durability guarantees, and deployment
+hardening are optional follow-up work beyond the local Helm proof.

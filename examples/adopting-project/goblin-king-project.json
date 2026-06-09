@@ -1,0 +1,9 @@
+{
+  "registries": [
+    "registries/maintenance.json",
+    "registries/reports.json"
+  ],
+  "entry_points": false,
+  "images": "goblin-images.json",
+  "api_settings": "goblin-king-api.json"
+}

@@ -1,0 +1,12 @@
+{
+  "goblins": [
+    {
+      "kind": "project.reports.long-service",
+      "display_name": "Project Reports Long Service",
+      "module": "examples.goblins.long_hello",
+      "entrypoint": "run",
+      "timeout_seconds": 10,
+      "max_retries": 0
+    }
+  ]
+}

@@ -162,15 +162,49 @@ def validate_project(
         Path,
         typer.Option("--project", help="Goblin King project settings path."),
     ] = DEFAULT_PROJECT_PATH,
+    check_worker_builds: Annotated[
+        bool,
+        typer.Option(
+            "--check-worker-builds",
+            help="Run docker build for every configured worker after static validation.",
+        ),
+    ] = False,
 ) -> None:
     """Validate project settings, registry discovery, and worker image settings."""
     settings = _load_project_settings(project)
     registry = _load_project_registry(project)
     workers = _load_workers(settings.images)
+    missing: list[str] = []
+    invalid: list[str] = []
+    for definition in registry.list():
+        try:
+            worker = workers.get(definition.kind)
+        except WorkerConfigError:
+            missing.append(definition.kind)
+            continue
+        context = workers.resolved_context(worker)
+        dockerfile = context / worker.dockerfile
+        if not dockerfile.exists():
+            invalid.append(f"{definition.kind}\t{dockerfile}")
+
+    if missing or invalid:
+        for kind in missing:
+            typer.echo(f"missing_worker\t{kind}", err=True)
+        for item in invalid:
+            typer.echo(f"missing_dockerfile\t{item}", err=True)
+        raise typer.Exit(1)
+
+    if check_worker_builds:
+        runtime = DockerRuntime(workers=workers)
+        for definition in registry.list():
+            runtime.build_image(definition.kind)
+
     typer.echo(f"registries\t{len(settings.registries)}")
     typer.echo(f"entry_points\t{settings.entry_points}")
     typer.echo(f"goblins\t{len(registry.list())}")
     typer.echo(f"workers\t{len(workers.items())}")
+    typer.echo(f"worker_coverage\t{len(registry.list())}/{len(registry.list())}")
+    typer.echo("dockerfiles\tok")
 
 
 @project_app.command("init-package")
@@ -182,10 +216,23 @@ def init_project_package(
         typer.Option("--package-name", help="Generated Python package name."),
     ],
     image: Annotated[str, typer.Option("--image", help="Generated worker image tag.")],
+    include_long_service: Annotated[
+        bool,
+        typer.Option(
+            "--long-service/--no-long-service",
+            help="Include a generated long-running service worker folder.",
+        ),
+    ] = True,
 ) -> None:
     """Generate a reusable goblin package and self-contained worker folder."""
     try:
-        created = init_package(target_dir, kind=kind, package_name=package_name, image=image)
+        created = init_package(
+            target_dir,
+            kind=kind,
+            package_name=package_name,
+            image=image,
+            include_long_service=include_long_service,
+        )
     except TemplateError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
