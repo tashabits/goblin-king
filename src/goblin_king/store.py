@@ -26,15 +26,22 @@ from sqlalchemy import (
 from sqlalchemy.engine import Engine
 
 from goblin_king.contracts import (
+    ApiTokenRecord,
     ArtifactRecord,
+    AuditLogRecord,
     EventRecord,
     FanoutRecord,
     GoblinResult,
     HandoffRecord,
     HeartbeatRecord,
     JobRecord,
+    MembershipRecord,
+    ProjectRecord,
+    RateLimitRecord,
     RunRecord,
     ScheduleRecord,
+    TeamRecord,
+    UserRecord,
 )
 
 DEFAULT_DB_PATH = Path(".goblin-king") / "goblin-king.sqlite3"
@@ -51,6 +58,7 @@ jobs_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("created_by", String, nullable=False),
     Column("correlation_id", String, nullable=True),
+    Column("project_id", String, nullable=True),
     Column("fanout_id", String, nullable=True),
     Column("metadata_json", Text, nullable=False, default="{}"),
     Column("status", String, nullable=False, default="queued"),
@@ -71,6 +79,7 @@ fanouts_table = Table(
     Column("id", String, primary_key=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("created_by", String, nullable=False),
+    Column("project_id", String, nullable=True),
     Column("correlation_id", String, nullable=True),
     Column("description", Text, nullable=True),
 )
@@ -80,6 +89,7 @@ schedules_table = Table(
     metadata,
     Column("id", String, primary_key=True),
     Column("kind", String, nullable=False),
+    Column("project_id", String, nullable=True),
     Column("input_json", Text, nullable=False),
     Column("cron", String, nullable=False),
     Column("timezone", String, nullable=False),
@@ -98,6 +108,7 @@ runs_table = Table(
     Column("id", String, primary_key=True),
     Column("job_id", String, ForeignKey("jobs.id"), nullable=False),
     Column("kind", String, nullable=False),
+    Column("project_id", String, nullable=True),
     Column("attempt", Integer, nullable=False),
     Column("status", String, nullable=False),
     Column("started_at", DateTime(timezone=True), nullable=False),
@@ -135,6 +146,7 @@ events_table = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("event_type", String, nullable=False),
     Column("source", String, nullable=False),
+    Column("project_id", String, nullable=True),
     Column("job_id", String, nullable=True),
     Column("run_id", String, nullable=True),
     Column("fanout_id", String, nullable=True),
@@ -142,6 +154,79 @@ events_table = Table(
     Column("worker_id", String, nullable=True),
     Column("scheduler_id", String, nullable=True),
     Column("payload_json", Text, nullable=False, default="{}"),
+)
+
+users_table = Table(
+    "users",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("email", String, nullable=False),
+    Column("display_name", String, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("disabled", Integer, nullable=False, default=0),
+)
+
+teams_table = Table(
+    "teams",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("name", String, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+projects_table = Table(
+    "projects",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("name", String, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+memberships_table = Table(
+    "memberships",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("project_id", String, nullable=False),
+    Column("role", String, nullable=False),
+    Column("user_id", String, nullable=True),
+    Column("team_id", String, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
+
+api_tokens_table = Table(
+    "api_tokens",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("name", String, nullable=False),
+    Column("token_hash", String, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("user_id", String, nullable=False),
+    Column("project_id", String, nullable=True),
+    Column("role", String, nullable=False),
+    Column("revoked_at", DateTime(timezone=True), nullable=True),
+)
+
+audit_logs_table = Table(
+    "audit_logs",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("action", String, nullable=False),
+    Column("outcome", String, nullable=False),
+    Column("user_id", String, nullable=True),
+    Column("token_id", String, nullable=True),
+    Column("project_id", String, nullable=True),
+    Column("resource_type", String, nullable=True),
+    Column("resource_id", String, nullable=True),
+    Column("detail_json", Text, nullable=False, default="{}"),
+)
+
+rate_limits_table = Table(
+    "rate_limits",
+    metadata,
+    Column("key", String, primary_key=True),
+    Column("window_started_at", DateTime(timezone=True), nullable=False),
+    Column("count", Integer, nullable=False, default=0),
 )
 
 heartbeats_table = Table(
@@ -178,6 +263,7 @@ class SQLiteStore:
                     created_at=job.created_at,
                     created_by=job.created_by,
                     correlation_id=job.correlation_id,
+                    project_id=job.project_id,
                     fanout_id=job.fanout_id,
                     metadata_json=json.dumps(job.metadata),
                     status=job.status,
@@ -202,6 +288,7 @@ class SQLiteStore:
                     created_at=event.created_at,
                     event_type=event.event_type,
                     source=event.source,
+                    project_id=event.project_id,
                     job_id=event.job_id,
                     run_id=event.run_id,
                     fanout_id=event.fanout_id,
@@ -224,6 +311,8 @@ class SQLiteStore:
         schedule_id: str | None = None,
         worker_id: str | None = None,
         scheduler_id: str | None = None,
+        project_id: str | None = None,
+        offset: int = 0,
     ) -> list[EventRecord]:
         """Return durable events with simple bounded filtering."""
         bounded_limit = max(1, min(limit, 500))
@@ -231,6 +320,8 @@ class SQLiteStore:
             query = select(events_table).order_by(events_table.c.created_at, events_table.c.id)
             if event_type is not None:
                 query = query.where(events_table.c.event_type == event_type)
+            if project_id is not None:
+                query = query.where(events_table.c.project_id == project_id)
             if after_id is not None:
                 cursor = connection.execute(
                     select(events_table.c.created_at).where(events_table.c.id == after_id)
@@ -247,8 +338,226 @@ class SQLiteStore:
             }.items():
                 if value is not None:
                     query = query.where(getattr(events_table.c, column_name) == value)
-            rows = connection.execute(query.limit(bounded_limit)).mappings().all()
+            rows = (
+                connection.execute(query.offset(max(offset, 0)).limit(bounded_limit))
+                .mappings()
+                .all()
+            )
         return [_row_to_event(dict(row)) for row in rows]
+
+    def count_events(self, *, project_id: str | None = None) -> int:
+        """Return a simple event count for pagination metadata."""
+        with self.engine.connect() as connection:
+            query = select(events_table.c.id)
+            if project_id is not None:
+                query = query.where(events_table.c.project_id == project_id)
+            return len(connection.execute(query).all())
+
+    def save_user(self, user: UserRecord) -> None:
+        """Insert one local API user."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                users_table.insert().values(
+                    id=user.id,
+                    email=user.email,
+                    display_name=user.display_name,
+                    created_at=user.created_at,
+                    disabled=1 if user.disabled else 0,
+                )
+            )
+
+    def save_team(self, team: TeamRecord) -> None:
+        """Insert one local API team."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                teams_table.insert().values(
+                    id=team.id,
+                    name=team.name,
+                    created_at=team.created_at,
+                )
+            )
+
+    def save_project(self, project: ProjectRecord) -> None:
+        """Insert one local project boundary."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                projects_table.insert().values(
+                    id=project.id,
+                    name=project.name,
+                    created_at=project.created_at,
+                )
+            )
+
+    def save_membership(self, membership: MembershipRecord) -> None:
+        """Insert one project membership grant."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                memberships_table.insert().values(
+                    id=membership.id,
+                    project_id=membership.project_id,
+                    role=membership.role,
+                    user_id=membership.user_id,
+                    team_id=membership.team_id,
+                    created_at=membership.created_at,
+                )
+            )
+
+    def save_api_token(self, token: ApiTokenRecord) -> None:
+        """Insert one hashed API token record."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                api_tokens_table.insert().values(
+                    id=token.id,
+                    name=token.name,
+                    token_hash=token.token_hash,
+                    created_at=token.created_at,
+                    user_id=token.user_id,
+                    project_id=token.project_id,
+                    role=token.role,
+                    revoked_at=token.revoked_at,
+                )
+            )
+
+    def get_api_token_by_hash(self, token_hash: str) -> ApiTokenRecord | None:
+        """Load one non-revoked API token by its stored hash."""
+        with self.engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(api_tokens_table)
+                    .where(api_tokens_table.c.token_hash == token_hash)
+                    .where(api_tokens_table.c.revoked_at.is_(None))
+                )
+                .mappings()
+                .one_or_none()
+            )
+        if row is None:
+            return None
+        return _row_to_api_token(dict(row))
+
+    def revoke_api_token(self, token_id: str, revoked_at: datetime) -> ApiTokenRecord | None:
+        """Revoke an API token and return the updated token."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                update(api_tokens_table)
+                .where(api_tokens_table.c.id == token_id)
+                .values(revoked_at=revoked_at)
+            )
+        with self.engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(api_tokens_table).where(api_tokens_table.c.id == token_id)
+                )
+                .mappings()
+                .one_or_none()
+            )
+        return _row_to_api_token(dict(row)) if row else None
+
+    def get_user(self, user_id: str) -> UserRecord | None:
+        """Load one user by ID."""
+        with self.engine.connect() as connection:
+            row = (
+                connection.execute(select(users_table).where(users_table.c.id == user_id))
+                .mappings()
+                .one_or_none()
+            )
+        return _row_to_user(dict(row)) if row else None
+
+    def get_project(self, project_id: str) -> ProjectRecord | None:
+        """Load one project by ID."""
+        with self.engine.connect() as connection:
+            row = (
+                connection.execute(select(projects_table).where(projects_table.c.id == project_id))
+                .mappings()
+                .one_or_none()
+            )
+        return _row_to_project(dict(row)) if row else None
+
+    def list_projects(self) -> list[ProjectRecord]:
+        """Return all local projects."""
+        with self.engine.connect() as connection:
+            rows = (
+                connection.execute(select(projects_table).order_by(projects_table.c.name))
+                .mappings()
+                .all()
+            )
+        return [_row_to_project(dict(row)) for row in rows]
+
+    def save_audit_log(self, audit: AuditLogRecord) -> None:
+        """Insert one audit log event."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                audit_logs_table.insert().values(
+                    id=audit.id,
+                    created_at=audit.created_at,
+                    action=audit.action,
+                    outcome=audit.outcome,
+                    user_id=audit.user_id,
+                    token_id=audit.token_id,
+                    project_id=audit.project_id,
+                    resource_type=audit.resource_type,
+                    resource_id=audit.resource_id,
+                    detail_json=json.dumps(audit.detail),
+                )
+            )
+
+    def list_audit_logs(
+        self,
+        *,
+        project_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[AuditLogRecord]:
+        """Return audit log rows with bounded pagination."""
+        with self.engine.connect() as connection:
+            query = select(audit_logs_table).order_by(audit_logs_table.c.created_at)
+            if project_id is not None:
+                query = query.where(audit_logs_table.c.project_id == project_id)
+            rows = (
+                connection.execute(query.offset(max(offset, 0)).limit(max(1, min(limit, 500))))
+                .mappings()
+                .all()
+            )
+        return [_row_to_audit_log(dict(row)) for row in rows]
+
+    def increment_rate_limit(
+        self,
+        *,
+        key: str,
+        window_started_at: datetime,
+        reset_existing: bool,
+    ) -> RateLimitRecord:
+        """Increment one rate-limit counter and return the current window state."""
+        with self.engine.begin() as connection:
+            row = (
+                connection.execute(select(rate_limits_table).where(rate_limits_table.c.key == key))
+                .mappings()
+                .one_or_none()
+            )
+            if row is None:
+                count = 1
+                connection.execute(
+                    rate_limits_table.insert().values(
+                        key=key,
+                        window_started_at=window_started_at,
+                        count=count,
+                    )
+                )
+            elif reset_existing:
+                count = 1
+                connection.execute(
+                    update(rate_limits_table)
+                    .where(rate_limits_table.c.key == key)
+                    .values(window_started_at=window_started_at, count=count)
+                )
+            else:
+                count = row["count"] + 1
+                window_started_at = _coerce_datetime(row["window_started_at"])
+                connection.execute(
+                    update(rate_limits_table)
+                    .where(rate_limits_table.c.key == key)
+                    .values(count=count)
+                )
+        return RateLimitRecord(key=key, window_started_at=window_started_at, count=count)
 
     def upsert_heartbeat(self, heartbeat: HeartbeatRecord) -> None:
         """Insert or replace the latest heartbeat for one scheduler or worker owner."""
@@ -310,6 +619,7 @@ class SQLiteStore:
                     id=fanout.id,
                     created_at=fanout.created_at,
                     created_by=fanout.created_by,
+                    project_id=fanout.project_id,
                     correlation_id=fanout.correlation_id,
                     description=fanout.description,
                 )
@@ -374,6 +684,7 @@ class SQLiteStore:
                     id=run.id,
                     job_id=run.job_id,
                     kind=run.kind,
+                    project_id=run.project_id,
                     attempt=run.attempt,
                     status=run.status,
                     started_at=run.started_at,
@@ -411,6 +722,7 @@ class SQLiteStore:
                 schedules_table.insert().values(
                     id=schedule.id,
                     kind=schedule.kind,
+                    project_id=schedule.project_id,
                     input_json=json.dumps(schedule.input),
                     cron=schedule.cron,
                     timezone=schedule.timezone,
@@ -446,6 +758,7 @@ class SQLiteStore:
                 .where(schedules_table.c.id == schedule.id)
                 .values(
                     kind=schedule.kind,
+                    project_id=schedule.project_id,
                     input_json=json.dumps(schedule.input),
                     cron=schedule.cron,
                     timezone=schedule.timezone,
@@ -503,6 +816,28 @@ class SQLiteStore:
         with self.engine.connect() as connection:
             rows = (
                 connection.execute(select(jobs_table).order_by(jobs_table.c.created_at))
+                .mappings()
+                .all()
+            )
+        return [_row_to_job(dict(row)) for row in rows]
+
+    def list_jobs_page(
+        self,
+        *,
+        project_id: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[JobRecord]:
+        """Return a bounded page of jobs for API responses."""
+        with self.engine.connect() as connection:
+            query = select(jobs_table).order_by(jobs_table.c.created_at)
+            if project_id is not None:
+                query = query.where(jobs_table.c.project_id == project_id)
+            if status is not None:
+                query = query.where(jobs_table.c.status == status)
+            rows = (
+                connection.execute(query.offset(max(offset, 0)).limit(max(1, min(limit, 500))))
                 .mappings()
                 .all()
             )
@@ -654,6 +989,7 @@ class SQLiteStore:
         job_columns = {column["name"] for column in inspect(self.engine).get_columns("jobs")}
         job_additions = {
             "fanout_id": "TEXT",
+            "project_id": "TEXT",
             "metadata_json": "TEXT NOT NULL DEFAULT '{}'",
             "status": "TEXT NOT NULL DEFAULT 'queued'",
             "priority": "INTEGER NOT NULL DEFAULT 100",
@@ -668,10 +1004,16 @@ class SQLiteStore:
         }
         run_columns = {column["name"] for column in inspect(self.engine).get_columns("runs")}
         run_additions = {
+            "project_id": "TEXT",
             "timeout_seconds": "INTEGER",
             "max_retries": "INTEGER NOT NULL DEFAULT 0",
             "leased_until": "DATETIME",
         }
+        fanout_columns = {column["name"] for column in inspect(self.engine).get_columns("fanouts")}
+        schedule_columns = {
+            column["name"] for column in inspect(self.engine).get_columns("schedules")
+        }
+        event_columns = {column["name"] for column in inspect(self.engine).get_columns("events")}
         with self.engine.begin() as connection:
             for column_name, ddl in job_additions.items():
                 if column_name not in job_columns:
@@ -679,6 +1021,12 @@ class SQLiteStore:
             for column_name, ddl in run_additions.items():
                 if column_name not in run_columns:
                     connection.execute(text(f"ALTER TABLE runs ADD COLUMN {column_name} {ddl}"))
+            if "project_id" not in fanout_columns:
+                connection.execute(text("ALTER TABLE fanouts ADD COLUMN project_id TEXT"))
+            if "project_id" not in schedule_columns:
+                connection.execute(text("ALTER TABLE schedules ADD COLUMN project_id TEXT"))
+            if "project_id" not in event_columns:
+                connection.execute(text("ALTER TABLE events ADD COLUMN project_id TEXT"))
 
 
 def _row_to_run(payload: dict[str, Any]) -> RunRecord:
@@ -692,6 +1040,7 @@ def _row_to_run(payload: dict[str, Any]) -> RunRecord:
         id=payload["id"],
         job_id=payload["job_id"],
         kind=payload["kind"],
+        project_id=payload.get("project_id"),
         attempt=payload["attempt"],
         status=payload["status"],
         started_at=_coerce_datetime(payload["started_at"]),
@@ -715,6 +1064,7 @@ def _row_to_job(payload: dict[str, Any]) -> JobRecord:
         created_at=_coerce_datetime(payload["created_at"]),
         created_by=payload["created_by"],
         correlation_id=payload["correlation_id"],
+        project_id=payload.get("project_id"),
         fanout_id=payload.get("fanout_id"),
         metadata=json.loads(payload.get("metadata_json") or "{}"),
         status=payload.get("status") or "queued",
@@ -738,6 +1088,7 @@ def _row_to_fanout(payload: dict[str, Any]) -> FanoutRecord:
         id=payload["id"],
         created_at=_coerce_datetime(payload["created_at"]),
         created_by=payload["created_by"],
+        project_id=payload.get("project_id"),
         correlation_id=payload.get("correlation_id"),
         description=payload.get("description"),
     )
@@ -748,6 +1099,7 @@ def _row_to_schedule(payload: dict[str, Any]) -> ScheduleRecord:
     return ScheduleRecord(
         id=payload["id"],
         kind=payload["kind"],
+        project_id=payload.get("project_id"),
         input=json.loads(payload["input_json"]),
         cron=payload["cron"],
         timezone=payload["timezone"],
@@ -772,6 +1124,7 @@ def _row_to_event(payload: dict[str, Any]) -> EventRecord:
         created_at=_coerce_datetime(payload["created_at"]),
         event_type=payload["event_type"],
         source=payload["source"],
+        project_id=payload.get("project_id"),
         job_id=payload.get("job_id"),
         run_id=payload.get("run_id"),
         fanout_id=payload.get("fanout_id"),
@@ -779,6 +1132,56 @@ def _row_to_event(payload: dict[str, Any]) -> EventRecord:
         worker_id=payload.get("worker_id"),
         scheduler_id=payload.get("scheduler_id"),
         payload=json.loads(payload.get("payload_json") or "{}"),
+    )
+
+
+def _row_to_user(payload: dict[str, Any]) -> UserRecord:
+    """Convert a SQLAlchemy row mapping into a UserRecord."""
+    return UserRecord(
+        id=payload["id"],
+        email=payload["email"],
+        display_name=payload["display_name"],
+        created_at=_coerce_datetime(payload["created_at"]),
+        disabled=bool(payload["disabled"]),
+    )
+
+
+def _row_to_project(payload: dict[str, Any]) -> ProjectRecord:
+    """Convert a SQLAlchemy row mapping into a ProjectRecord."""
+    return ProjectRecord(
+        id=payload["id"],
+        name=payload["name"],
+        created_at=_coerce_datetime(payload["created_at"]),
+    )
+
+
+def _row_to_api_token(payload: dict[str, Any]) -> ApiTokenRecord:
+    """Convert a SQLAlchemy row mapping into an ApiTokenRecord."""
+    return ApiTokenRecord(
+        id=payload["id"],
+        name=payload["name"],
+        token_hash=payload["token_hash"],
+        created_at=_coerce_datetime(payload["created_at"]),
+        user_id=payload["user_id"],
+        project_id=payload.get("project_id"),
+        role=payload["role"],
+        revoked_at=_coerce_datetime(payload["revoked_at"]) if payload.get("revoked_at") else None,
+    )
+
+
+def _row_to_audit_log(payload: dict[str, Any]) -> AuditLogRecord:
+    """Convert a SQLAlchemy row mapping into an AuditLogRecord."""
+    return AuditLogRecord(
+        id=payload["id"],
+        created_at=_coerce_datetime(payload["created_at"]),
+        action=payload["action"],
+        outcome=payload["outcome"],
+        user_id=payload.get("user_id"),
+        token_id=payload.get("token_id"),
+        project_id=payload.get("project_id"),
+        resource_type=payload.get("resource_type"),
+        resource_id=payload.get("resource_id"),
+        detail=json.loads(payload.get("detail_json") or "{}"),
     )
 
 
@@ -808,6 +1211,8 @@ def _coerce_datetime(value: datetime | str) -> datetime:
 
 __all__ = [
     "ArtifactRecord",
+    "ApiTokenRecord",
+    "AuditLogRecord",
     "DEFAULT_DB_PATH",
     "EventRecord",
     "FanoutRecord",
