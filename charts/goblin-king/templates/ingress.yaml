@@ -15,6 +15,27 @@ spec:
     - host: {{ .Values.admin.ingress.host }}
       http:
         paths:
+          - path: /admin
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "goblin-king.fullname" . }}-admin
+                port:
+                  number: {{ .Values.admin.port }}
+          - path: /admin-api
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "goblin-king.fullname" . }}-admin
+                port:
+                  number: {{ .Values.admin.port }}
+          - path: /admin-ws
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "goblin-king.fullname" . }}-admin
+                port:
+                  number: {{ .Values.admin.port }}
           - path: {{ .Values.admin.ingress.path }}
             pathType: Prefix
             backend:

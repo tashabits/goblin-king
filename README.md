@@ -135,24 +135,28 @@ goblin-king events watch --redis-url redis://localhost:6379/0
 The API exposes the same event data over `GET /events`, scheduler and worker liveness
 over `GET /heartbeats`, and live run updates over `WS /ws/runs`.
 
-Open the admin UI after starting the API:
+Open the React admin lab bench with Docker Compose:
 
 ```bash
-goblin-king api run --settings goblin-king-api.json
-open http://127.0.0.1:8000/admin?token=local-dev-token
+make admin-build
+make admin-up
+open http://127.0.0.1:8080/admin
 ```
 
-The admin page is served by FastAPI in both Docker and Helm deployments. It lists the
-current goblins, worker mappings, jobs, long-running services, events, and heartbeats.
-Use the API controls shown there to queue the short `example.hello` proof job and to
-register/probe the long-running `example.long-hello` service.
+Log in with `local-dev-token`. The admin service serves the same React build in Docker
+and Helm, proxies HTTP calls through `/admin-api/*`, and proxies WebSocket run events
+through `/admin-ws/runs`. It lists current goblins, worker mappings, jobs, schedules,
+runs, fanouts, long-running services, events, heartbeats, artifacts, audit logs, and
+rate-limit proof panels.
+
+The tester buttons labeled kill perform King-side cancellation or registered-service
+stop actions. They do not hard-kill Docker containers or Kubernetes pods. As the court
+scribe says: "A proper goblin returns receipts."
 
 Run the Docker admin proof flow:
 
 ```bash
-make deploy
-make long-hello-up
-goblin-king api run --settings goblin-king-api.json
+make admin-up
 make admin-smoke
 ```
 
@@ -196,8 +200,9 @@ endpoint. On Windows, open Notepad as Administrator, edit
 127.0.0.1 goblin-king.local
 ```
 
-Then browse to `http://goblin-king.local/admin?token=local-dev-token`. If your local
-cluster exposes ingress on a different IP, use that IP instead of `127.0.0.1`.
+Then browse to `http://goblin-king.local/admin` and log in with `local-dev-token`. If
+your local cluster exposes ingress on a different IP, use that IP instead of
+`127.0.0.1`.
 
 ## Worker Images
 

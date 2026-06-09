@@ -92,3 +92,7 @@ execution regressions.
 Kubernetes/admin phases must include tests for Helm manifests, ingress defaults,
 admin authentication and rendering, sample goblin execution, long-running service
 probes, and proof events or audit records.
+React admin phases must include frontend tests, frontend build proof, Docker admin UI
+proof, Helm admin UI proof, and evidence that each major control-plane path has a
+visible tester workflow. Kill controls must be documented as King-side cancellation or
+service stop actions, not hard runtime termination.

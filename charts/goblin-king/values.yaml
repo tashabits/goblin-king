@@ -31,6 +31,11 @@ config:
 
 admin:
   enabled: true
+  image:
+    repository: goblin-king-admin-ui
+    tag: local
+    pullPolicy: IfNotPresent
+  port: 8080
   ingress:
     enabled: true
     className: nginx

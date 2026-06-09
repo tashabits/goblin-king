@@ -67,6 +67,19 @@ services:
         --host 0.0.0.0
         --port 8000
 
+  admin:
+    image: goblin-king-admin-ui:local
+    profiles: ["admin"]
+    build:
+      context: admin-ui
+      dockerfile: Dockerfile
+    depends_on:
+      - api
+    environment:
+      API_UPSTREAM: api:8000
+    ports:
+      - "8080:8080"
+
   worker-example-echo:
     image: goblin-king-example-echo:local
     profiles: ["workers"]
