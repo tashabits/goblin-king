@@ -44,6 +44,29 @@ services:
         --db .goblin-king/goblin-king.sqlite3
         --redis-url redis://redis:6379/0
 
+  api:
+    image: python:3.12-slim
+    profiles: ["api"]
+    working_dir: /app
+    depends_on:
+      - redis
+    ports:
+      - "8000:8000"
+    environment:
+      GOBLIN_KING_API_TOKEN: local-dev-token
+    volumes:
+      - .:/app
+      - goblin-king-data:/app/.goblin-king
+    command:
+      - sh
+      - -c
+      - >
+        pip install -e . &&
+        goblin-king api run
+        --settings goblin-king-api.json
+        --host 0.0.0.0
+        --port 8000
+
   worker-example-echo:
     image: goblin-king-example-echo:local
     profiles: ["workers"]

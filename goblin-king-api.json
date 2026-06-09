@@ -1,0 +1,8 @@
+{
+  "registry": "examples/goblins.json",
+  "images": "goblin-images.json",
+  "db": ".goblin-king/goblin-king.sqlite3",
+  "redis_url": "redis://localhost:6379/0",
+  "artifact_root": ".goblin-king/artifacts",
+  "auth_token": "local-dev-token"
+}

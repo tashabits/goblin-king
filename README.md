@@ -5,8 +5,8 @@ modules called goblins. Goblins can run as self-contained Docker workers, which 
 worker use the language and runtime that fits its job while the King keeps scheduling,
 status, and result contracts consistent.
 
-Phase 3 adds Docker execution, worker image configuration, Redis result transport,
-Compose deployment helpers, and Makefile targets for local build/test/simulation flows.
+Phase 4 adds a FastAPI control plane for discovering goblins, queueing jobs, managing
+schedules, inspecting runs, and serving local artifacts safely.
 
 ## Quick Start
 
@@ -43,6 +43,23 @@ Or run the local simulation target:
 make simulate
 ```
 
+Run the API locally:
+
+```bash
+goblin-king api run --settings goblin-king-api.json
+```
+
+Smoke the API from another terminal:
+
+```bash
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/goblins
+curl -X POST http://127.0.0.1:8000/jobs \
+  -H "Authorization: Bearer local-dev-token" \
+  -H "Content-Type: application/json" \
+  -d "{\"kind\":\"example.echo\",\"input\":{\"message\":\"hello api\"}}"
+```
+
 Use `--runtime in-process` on `jobs submit`, `scheduler run-once`, or `scheduler run`
 when debugging trusted local Python goblins without Docker.
 
@@ -72,10 +89,11 @@ and write the same result to a mounted fallback file.
 | --- | --- |
 | [Goblin King Scheduler Plan](docs/goblin-king-plan.md) | Architecture, phases, contracts, runtime direction, testing plan, and implementation roadmap. |
 | [Contributing](docs/CONTRIBUTING.md) | Branch, PR, local CI, commenting, goblin documentation, and test expectations. |
+| [API Roadmap](docs/api-roadmap.md) | API endpoints deferred beyond Phase 4 and their intended target phases. |
 
 ## Current Scope
 
 The current kernel stores durable state in SQLite, schedules due jobs, executes Docker
-workers by default, and uses Redis as result transport. The API server, Kubernetes
-runtime, fanout endpoints, Redis durability guarantees, and production container
-hardening are planned for later phases.
+workers by default, uses Redis as result transport, and exposes a local/dev API control
+plane. Kubernetes, fanout endpoints, Redis durability guarantees, production auth, and
+deployment hardening are planned for later phases.

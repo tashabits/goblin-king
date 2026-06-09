@@ -1,0 +1,171 @@
+"""Local HTTP tests for the Phase 4 FastAPI control plane."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from goblin_king.api import create_app
+from goblin_king.api_settings import ApiSettings
+from goblin_king.contracts import ArtifactRecord, GoblinResult, JobRecord, RunRecord
+from goblin_king.store import SQLiteStore
+
+
+def build_client(tmp_path: Path) -> tuple[TestClient, SQLiteStore, Path]:
+    """Create a test API app with isolated settings and SQLite state."""
+    artifact_root = tmp_path / "artifacts"
+    settings = ApiSettings(
+        registry=Path("examples/goblins.json").resolve(),
+        images=Path("goblin-images.json").resolve(),
+        db=tmp_path / "api.sqlite3",
+        redis_url="redis://localhost:6379/0",
+        artifact_root=artifact_root,
+        auth_token="test-token",
+    )
+    return TestClient(create_app(settings)), SQLiteStore(settings.db), artifact_root
+
+
+def auth_headers() -> dict[str, str]:
+    """Return the static bearer token used by test settings."""
+    return {"Authorization": "Bearer test-token"}
+
+
+def test_health_and_goblins_endpoints(tmp_path: Path) -> None:
+    """Verify read endpoints expose health and registry/image mapping data."""
+    client, _, _ = build_client(tmp_path)
+
+    health = client.get("/health")
+    goblins = client.get("/goblins")
+
+    assert health.status_code == 200
+    assert health.json()["status"] == "ok"
+    assert goblins.status_code == 200
+    assert goblins.json()[0]["kind"] == "example.echo"
+    assert goblins.json()[0]["worker_mapped"] is True
+
+
+def test_jobs_endpoint_queues_without_running(tmp_path: Path) -> None:
+    """Verify POST /jobs creates a queued job and does not create a run."""
+    client, store, _ = build_client(tmp_path)
+
+    unauthorized = client.post("/jobs", json={"kind": "example.echo", "input": {}})
+    created = client.post(
+        "/jobs",
+        json={"kind": "example.echo", "input": {"message": "hello api"}},
+        headers=auth_headers(),
+    )
+    listed = client.get("/jobs")
+    loaded = store.get_job(created.json()["id"])
+
+    assert unauthorized.status_code == 401
+    assert created.status_code == 200
+    assert created.json()["status"] == "queued"
+    assert loaded is not None
+    assert loaded.status == "queued"
+    assert listed.status_code == 200
+    assert listed.json()[0]["id"] == created.json()["id"]
+
+
+def test_get_job_and_cancel_job(tmp_path: Path) -> None:
+    """Verify jobs can be fetched and cancellable statuses can be cancelled."""
+    client, store, _ = build_client(tmp_path)
+    job = JobRecord(
+        id="job-1",
+        kind="example.echo",
+        input={},
+        created_at=datetime(2026, 6, 9, tzinfo=UTC),
+        status="queued",
+    )
+    store.save_job(job)
+
+    fetched = client.get("/jobs/job-1")
+    cancelled = client.post("/jobs/job-1/cancel", headers=auth_headers())
+
+    assert fetched.status_code == 200
+    assert fetched.json()["id"] == "job-1"
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+    assert client.post("/jobs/job-1/cancel", headers=auth_headers()).status_code == 409
+    assert client.get("/jobs/missing").status_code == 404
+
+
+def test_schedule_create_list_and_patch(tmp_path: Path) -> None:
+    """Verify schedule mutation endpoints persist and update schedule fields."""
+    client, _, _ = build_client(tmp_path)
+
+    created = client.post(
+        "/schedules",
+        json={
+            "kind": "example.echo",
+            "cron": "* * * * *",
+            "input": {"message": "scheduled"},
+            "due_now": True,
+        },
+        headers=auth_headers(),
+    )
+    schedule_id = created.json()["id"]
+    patched = client.patch(
+        f"/schedules/{schedule_id}",
+        json={"enabled": False, "priority": 200},
+        headers=auth_headers(),
+    )
+    listed = client.get("/schedules")
+
+    assert created.status_code == 200
+    assert patched.status_code == 200
+    assert patched.json()["enabled"] is False
+    assert patched.json()["priority"] == 200
+    assert listed.status_code == 200
+    assert listed.json()[0]["id"] == schedule_id
+    invalid = client.post(
+        "/schedules",
+        json={"kind": "example.echo", "cron": "nope"},
+        headers=auth_headers(),
+    )
+    assert invalid.status_code == 422
+
+
+def test_run_and_artifact_endpoints(tmp_path: Path) -> None:
+    """Verify run lookup, artifact metadata, and safe file download."""
+    client, store, artifact_root = build_client(tmp_path)
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    (artifact_root / "report.txt").write_text("hello artifact", encoding="utf-8")
+    store.save_job(
+        JobRecord(
+            id="job-1",
+            kind="example.echo",
+            input={},
+            created_at=datetime(2026, 6, 9, tzinfo=UTC),
+            status="completed",
+        )
+    )
+    store.save_run(
+        RunRecord(
+            id="run-1",
+            job_id="job-1",
+            kind="example.echo",
+            status="completed",
+            started_at=datetime(2026, 6, 9, tzinfo=UTC),
+            finished_at=datetime(2026, 6, 9, tzinfo=UTC),
+            result=GoblinResult.ok(
+                artifacts=[
+                    ArtifactRecord(name="report.txt", uri="report.txt", media_type="text/plain")
+                ]
+            ),
+        )
+    )
+
+    run = client.get("/runs/run-1")
+    artifacts = client.get("/runs/run-1/artifacts")
+    download = client.get("/runs/run-1/artifacts/report.txt")
+
+    assert run.status_code == 200
+    assert run.json()["id"] == "run-1"
+    assert artifacts.status_code == 200
+    assert artifacts.json()[0]["download_url"] == "/runs/run-1/artifacts/report.txt"
+    assert download.status_code == 200
+    assert download.text == "hello artifact"
+    assert client.get("/runs/missing").status_code == 404
+    assert client.get("/runs/run-1/artifacts/missing.txt").status_code == 404

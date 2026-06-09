@@ -406,10 +406,13 @@ Integration tests:
 
 ### Phase 4: API
 
-- Add FastAPI app.
-- Add job submission and status endpoints.
-- Add schedule CRUD endpoints.
-- Add result and artifact endpoints.
+- Add FastAPI control plane.
+- Add queued job submission and status endpoints.
+- Add schedule create/list/patch endpoints.
+- Add run and safe artifact endpoints.
+- Add static bearer token auth for mutating endpoints.
+- Add API settings file, API CLI runner, Compose service, and Makefile smoke target.
+- Document uncovered APIs in `docs/api-roadmap.md`.
 
 ### Phase 5: Reuse Package
 
@@ -417,6 +420,14 @@ Integration tests:
 - Support registry files and Python entry point discovery.
 - Add example goblin package.
 - Document how existing projects can adopt it without taking a hard dependency on implementation details.
+
+### Final Optional Phase: Kubernetes Deployment
+
+- Keep Docker and Compose as the default local/development path.
+- Add Kubernetes as an optional runtime/deployment path only for projects that require it.
+- Add Helm chart support for API, scheduler, Redis configuration, worker image settings, volumes, secrets, and service exposure.
+- Add documentation for when to choose Kubernetes and how to keep local Docker workflows unchanged.
+- Add local chart validation and, where practical, kind/minikube smoke tests with explicit PR proof.
 
 ## Key Decisions To Make Before Coding
 
