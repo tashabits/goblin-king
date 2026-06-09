@@ -30,14 +30,20 @@ target phase below.
 - Pagination/filtering hardening for large job, run, and schedule sets.
 - OpenAPI customization for generated clients.
 
-## Later Infrastructure Phases
+## Covered In Final Optional Phase
+
+- FastAPI-served admin UI for Docker and Helm deployments.
+- Long-running service registration and probe API for `example.long-hello`.
+- Admin proof events for service registration, probes, responses, and failures.
+- Optional Helm chart with API/admin, scheduler, Redis, persistence, sample worker
+  service, and default-on configurable ingress.
+
+## Later Infrastructure Follow-Up
 
 - Kubernetes runtime APIs.
 - Deployment and build orchestration APIs.
 - Worker image registry promotion APIs.
 - Artifact storage provider APIs.
 - External webhook callbacks.
-- Optional Kubernetes deployment with Helm for projects that require cluster execution.
-- A web admin interface for Kubernetes deployments that reads the current goblin list,
-  lets operators spawn goblins, captures inbound/outbound traffic and messaging, and
-  proves each goblin works from the deployed environment.
+- Production Kubernetes hardening beyond the optional chart, such as managed ingress,
+  external secret stores, autoscaling, cloud storage classes, and image promotion.

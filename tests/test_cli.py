@@ -53,7 +53,7 @@ def test_project_goblins_list_and_validate() -> None:
     assert listed.exit_code == 0
     assert "example.echo" in listed.stdout
     assert validated.exit_code == 0
-    assert "goblins\t1" in validated.stdout
+    assert "goblins\t7" in validated.stdout
 
 
 def test_auth_setup_commands_create_user_project_and_token(tmp_path: Path) -> None:

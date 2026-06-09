@@ -16,6 +16,9 @@ and scheduler/worker heartbeat tracking.
 Phase 8 adds local API users, projects, hashed API tokens, project-scoped access,
 audit logs, local rate limits, paginated list responses, and client-quality OpenAPI
 metadata.
+The final optional phase adds sample proof goblins, a FastAPI-served admin UI for
+Docker and Helm deployments, long-running service probes, and an optional Kubernetes
+Helm chart. Docker and Compose remain the default local path.
 
 ## Quick Start
 
@@ -132,6 +135,64 @@ goblin-king events watch --redis-url redis://localhost:6379/0
 The API exposes the same event data over `GET /events`, scheduler and worker liveness
 over `GET /heartbeats`, and live run updates over `WS /ws/runs`.
 
+Open the admin UI after starting the API:
+
+```bash
+goblin-king api run --settings goblin-king-api.json
+open http://127.0.0.1:8000/admin?token=local-dev-token
+```
+
+The admin page is served by FastAPI in both Docker and Helm deployments. It lists the
+current goblins, worker mappings, jobs, long-running services, events, and heartbeats.
+Use the API controls shown there to queue the short `example.hello` proof job and to
+register/probe the long-running `example.long-hello` service.
+
+Run the Docker admin proof flow:
+
+```bash
+make deploy
+make long-hello-up
+goblin-king api run --settings goblin-king-api.json
+make admin-smoke
+```
+
+When the API runs in Docker Compose, the long service is reached at
+`http://long-hello:8080` from inside the API container. Override
+`LONG_HELLO_URL=http://localhost:8090` only when probing from a host-run API process.
+
+Render the optional Kubernetes chart:
+
+```bash
+docker build -t goblin-king:local .
+docker build -t goblin-king-example-long-hello:local workers/example.long-hello
+make helm-template
+```
+
+The Helm chart exposes the admin/API service through an ingress by default. Disable it
+for deployments that already provide ingress routing:
+
+```bash
+helm template goblin-king charts/goblin-king --set admin.ingress.enabled=false
+```
+
+For local ingress access, point `goblin-king.local` at your local Kubernetes ingress
+endpoint. On Windows, open Notepad as Administrator, edit
+`C:\Windows\System32\drivers\etc\hosts`, and add:
+
+```text
+127.0.0.1 goblin-king.local
+```
+
+Then browse to `http://goblin-king.local/admin?token=local-dev-token`. If your local
+cluster exposes ingress on a different IP, use that IP instead of `127.0.0.1`.
+Without a local ingress controller, use a port-forward:
+
+```bash
+kubectl port-forward svc/goblin-king-api 18000:8000
+```
+
+Then browse to `http://127.0.0.1:18000/admin?token=local-dev-token`.
+
 ## Worker Images
 
 Each Docker worker lives in a self-contained folder with its own `Dockerfile`.
@@ -159,8 +220,10 @@ updates to Redis pub/sub for live subscribers.
 | Document | Purpose |
 | --- | --- |
 | [Goblin King Scheduler Plan](docs/goblin-king-plan.md) | Architecture, phases, contracts, runtime direction, testing plan, and implementation roadmap. |
+| [User Guide](docs/USER_GUIDE.md) | End-to-end operator and developer guide for Docker, admin UI, sample goblins, API, scheduler, and optional Helm deployment. |
 | [Contributing](docs/CONTRIBUTING.md) | Branch, PR, local CI, commenting, goblin documentation, and test expectations. |
 | [API Roadmap](docs/api-roadmap.md) | API endpoints deferred beyond Phase 4 and their intended target phases. |
+| [Nomena Alignment](docs/nomena-alignment.md) | Notes for adapting Nomena-style queue, worker, heartbeat, and operator proof flows. |
 
 ## Current Scope
 
@@ -171,4 +234,4 @@ goblins from multiple registry files and installed package entry points, queue
 mixed-kind fanout batches, create retry jobs from terminal jobs, stream events over
 WebSockets, track scheduler/worker heartbeats, audit API activity, and expose
 client-oriented OpenAPI metadata. Kubernetes, Redis durability guarantees, and
-deployment hardening are planned for later phases.
+deployment hardening are optional follow-up work beyond the local Helm proof.

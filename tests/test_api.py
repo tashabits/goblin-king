@@ -70,8 +70,8 @@ def test_health_and_goblins_endpoints(tmp_path: Path) -> None:
     assert health.json()["status"] == "ok"
     assert unauthenticated.status_code == 401
     assert goblins.status_code == 200
-    assert goblins.json()[0]["kind"] == "example.echo"
-    assert goblins.json()[0]["worker_mapped"] is True
+    echo = next(item for item in goblins.json() if item["kind"] == "example.echo")
+    assert echo["worker_mapped"] is True
 
 
 def test_goblins_endpoint_uses_project_settings(tmp_path: Path) -> None:

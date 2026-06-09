@@ -449,13 +449,17 @@ Integration tests:
 - Add SQLite-backed local rate limits for deterministic development proof.
 - Add paginated/filterable list envelopes and client-quality OpenAPI response contracts.
 
-### Final Optional Phase: Kubernetes Deployment
+### Final Optional Phase: Kubernetes And Admin Proof
 
 - Keep Docker and Compose as the default local/development path.
 - Add Kubernetes as an optional runtime/deployment path only for projects that require it.
-- Add Helm chart support for API, scheduler, Redis configuration, worker image settings, volumes, secrets, and service exposure.
-- Add a web admin interface for Kubernetes deployments that reads the current goblin list, lets operators spawn goblins, captures inbound and outbound traffic plus messaging, and proves deployed goblins work.
-- Add a web admin interface for docker deployments that reads the current goblin list, lets operators spawn goblins, captures inbound and outbound 
+- Add Helm chart support for API, scheduler, Redis configuration, worker image settings, volumes, secrets, service exposure, and admin UI exposure.
+- Include an optional Helm ingress for the admin/API service. It defaults on and can be disabled with `admin.ingress.enabled=false` when a deployment already supplies ingress.
+- Add a web admin interface for both Docker and Kubernetes deployments that reads the current goblin list, lets operators spawn goblins, captures inbound and outbound traffic plus messaging, and proves deployed goblins work.
+- Add a short-running `example.hello` job that returns `Hello World`.
+- Add a long-running `example.long-hello` service that returns `Hello World from long running service` plus a fresh timestamp on each probe.
+- Add illustrative artifact, environment, controlled-failure, and progress goblins for admin validation and demos.
+- Add a user guide that explains the complete project workflow after all phases.
 - Add documentation for when to choose Kubernetes and how to keep local Docker workflows unchanged.
 - Add local chart validation and, where practical, kind/minikube smoke tests with explicit PR proof.
 
