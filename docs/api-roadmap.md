@@ -89,9 +89,18 @@ target phase below.
   from the configured filesystem root.
 - Admin UI artifact-volume status and cleanup proof controls.
 
+## Covered In Phase 20
+
+- Scoped hard runtime termination for Goblin King-labeled Docker containers and
+  Kubernetes Jobs.
+- `POST /admin/runtime/jobs/{job_id}/kill`: terminate runtime objects for one job and
+  cancel non-terminal job state.
+- `POST /admin/runtime/runs/{run_id}/kill`: terminate runtime objects for one run.
+- `POST /admin/runtime/services/{service_id}/kill`: hard-stop registered long-running
+  service presentation.
+
 ## Later Infrastructure Follow-Up
 
-- Kubernetes runtime APIs.
 - Deployment and build orchestration APIs.
 - Worker image registry promotion APIs.
 - External webhook callbacks.

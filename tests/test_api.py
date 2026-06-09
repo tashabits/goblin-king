@@ -623,6 +623,62 @@ def test_admin_artifact_storage_status_and_cleanup(tmp_path: Path) -> None:
     assert store.list_events(event_type="admin.artifacts.cleaned")
 
 
+def test_admin_runtime_kill_job_cancels_and_records_event(tmp_path: Path, monkeypatch) -> None:
+    """Verify hard-kill for a job invokes scoped termination and persists proof."""
+    client, store, _ = build_client(tmp_path)
+    store.save_job(
+        JobRecord(
+            id="job-kill",
+            kind="example.hello",
+            input={},
+            created_at=datetime(2026, 6, 9, tzinfo=UTC),
+            status="running",
+        )
+    )
+
+    monkeypatch.setattr(
+        "goblin_king.api.terminate_runtime",
+        lambda **_kwargs: type("Result", (), {"killed": ["docker:abc"], "errors": []})(),
+    )
+
+    response = client.post(
+        "/admin/runtime/jobs/job-kill/kill",
+        json={"runtime": "docker"},
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["killed"] == ["docker:abc"]
+    assert response.json()["cancelled"] is True
+    assert store.get_job("job-kill").status == "cancelled"  # type: ignore[union-attr]
+    assert store.list_events(event_type="runtime.terminated")
+
+
+def test_admin_runtime_kill_service_marks_stopped(tmp_path: Path) -> None:
+    """Verify hard-stop for registered services preserves audit/event proof."""
+    client, store, _ = build_client(tmp_path)
+    store.save_long_service(
+        LongServiceRecord(
+            id="svc-kill",
+            kind="example.long-hello",
+            status="running",
+            base_url="http://service.example",
+            created_at=datetime(2026, 6, 9, tzinfo=UTC),
+        )
+    )
+
+    response = client.post(
+        "/admin/runtime/services/svc-kill/kill",
+        json={},
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["killed"] == ["registered-service:svc-kill"]
+    assert store.get_long_service("svc-kill").status == "stopped"  # type: ignore[union-attr]
+    assert store.list_events(event_type="runtime.terminated")
+
+
 def test_admin_creates_user_project_and_hashed_token(tmp_path: Path) -> None:
     """Verify admin setup creates users, projects, and hashed API tokens."""
     client, store, _ = build_client(tmp_path)

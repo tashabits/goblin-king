@@ -50,6 +50,10 @@ Use **Services** for long-running goblins. Register the deployment URL, then pre
 
 Use **Stop service** to mark a registered long-running service as stopped. Like job
 cancel, this is King-side state control rather than hard runtime termination.
+Use **Hard kill runtime** or **Hard stop runtime** only when testing the scoped
+termination path. These admin controls target Goblin-labeled Docker containers or
+Kubernetes Jobs; registered service hard-stop changes King-side service state because
+the service was registered by URL.
 
 ![Long-running service controls](images/admin/admin-services.png)
 

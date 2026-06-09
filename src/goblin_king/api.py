@@ -64,6 +64,7 @@ from goblin_king.project import ProjectSettings, ProjectSettingsError
 from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.scheduler import next_run_after
 from goblin_king.store import SQLiteStore
+from goblin_king.termination import RuntimeTarget, terminate_runtime
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
 
 TERMINAL_JOB_STATUSES = {"completed", "failed", "timed_out", "cancelled"}
@@ -253,6 +254,24 @@ class ArtifactCleanupResponse(BaseModel):
     files_selected: int
     bytes_selected: int
     files: list[str]
+
+
+class RuntimeTerminationRequest(BaseModel):
+    """Admin request for hard-killing scoped runtime objects."""
+
+    runtime: RuntimeTarget = "both"
+    namespace: str | None = None
+
+
+class RuntimeTerminationResponse(BaseModel):
+    """Result of a scoped runtime hard-kill request."""
+
+    target_type: str
+    target_id: str
+    runtime: RuntimeTarget
+    killed: list[str]
+    errors: list[str]
+    cancelled: bool = False
 
 
 class DiscoveryStatusResponse(BaseModel):
@@ -919,6 +938,41 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         )
         return stopped
 
+    @app.post(
+        "/admin/runtime/services/{service_id}/kill",
+        response_model=RuntimeTerminationResponse,
+        tags=["admin"],
+        operation_id="killLongRunningServiceRuntime",
+    )
+    def kill_long_running_service_runtime(
+        service_id: str,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> RuntimeTerminationResponse:
+        """Hard-stop a registered long-running service presentation."""
+        service = state.store.get_long_service(service_id)
+        if service is None:
+            raise HTTPException(status_code=404, detail=f"long service not found: {service_id}")
+        project_for_request(principal, service.project_id)
+        state.store.update_long_service_status(
+            service.id,
+            status="stopped",
+            last_probe_json={
+                "message": "service stopped by scoped runtime termination control",
+                "previous_status": service.status,
+            },
+        )
+        return _record_runtime_termination(
+            state,
+            principal=principal,
+            project_id=service.project_id,
+            target_type="long_service",
+            target_id=service_id,
+            runtime="both",
+            killed=[f"registered-service:{service_id}"],
+            errors=[],
+            cancelled=True,
+        )
+
     @app.get(
         "/audit-logs",
         response_model=AuditLogListResponse,
@@ -1071,6 +1125,76 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             resource_id=cancelled.id,
         )
         return cancelled
+
+    @app.post(
+        "/admin/runtime/jobs/{job_id}/kill",
+        response_model=RuntimeTerminationResponse,
+        tags=["admin"],
+        operation_id="killJobRuntime",
+    )
+    def kill_job_runtime(
+        job_id: str,
+        request: RuntimeTerminationRequest,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> RuntimeTerminationResponse:
+        """Hard-kill runtime objects labeled for one Goblin King job."""
+        job = state.store.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail=f"job not found: {job_id}")
+        project_for_request(principal, job.project_id)
+        result = terminate_runtime(
+            job_id=job_id,
+            runtime=request.runtime,
+            namespace=request.namespace,
+        )
+        cancelled = False
+        if job.status not in TERMINAL_JOB_STATUSES:
+            cancelled = state.store.cancel_job(job_id) is not None
+        return _record_runtime_termination(
+            state,
+            principal=principal,
+            project_id=job.project_id,
+            target_type="job",
+            target_id=job_id,
+            runtime=request.runtime,
+            killed=result.killed,
+            errors=result.errors,
+            cancelled=cancelled,
+        )
+
+    @app.post(
+        "/admin/runtime/runs/{run_id}/kill",
+        response_model=RuntimeTerminationResponse,
+        tags=["admin"],
+        operation_id="killRunRuntime",
+    )
+    def kill_run_runtime(
+        run_id: str,
+        request: RuntimeTerminationRequest,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> RuntimeTerminationResponse:
+        """Hard-kill runtime objects labeled for one Goblin King run."""
+        run = state.store.get_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+        job = state.store.get_job(run.job_id)
+        project_for_request(principal, job.project_id if job else run.project_id)
+        result = terminate_runtime(
+            run_id=run_id,
+            runtime=request.runtime,
+            namespace=request.namespace,
+        )
+        return _record_runtime_termination(
+            state,
+            principal=principal,
+            project_id=job.project_id if job else run.project_id,
+            target_type="run",
+            target_id=run_id,
+            runtime=request.runtime,
+            killed=result.killed,
+            errors=result.errors,
+            cancelled=False,
+        )
 
     @app.post(
         "/jobs/fanout",
@@ -1489,6 +1613,46 @@ def _schedule_from_request(
             )
         }
     )
+
+
+def _record_runtime_termination(
+    state: AppState,
+    *,
+    principal: Principal,
+    project_id: str | None,
+    target_type: str,
+    target_id: str,
+    runtime: RuntimeTarget,
+    killed: list[str],
+    errors: list[str],
+    cancelled: bool,
+) -> RuntimeTerminationResponse:
+    """Persist audit/event proof for one scoped hard runtime termination attempt."""
+    payload = {
+        "target_type": target_type,
+        "target_id": target_id,
+        "runtime": runtime,
+        "killed": killed,
+        "errors": errors,
+        "cancelled": cancelled,
+    }
+    state.event_bus.emit(
+        "runtime.terminated",
+        source="api",
+        project_id=project_id,
+        payload=payload,
+    )
+    audit(
+        state.store,
+        action="runtime.terminated",
+        outcome="success" if not errors else "partial",
+        principal=principal,
+        project_id=project_id,
+        resource_type=target_type,
+        resource_id=target_id,
+        detail=payload,
+    )
+    return RuntimeTerminationResponse(**payload)
 
 
 def _validate_cron(value: str) -> None:
