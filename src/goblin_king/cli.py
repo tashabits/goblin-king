@@ -17,12 +17,14 @@ from goblin_king.store import DEFAULT_DB_PATH, SQLiteStore
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
 
 app = typer.Typer(help="Run and inspect Goblin King jobs.")
+api_app = typer.Typer(help="Run the HTTP API control plane.")
 goblins_app = typer.Typer(help="Inspect registered goblins.")
 jobs_app = typer.Typer(help="Submit goblin jobs.")
 runs_app = typer.Typer(help="Inspect goblin runs.")
 schedules_app = typer.Typer(help="Create and inspect schedules.")
 scheduler_app = typer.Typer(help="Run scheduler passes.")
 workers_app = typer.Typer(help="Build Docker worker images.")
+app.add_typer(api_app, name="api")
 app.add_typer(goblins_app, name="goblins")
 app.add_typer(jobs_app, name="jobs")
 app.add_typer(runs_app, name="runs")
@@ -33,6 +35,29 @@ app.add_typer(workers_app, name="workers")
 RuntimeOption = Literal["docker", "in-process"]
 DEFAULT_IMAGES_PATH = Path("goblin-images.json")
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
+
+
+@api_app.command("run")
+def run_api(
+    settings: Annotated[
+        Path,
+        typer.Option("--settings", help="API settings JSON path."),
+    ] = Path("goblin-king-api.json"),
+    host: Annotated[str, typer.Option("--host", help="API bind host.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", help="API bind port.")] = 8000,
+) -> None:
+    """Run the FastAPI control plane with Uvicorn."""
+    import uvicorn
+
+    from goblin_king.api import create_app
+    from goblin_king.api_settings import ApiSettings, ApiSettingsError
+
+    try:
+        loaded_settings = ApiSettings.from_path(settings)
+    except ApiSettingsError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+    uvicorn.run(create_app(loaded_settings), host=host, port=port)
 
 
 @goblins_app.command("list")
