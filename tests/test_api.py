@@ -114,6 +114,168 @@ def test_goblins_endpoint_uses_project_settings(tmp_path: Path) -> None:
     assert response.json()[0]["kind"] == "project.echo"
 
 
+def test_discovery_reload_adds_project_goblin_without_restart(tmp_path: Path) -> None:
+    """Verify admin discovery reload refreshes project registries and image maps."""
+    project_path = tmp_path / "goblin-king-project.json"
+    registry_path = tmp_path / "goblins.json"
+    images_path = tmp_path / "images.json"
+    project_path.write_text(
+        json.dumps(
+            {
+                "registries": ["goblins.json"],
+                "entry_points": False,
+                "images": "images.json",
+                "api_settings": "api.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+    registry_path.write_text(
+        json.dumps(
+            {
+                "goblins": [
+                    {
+                        "kind": "project.echo",
+                        "display_name": "Project Echo",
+                        "module": "examples.goblins.echo",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    images_path.write_text(
+        json.dumps({"workers": {"project.echo": {"context": ".", "image": "echo:local"}}}),
+        encoding="utf-8",
+    )
+    settings = ApiSettings(
+        registry=Path("examples/goblins.json").resolve(),
+        images=Path("goblin-images.json").resolve(),
+        db=tmp_path / "api.sqlite3",
+        artifact_root=tmp_path / "artifacts",
+        auth_token="test-token",
+        project=project_path,
+    )
+    client = TestClient(create_app(settings))
+
+    initial = client.get("/admin/discovery/status", headers=auth_headers())
+    registry_path.write_text(
+        json.dumps(
+            {
+                "goblins": [
+                    {
+                        "kind": "project.echo",
+                        "display_name": "Project Echo",
+                        "module": "examples.goblins.echo",
+                    },
+                    {
+                        "kind": "project.new",
+                        "display_name": "Project New",
+                        "module": "examples.goblins.hello",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    images_path.write_text(
+        json.dumps(
+            {
+                "workers": {
+                    "project.echo": {"context": ".", "image": "echo:local"},
+                    "project.new": {"context": ".", "image": "new:local"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    reloaded = client.post("/admin/discovery/reload", headers=auth_headers())
+    goblins = client.get("/goblins", headers=auth_headers())
+    sources = client.get("/admin/discovery/sources", headers=auth_headers())
+
+    assert initial.status_code == 200
+    assert initial.json()["active_goblin_count"] == 1
+    assert reloaded.status_code == 200
+    assert reloaded.json()["active_goblin_count"] == 2
+    assert reloaded.json()["discovery_version"] == initial.json()["discovery_version"] + 1
+    assert [item["kind"] for item in goblins.json()] == ["project.echo", "project.new"]
+    assert sources.json()["worker_unmapped_kinds"] == []
+
+
+def test_failed_discovery_reload_preserves_previous_registry(tmp_path: Path) -> None:
+    """Verify invalid deployed definitions are reported without replacing active discovery."""
+    project_path = tmp_path / "goblin-king-project.json"
+    registry_path = tmp_path / "goblins.json"
+    images_path = tmp_path / "images.json"
+    project_path.write_text(
+        json.dumps(
+            {
+                "registries": ["goblins.json"],
+                "entry_points": False,
+                "images": "images.json",
+                "api_settings": "api.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+    registry_path.write_text(
+        json.dumps(
+            {
+                "goblins": [
+                    {
+                        "kind": "project.echo",
+                        "display_name": "Project Echo",
+                        "module": "examples.goblins.echo",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    images_path.write_text(
+        json.dumps({"workers": {"project.echo": {"context": ".", "image": "echo:local"}}}),
+        encoding="utf-8",
+    )
+    settings = ApiSettings(
+        registry=Path("examples/goblins.json").resolve(),
+        images=Path("goblin-images.json").resolve(),
+        db=tmp_path / "api.sqlite3",
+        artifact_root=tmp_path / "artifacts",
+        auth_token="test-token",
+        project=project_path,
+    )
+    client = TestClient(create_app(settings))
+
+    registry_path.write_text(
+        json.dumps(
+            {
+                "goblins": [
+                    {
+                        "kind": "project.echo",
+                        "display_name": "Project Echo",
+                        "module": "examples.goblins.echo",
+                    },
+                    {
+                        "kind": "project.echo",
+                        "display_name": "Duplicate Echo",
+                        "module": "examples.goblins.echo",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    failed = client.post("/admin/discovery/reload", headers=auth_headers())
+    status = client.get("/admin/discovery/status", headers=auth_headers())
+    goblins = client.get("/goblins", headers=auth_headers())
+
+    assert failed.status_code == 400
+    assert "duplicate goblin kind" in failed.json()["detail"]
+    assert status.json()["active_goblin_count"] == 1
+    assert status.json()["last_error"] is not None
+    assert [item["kind"] for item in goblins.json()] == ["project.echo"]
+
+
 def test_jobs_endpoint_queues_without_running(tmp_path: Path) -> None:
     """Verify POST /jobs creates a queued job and does not create a run."""
     client, store, _ = build_client(tmp_path)

@@ -19,9 +19,10 @@ metadata.
 The final optional phase adds sample proof goblins, a FastAPI-served admin UI for
 Docker and Helm deployments, long-running service probes, and an optional Kubernetes
 Helm chart. Docker and Compose remain the default local path.
-The next roadmap extension focuses on project-ready adoption: internal wheel reuse,
-host-project goblin plugin packages, deploy-time discovery reload, and admin/API pickup
-of newly deployed goblin types without a React rebuild.
+Phase 13 adds deploy-time discovery reload: API and admin operators can reload project
+settings, registry files, Python entry points, and worker image maps so newly deployed
+goblin types appear without rebuilding the React admin. Later adoption phases continue
+with host-project deployment examples and the internal release/upgrade story.
 
 ## Quick Start
 
@@ -107,6 +108,19 @@ goblin-king project goblins list --project goblin-king-project.json
 
 Project integration settings live in `goblin-king-project.json` and can combine JSON
 registry files with installed Python package entry points from `goblin_king.goblins`.
+After deploying a new project plugin or worker image map, reload discovery through the
+admin UI or API:
+
+```bash
+curl -X POST http://127.0.0.1:8000/admin/discovery/reload \
+  -H "Authorization: Bearer local-dev-token"
+curl -H "Authorization: Bearer local-dev-token" http://127.0.0.1:8000/admin/discovery/status
+curl -H "Authorization: Bearer local-dev-token" http://127.0.0.1:8000/admin/discovery/sources
+```
+
+Failed reloads leave the previous valid registry active and report validation errors
+for the Discovery panel. New goblin kinds are read from the API at runtime, so the
+React admin does not need a rebuild when project goblins are added.
 
 Queue a fanout batch and inspect it:
 
@@ -150,7 +164,9 @@ Log in with `local-dev-token`. The admin service serves the same React build in 
 and Helm, proxies HTTP calls through `/admin-api/*`, and proxies WebSocket run events
 through `/admin-ws/runs`. It lists current goblins, worker mappings, jobs, schedules,
 runs, fanouts, long-running services, events, heartbeats, artifacts, audit logs, and
-rate-limit proof panels. The Admin/Auth panel also has cleanup controls for old
+rate-limit proof panels. The Discovery panel reloads deploy-time goblin sources and
+shows registry files, entry-point usage, worker image-map coverage, rejected
+definitions, and the current discovery version. The Admin/Auth panel also has cleanup controls for old
 runtime rows: preview first, then remove terminal jobs/runs, completed fanouts,
 captured events, worker heartbeats, and stopped or unprobed long-service rows while
 leaving schedules, auth/project data, active jobs, running services, and scheduler

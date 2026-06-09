@@ -48,27 +48,51 @@ class Scheduler:
     ) -> None:
         self.registry = registry
         self.store = store
+        self.workers = workers
+        self.redis_url = redis_url
         self.worker_id = worker_id or f"scheduler-{uuid4()}"
         self.lease_seconds = lease_seconds
         self.claim_limit = claim_limit
         self.runtime_mode = runtime_mode
+        self.discovery_version = 1
         if runtime_mode in {"docker", "kubernetes"} and workers is None:
             raise ValueError(f"workers image map is required when runtime_mode={runtime_mode!r}")
         self.event_bus = event_bus or EventBus(store=store, redis_url=redis_url)
-        if runtime_mode == "docker":
-            self.runtime = DockerRuntime(
-                workers=workers,
-                redis_url=redis_url,
+        self.runtime = self._build_runtime()
+
+    def reload_discovery(
+        self,
+        *,
+        registry: GoblinRegistry,
+        workers: WorkerImageMap | None = None,
+    ) -> int:
+        """Swap scheduler registry/image-map state after deploy-time discovery reload."""
+        if self.runtime_mode in {"docker", "kubernetes"} and workers is None:
+            raise ValueError(
+                f"workers image map is required when runtime_mode={self.runtime_mode!r}"
+            )
+        self.registry = registry
+        if workers is not None:
+            self.workers = workers
+        self.runtime = self._build_runtime()
+        self.discovery_version += 1
+        return self.discovery_version
+
+    def _build_runtime(self) -> DockerRuntime | KubernetesRuntime | InProcessRuntime:
+        """Build the configured runtime from the current registry/image-map bindings."""
+        if self.runtime_mode == "docker":
+            return DockerRuntime(
+                workers=self.workers,
+                redis_url=self.redis_url,
                 event_bus=self.event_bus,
             )
-        elif runtime_mode == "kubernetes":
-            self.runtime = KubernetesRuntime(
-                workers=workers,
-                redis_url=redis_url,
+        if self.runtime_mode == "kubernetes":
+            return KubernetesRuntime(
+                workers=self.workers,
+                redis_url=self.redis_url,
                 event_bus=self.event_bus,
             )
-        else:
-            self.runtime = InProcessRuntime()
+        return InProcessRuntime()
 
     def materialize_due_schedules(self, now: datetime | None = None) -> list[JobRecord]:
         """Create queued jobs for enabled schedules whose next run is due."""

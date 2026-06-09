@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from goblin_king.contracts import ScheduleRecord
+from goblin_king.contracts import GoblinDefinition, ScheduleRecord
 from goblin_king.registry import GoblinRegistry
 from goblin_king.scheduler import Scheduler
 from goblin_king.store import SQLiteStore
@@ -138,3 +138,23 @@ def test_timeout_configuration_marks_overdue_run(tmp_path: Path) -> None:
 
     assert runs[0].status == "timed_out"
     assert job.status == "timed_out"
+
+
+def test_scheduler_reload_discovery_swaps_active_registry(tmp_path: Path) -> None:
+    """Verify a live scheduler can use refreshed goblin definitions."""
+    scheduler, _ = build_scheduler(tmp_path)
+    refreshed = GoblinRegistry.from_definitions(
+        [
+            GoblinDefinition(
+                kind="project.reloaded",
+                display_name="Project Reloaded",
+                module="examples.goblins.echo",
+            )
+        ]
+    )
+
+    version = scheduler.reload_discovery(registry=refreshed)
+
+    assert version == 2
+    assert scheduler.discovery_version == 2
+    assert scheduler.registry.get("project.reloaded").display_name == "Project Reloaded"

@@ -120,6 +120,28 @@ type CleanupResponse = {
   counts: Record<string, number>;
 };
 
+type DiscoveryStatus = {
+  active_goblin_count: number;
+  worker_mapped_count: number;
+  worker_unmapped: string[];
+  discovery_version: number;
+  last_successful_reload_at: string;
+  last_failed_reload_at?: string | null;
+  last_error?: string | null;
+};
+
+type DiscoverySources = {
+  project_settings?: string | null;
+  registry_files: string[];
+  entry_points_enabled: boolean;
+  worker_image_map: string;
+  goblin_kinds: string[];
+  worker_mapped_kinds: string[];
+  worker_unmapped_kinds: string[];
+  rejected_definitions: string[];
+  duplicate_kind_errors: string[];
+};
+
 function latestFirst<T>(items: T[]): T[] {
   return [...items].sort((left, right) => {
     const leftRecord = left as Record<string, unknown>;
@@ -195,6 +217,8 @@ export function App() {
   const [retryJobId, setRetryJobId] = useState("");
   const [artifactRunId, setArtifactRunId] = useState("");
   const [cleanupPreview, setCleanupPreview] = useState<CleanupResponse | null>(null);
+  const [discoveryStatus, setDiscoveryStatus] = useState<DiscoveryStatus | null>(null);
+  const [discoverySources, setDiscoverySources] = useState<DiscoverySources | null>(null);
   const [includeUnprobedServices, setIncludeUnprobedServices] = useState(true);
   const [traffic, setTraffic] = useState<TrafficEntry[]>([]);
   const [error, setError] = useState("");
@@ -264,6 +288,8 @@ export function App() {
         schedulePayload,
         fanoutPayload,
         auditPayload,
+        discoveryStatusPayload,
+        discoverySourcesPayload,
       ] = await Promise.all([
         api("/goblins", {}, "GET /goblins"),
         api("/jobs?limit=100", {}, "GET /jobs"),
@@ -274,6 +300,8 @@ export function App() {
         api("/schedules", {}, "GET /schedules"),
         api("/fanouts", {}, "GET /fanouts"),
         api("/audit-logs?limit=20", {}, "GET /audit-logs"),
+        api("/admin/discovery/status", {}, "GET /admin/discovery/status"),
+        api("/admin/discovery/sources", {}, "GET /admin/discovery/sources"),
       ]);
       setGoblins(goblinPayload);
       setJobs(latestFirst(jobPayload.items));
@@ -284,6 +312,8 @@ export function App() {
       setSchedules(schedulePayload);
       setFanouts(fanoutPayload);
       setAuditLogs(latestFirst(auditPayload.items));
+      setDiscoveryStatus(discoveryStatusPayload);
+      setDiscoverySources(discoverySourcesPayload);
       setSelectedKind((current) => goblinPayload.find((item: Goblin) => item.kind === current)?.kind || goblinPayload[0]?.kind || "example.hello");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -444,6 +474,16 @@ export function App() {
     await refreshAll();
   }
 
+  async function reloadDiscovery() {
+    const status = await api(
+      "/admin/discovery/reload",
+      { method: "POST" },
+      "POST /admin/discovery/reload",
+    ) as DiscoveryStatus;
+    setDiscoveryStatus(status);
+    await refreshAll();
+  }
+
   const cleanupTotal = cleanupPreview
     ? Object.values(cleanupPreview.counts).reduce((total, value) => total + value, 0)
     : 0;
@@ -480,7 +520,7 @@ export function App() {
         <h1>Goblin King</h1>
         <p>Admin Lab Bench</p>
         <nav>
-          {["Dashboard", "Goblin Lab", "Task Board", "Schedules", "Runs", "Fanout", "Services", "Events", "Admin"].map((item) => (
+          {["Dashboard", "Goblin Lab", "Task Board", "Schedules", "Runs", "Fanout", "Services", "Events", "Discovery", "Admin"].map((item) => (
             <a href={`#${item.toLowerCase().replaceAll(" ", "-")}`} key={item}>{item}</a>
           ))}
         </nav>
@@ -629,6 +669,39 @@ export function App() {
           <Table title="Durable Events" rows={events.map((event) => [event.event_type, event.source, event.created_at])} />
           <Table title="Live Event Rail" rows={liveEvents.map((event) => [event.event_type, event.source, JSON.stringify(event.payload)])} />
           <Table title="Heartbeats" rows={heartbeats.map((beat) => [beat.owner_type, beat.owner_id, beat.status, beat.last_seen_at])} />
+        </section>
+
+        <section id="discovery" className="panel two-column">
+          <div>
+            <h3><RefreshCw /> Discovery</h3>
+            <p className="muted">
+              Reload registry files, package entry points, and worker image maps after a deployment. A failed reload keeps the previous good list active.
+            </p>
+            <div className="button-row">
+              <button onClick={() => void reloadDiscovery()}><RefreshCw size={16} /> Reload discovery</button>
+            </div>
+            <pre className="traffic">{JSON.stringify(discoveryStatus || {}, null, 2)}</pre>
+          </div>
+          <div>
+            <Table
+              title="Discovery Sources"
+              rows={[
+                ["Project settings", discoverySources?.project_settings || "direct settings"],
+                ["Registry files", discoverySources?.registry_files.join(", ") || "none"],
+                ["Entry points", discoverySources?.entry_points_enabled ? "enabled" : "disabled"],
+                ["Worker image map", discoverySources?.worker_image_map || "unknown"],
+                ["Unmapped workers", discoverySources?.worker_unmapped_kinds.join(", ") || "none"],
+                ["Rejected definitions", discoverySources?.rejected_definitions.join("; ") || "none"],
+              ]}
+            />
+            <Table
+              title="Active Goblin Kinds"
+              rows={(discoverySources?.goblin_kinds || []).map((kind) => [
+                kind,
+                discoverySources?.worker_mapped_kinds.includes(kind) ? "worker mapped" : "needs mapping",
+              ])}
+            />
+          </div>
         </section>
 
         <section id="admin" className="panel two-column">

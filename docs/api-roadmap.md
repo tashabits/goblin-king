@@ -38,7 +38,7 @@ target phase below.
 - Optional Helm chart with API/admin, scheduler, Redis, persistence, sample worker
   service, and default-on configurable ingress.
 
-## Planned For Phase 13
+## Covered In Phase 13
 
 - `POST /admin/discovery/reload`: reload project settings, registry files, entry points,
   and worker image maps without rebuilding the React admin.

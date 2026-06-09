@@ -46,6 +46,26 @@ const fixtures = {
   schedules: [],
   fanouts: [],
   audits: { items: [], meta: { limit: 20, offset: 0, count: 0 } },
+  discoveryStatus: {
+    active_goblin_count: 2,
+    worker_mapped_count: 2,
+    worker_unmapped: [],
+    discovery_version: 1,
+    last_successful_reload_at: "2026-06-09T00:00:00Z",
+    last_failed_reload_at: null,
+    last_error: null,
+  },
+  discoverySources: {
+    project_settings: "goblin-king-project.json",
+    registry_files: ["examples/goblins.json"],
+    entry_points_enabled: true,
+    worker_image_map: "goblin-images.json",
+    goblin_kinds: ["example.hello", "example.long-hello"],
+    worker_mapped_kinds: ["example.hello", "example.long-hello"],
+    worker_unmapped_kinds: [],
+    rejected_definitions: [],
+    duplicate_kind_errors: [],
+  },
 };
 
 function jsonResponse(payload: unknown, status = 200) {
@@ -88,6 +108,11 @@ function mockFetch() {
     if (url.includes("/schedules")) return jsonResponse(fixtures.schedules);
     if (url.includes("/fanouts")) return jsonResponse(fixtures.fanouts);
     if (url.includes("/audit-logs")) return jsonResponse(fixtures.audits);
+    if (url.includes("/admin/discovery/reload")) {
+      return jsonResponse({ ...fixtures.discoveryStatus, discovery_version: 2 });
+    }
+    if (url.includes("/admin/discovery/status")) return jsonResponse(fixtures.discoveryStatus);
+    if (url.includes("/admin/discovery/sources")) return jsonResponse(fixtures.discoverySources);
     if (url.includes("/admin/cleanup/runtime")) {
       return jsonResponse({
         dry_run: init?.body ? JSON.parse(String(init.body)).dry_run : true,
@@ -150,6 +175,7 @@ describe("App", () => {
     expect(screen.getAllByText("Fanout & Retry").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Long Services").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Durable Events").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Discovery").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Admin & Auth").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Cleanup").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: /kill \/ cancel/i }).length).toBeGreaterThan(0);
@@ -208,5 +234,20 @@ describe("App", () => {
         expect.objectContaining({ body: expect.stringContaining("\"dry_run\":false") }),
       );
     });
+  });
+
+  it("reloads deploy-time discovery from the admin panel", async () => {
+    const fetchMock = mockFetch();
+    localStorage.setItem("goblinKingAdminToken", "test-token");
+    render(<App />);
+
+    await screen.findAllByText("Discovery");
+    await userEvent.click(screen.getByRole("button", { name: /reload discovery/i }));
+
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((call) => String(call[0]));
+      expect(urls).toContain("/admin-api/admin/discovery/reload");
+    });
+    expect(screen.getAllByText(/example.long-hello/i).length).toBeGreaterThan(0);
   });
 });
