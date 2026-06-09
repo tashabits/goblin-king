@@ -118,6 +118,8 @@ Helm upgrade so newly deployed goblins appear in the admin without a React rebui
 
 The King allows many banners in the courtyard, but every banner needs a receipt.
 
+![Image promotion and deployment proof controls](images/admin/admin-deploy.png)
+
 ## Clean Up Old Rows
 
 Use **Admin & Auth -> Cleanup** after a test pass. Always press **Preview old rows**

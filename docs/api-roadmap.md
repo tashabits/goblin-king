@@ -113,6 +113,12 @@ target phase below.
 - Admin UI deployment panel for worker image coverage, promotion status, Helm render
   intent, discovery reload, and proof trail.
 
+## Covered In Phase 22
+
+- Production roadmap closeout audit in `docs/ROADMAP_CLOSEOUT.md`.
+- Documentation and screenshot coverage for Phase 16-21 production proof surfaces.
+- Explicit deferred item list for future phases.
+
 ## Later Infrastructure Follow-Up
 
 - External webhook callbacks.
