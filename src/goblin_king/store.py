@@ -207,6 +207,40 @@ class SQLiteStore:
                 )
             )
 
+    def get_schedule(self, schedule_id: str) -> ScheduleRecord | None:
+        """Load one schedule by ID for API inspection and updates."""
+        with self.engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(schedules_table).where(schedules_table.c.id == schedule_id)
+                )
+                .mappings()
+                .one_or_none()
+            )
+        if row is None:
+            return None
+        return _row_to_schedule(dict(row))
+
+    def update_schedule(self, schedule: ScheduleRecord) -> None:
+        """Replace mutable fields for one existing schedule."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                update(schedules_table)
+                .where(schedules_table.c.id == schedule.id)
+                .values(
+                    kind=schedule.kind,
+                    input_json=json.dumps(schedule.input),
+                    cron=schedule.cron,
+                    timezone=schedule.timezone,
+                    enabled=1 if schedule.enabled else 0,
+                    priority=schedule.priority,
+                    next_run_at=schedule.next_run_at,
+                    last_materialized_at=schedule.last_materialized_at,
+                    max_retries=schedule.max_retries,
+                    timeout_seconds=schedule.timeout_seconds,
+                )
+            )
+
     def list_schedules(self) -> list[ScheduleRecord]:
         """Return all schedules ordered by next run time for CLI display."""
         with self.engine.connect() as connection:
@@ -333,6 +367,26 @@ class SQLiteStore:
         with self.engine.begin() as connection:
             connection.execute(update(jobs_table).where(jobs_table.c.id == job_id).values(**values))
 
+    def cancel_job(self, job_id: str) -> JobRecord | None:
+        """Cancel a non-terminal job and return its updated record."""
+        job = self.get_job(job_id)
+        if job is None:
+            return None
+        if job.status in {"completed", "failed", "timed_out", "cancelled"}:
+            return job
+        with self.engine.begin() as connection:
+            connection.execute(
+                update(jobs_table)
+                .where(jobs_table.c.id == job_id)
+                .values(
+                    status="cancelled",
+                    lease_owner=None,
+                    leased_until=None,
+                    last_error="cancelled by API",
+                )
+            )
+        return self.get_job(job_id)
+
     def get_run(self, run_id: str) -> RunRecord | None:
         """Load one run record with its persisted result envelope when present."""
         with self.engine.connect() as connection:
@@ -356,6 +410,27 @@ class SQLiteStore:
         if row is None:
             return None
         return _row_to_job(dict(row))
+
+    def list_run_artifacts(self, run_id: str) -> list[ArtifactRecord]:
+        """Return artifact metadata rows for one run."""
+        with self.engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    select(artifacts_table)
+                    .where(artifacts_table.c.run_id == run_id)
+                    .order_by(artifacts_table.c.name)
+                )
+                .mappings()
+                .all()
+            )
+        return [
+            ArtifactRecord(
+                name=row["name"],
+                uri=row["uri"],
+                media_type=row["media_type"],
+            )
+            for row in rows
+        ]
 
     def _ensure_phase2_columns(self) -> None:
         """Add Phase 2 job columns to existing Phase 1 SQLite databases."""
