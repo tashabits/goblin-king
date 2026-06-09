@@ -87,6 +87,9 @@ captures request payloads, responses, durable events, and live WebSocket message
 King-side kill controls cancel jobs or stop registered services; they do not hard-kill
 containers or pods.
 
+For a screenshot walkthrough of each admin panel, see
+[Goblin King Admin Guide](ADMIN_GUIDE.md).
+
 Use the Admin/Auth cleanup controls to remove old runtime rows after a testing pass.
 Always preview first; removal clears terminal jobs and runs, completed fanouts, captured
 events, worker heartbeats, and stopped or unprobed long-service rows. It preserves

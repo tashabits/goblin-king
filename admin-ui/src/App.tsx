@@ -152,6 +152,23 @@ async function readJson(response: Response) {
   return JSON.parse(text);
 }
 
+function compactTrafficPayload(value: unknown, depth = 0): unknown {
+  if (depth > 3) return "[truncated]";
+  if (Array.isArray(value)) {
+    const preview = value.slice(0, 3).map((item) => compactTrafficPayload(item, depth + 1));
+    return value.length > 3 ? [...preview, `... ${value.length - 3} more`] : preview;
+  }
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    const compacted = Object.fromEntries(
+      entries.slice(0, 12).map(([key, item]) => [key, compactTrafficPayload(item, depth + 1)]),
+    );
+    if (entries.length > 12) compacted._truncated = `${entries.length - 12} more fields`;
+    return compacted;
+  }
+  return value;
+}
+
 export function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
   const [draftToken, setDraftToken] = useState(token || "local-dev-token");
@@ -199,7 +216,14 @@ export function App() {
     const response = await fetch(`${API_BASE}${path}`, request);
     const payload = await readJson(response);
     setTraffic((items) =>
-      [{ label, request: { path, ...options }, response: { status: response.status, payload } }, ...items].slice(0, 12),
+      [
+        {
+          label,
+          request: { path, method: options.method || "GET", body: options.body },
+          response: { status: response.status, payload: compactTrafficPayload(payload) },
+        },
+        ...items,
+      ].slice(0, 12),
     );
     if (!response.ok) {
       throw new Error(payload?.detail || `${label} failed with ${response.status}`);
