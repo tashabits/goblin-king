@@ -423,6 +423,14 @@ Integration tests:
 - Allow API goblin discovery from project settings.
 - Document how existing projects can adopt it without taking a hard dependency on implementation details.
 
+### Phase 6: Fanout And Retry
+
+- Add durable fanout batches with mixed-kind child jobs.
+- Add fanout API and CLI create/list/show flows.
+- Add retry API and CLI commands that create fresh queued jobs from terminal jobs.
+- Derive fanout status from child jobs and runs.
+- Keep fanout and retry queue-only; scheduler execution remains separate.
+
 ### Final Optional Phase: Kubernetes Deployment
 
 - Keep Docker and Compose as the default local/development path.

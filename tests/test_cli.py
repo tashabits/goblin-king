@@ -8,6 +8,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from goblin_king.cli import app
+from goblin_king.contracts import JobRecord, utc_now
 from goblin_king.store import SQLiteStore
 
 runner = CliRunner()
@@ -102,6 +103,70 @@ def test_jobs_submit_persists_completed_run(tmp_path: Path) -> None:
     loaded = SQLiteStore(db_path).get_run(payload["id"])
     assert loaded is not None
     assert loaded.status == "completed"
+
+
+def test_jobs_fanout_and_fanouts_show(tmp_path: Path) -> None:
+    """Verify CLI fanout creates a batch and fanout read commands display it."""
+    db_path = tmp_path / "goblin.sqlite3"
+    fanout_path = tmp_path / "fanout.json"
+    fanout_path.write_text(
+        json.dumps(
+            {
+                "description": "cli fanout",
+                "items": [
+                    {"kind": "example.echo", "input": {"message": "one"}},
+                    {"kind": "example.echo", "input": {"message": "two"}},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    created = runner.invoke(
+        app,
+        [
+            "jobs",
+            "fanout",
+            "--input",
+            str(fanout_path),
+            "--registry",
+            "examples/goblins.json",
+            "--db",
+            str(db_path),
+        ],
+    )
+    fanout_id = json.loads(created.stdout)["fanout"]["id"]
+    listed = runner.invoke(app, ["fanouts", "list", "--db", str(db_path)])
+    shown = runner.invoke(app, ["fanouts", "show", fanout_id, "--db", str(db_path)])
+
+    assert created.exit_code == 0
+    assert "queued" in listed.stdout
+    assert json.loads(shown.stdout)["counts"]["total"] == 2
+
+
+def test_jobs_retry_creates_queued_retry(tmp_path: Path) -> None:
+    """Verify CLI retry creates a queued retry job from a terminal source."""
+    db_path = tmp_path / "goblin.sqlite3"
+    store = SQLiteStore(db_path)
+    store.save_job(
+        JobRecord(
+            id="source",
+            kind="example.echo",
+            input={"message": "retry me"},
+            created_at=utc_now(),
+            status="failed",
+        )
+    )
+
+    result = runner.invoke(
+        app,
+        ["jobs", "retry", "source", "--db", str(db_path), "--reason", "manual"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["status"] == "queued"
+    assert payload["metadata"]["retry"]["source_job_id"] == "source"
 
 
 def test_jobs_submit_persists_failed_run(tmp_path: Path) -> None:

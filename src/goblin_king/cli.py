@@ -10,6 +10,14 @@ from uuid import uuid4
 import typer
 
 from goblin_king.contracts import JobRecord, RunRecord, ScheduleRecord, utc_now
+from goblin_king.fanout import (
+    FanoutCreateRequest,
+    RetryCreateRequest,
+    create_fanout,
+    fanout_detail,
+    list_fanout_details,
+    retry_job,
+)
 from goblin_king.project import ProjectSettings, ProjectSettingsError
 from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.runtime import DockerRuntime, InProcessRuntime, new_run_context
@@ -22,6 +30,7 @@ app = typer.Typer(help="Run and inspect Goblin King jobs.")
 api_app = typer.Typer(help="Run the HTTP API control plane.")
 goblins_app = typer.Typer(help="Inspect registered goblins.")
 jobs_app = typer.Typer(help="Submit goblin jobs.")
+fanouts_app = typer.Typer(help="Inspect fanout batches.")
 project_app = typer.Typer(help="Inspect and scaffold reusable Goblin King projects.")
 project_goblins_app = typer.Typer(help="Inspect project-discovered goblins.")
 runs_app = typer.Typer(help="Inspect goblin runs.")
@@ -31,6 +40,7 @@ workers_app = typer.Typer(help="Build Docker worker images.")
 app.add_typer(api_app, name="api")
 app.add_typer(goblins_app, name="goblins")
 app.add_typer(jobs_app, name="jobs")
+app.add_typer(fanouts_app, name="fanouts")
 project_app.add_typer(project_goblins_app, name="goblins")
 app.add_typer(project_app, name="project")
 app.add_typer(runs_app, name="runs")
@@ -204,6 +214,49 @@ def submit_job(
         raise typer.Exit(1)
 
 
+@jobs_app.command("fanout")
+def fanout_jobs(
+    input_path: Annotated[Path, typer.Option("--input", help="Fanout JSON request path.")],
+    registry: Annotated[
+        Path,
+        typer.Option("--registry", help="Registry JSON path."),
+    ] = Path("goblins.json"),
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+) -> None:
+    """Create a queued fanout batch from a JSON request."""
+    request = FanoutCreateRequest.model_validate(_load_input(input_path))
+    detail = create_fanout(
+        store=SQLiteStore(db),
+        registry=_load_registry(registry),
+        request=request,
+        created_by="cli",
+    )
+    typer.echo(detail.model_dump_json(indent=2))
+
+
+@jobs_app.command("retry")
+def retry_cli_job(
+    job_id: Annotated[str, typer.Argument(help="Source job ID to retry.")],
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+    reason: Annotated[str | None, typer.Option("--reason", help="Retry reason.")] = None,
+) -> None:
+    """Create a queued retry job from a terminal source job."""
+    try:
+        retry = retry_job(
+            store=SQLiteStore(db),
+            job_id=job_id,
+            request=RetryCreateRequest(reason=reason),
+            created_by="cli-retry",
+        )
+    except KeyError as error:
+        typer.echo(f"job not found: {job_id}", err=True)
+        raise typer.Exit(1) from error
+    except ValueError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+    typer.echo(retry.model_dump_json(indent=2))
+
+
 @jobs_app.command("list")
 def list_jobs(
     db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
@@ -212,6 +265,32 @@ def list_jobs(
     store = SQLiteStore(db)
     for job in store.list_jobs():
         typer.echo(f"{job.id}\t{job.kind}\t{job.status}\t{job.due_at or ''}")
+
+
+@fanouts_app.command("list")
+def list_fanouts(
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+) -> None:
+    """Print persisted fanout batches with derived status."""
+    for detail in list_fanout_details(SQLiteStore(db)):
+        typer.echo(
+            f"{detail.fanout.id}\t{detail.status}\t{detail.counts.get('total', 0)}"
+            f"\t{detail.fanout.description or ''}"
+        )
+
+
+@fanouts_app.command("show")
+def show_fanout(
+    fanout_id: Annotated[str, typer.Argument(help="Fanout ID to inspect.")],
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+) -> None:
+    """Print one fanout batch as JSON."""
+    try:
+        detail = fanout_detail(SQLiteStore(db), fanout_id)
+    except KeyError as error:
+        typer.echo(f"fanout not found: {fanout_id}", err=True)
+        raise typer.Exit(1) from error
+    typer.echo(detail.model_dump_json(indent=2))
 
 
 @runs_app.command("show")

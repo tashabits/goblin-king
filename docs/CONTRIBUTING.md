@@ -46,6 +46,10 @@ package proof. Record the generator command, local editable install, discovery t
 `goblin_king.goblins`, worker image build, and a completed scheduler run when the package
 includes a worker.
 
+When a phase includes fanout or retry behavior, PR evidence must include both API and CLI
+proof. Record fanout creation, fanout readback, scheduler execution, retry creation from
+a terminal job, and retry completion.
+
 ## Commenting Standards
 
 - New public modules should start with a concise file-level comment describing purpose and ownership.
@@ -62,3 +66,5 @@ API phases must include HTTP tests for success paths, auth failures, validation 
 not-found responses, and persistence effects.
 Reusable package phases must include tests for project settings, registry merging, entry
 point discovery, template generation, and CLI discovery.
+Fanout/retry phases must include tests for batch persistence, derived fanout status, API
+auth, CLI commands, retry lineage, rejected live-job retries, and scheduler execution.

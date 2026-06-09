@@ -14,6 +14,15 @@ from pydantic import BaseModel, Field
 
 from goblin_king.api_settings import ApiSettings
 from goblin_king.contracts import ArtifactRecord, JobRecord, ScheduleRecord, utc_now
+from goblin_king.fanout import (
+    FanoutCreateRequest,
+    FanoutDetail,
+    RetryCreateRequest,
+    create_fanout,
+    fanout_detail,
+    list_fanout_details,
+    retry_job,
+)
 from goblin_king.project import ProjectSettings
 from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.scheduler import next_run_after
@@ -164,6 +173,47 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         if cancelled is None:
             raise HTTPException(status_code=404, detail=f"job not found: {job_id}")
         return cancelled
+
+    @app.post("/jobs/fanout", dependencies=[Depends(require_token)])
+    def create_jobs_fanout(request: FanoutCreateRequest) -> FanoutDetail:
+        """Create a mixed-kind fanout batch of queued jobs."""
+        try:
+            return create_fanout(
+                store=state.store,
+                registry=state.registry,
+                request=request,
+                created_by="api",
+            )
+        except RegistryError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @app.get("/fanouts")
+    def get_fanouts() -> list[FanoutDetail]:
+        """Return all fanout batches with derived status."""
+        return list_fanout_details(state.store)
+
+    @app.get("/fanouts/{fanout_id}")
+    def get_fanout(fanout_id: str) -> FanoutDetail:
+        """Return one fanout batch with child jobs and runs."""
+        try:
+            return fanout_detail(state.store, fanout_id)
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=f"fanout not found: {fanout_id}") from error
+
+    @app.post("/jobs/{job_id}/retry", dependencies=[Depends(require_token)])
+    def retry_api_job(job_id: str, request: RetryCreateRequest) -> JobRecord:
+        """Queue a fresh retry job copied from a terminal source job."""
+        try:
+            return retry_job(
+                store=state.store,
+                job_id=job_id,
+                request=request,
+                created_by="api-retry",
+            )
+        except KeyError as error:
+            raise HTTPException(status_code=404, detail=f"job not found: {job_id}") from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
     @app.post("/schedules", dependencies=[Depends(require_token)])
     def create_schedule(request: ScheduleCreateRequest) -> ScheduleRecord:

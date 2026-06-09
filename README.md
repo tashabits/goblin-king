@@ -9,6 +9,8 @@ Phase 4 adds a FastAPI control plane for discovering goblins, queueing jobs, man
 schedules, inspecting runs, and serving local artifacts safely.
 Phase 5 adds reusable project integration through project settings, multiple registry
 files, Python package entry point discovery, and a package/worker template generator.
+Phase 6 adds durable fanout batches and retry APIs/CLI commands for queueing related
+work without executing it inline.
 
 ## Quick Start
 
@@ -77,6 +79,20 @@ goblin-king project goblins list --project goblin-king-project.json
 Project integration settings live in `goblin-king-project.json` and can combine JSON
 registry files with installed Python package entry points from `goblin_king.goblins`.
 
+Queue a fanout batch and inspect it:
+
+```bash
+goblin-king jobs fanout --input fanout.json --registry examples/goblins.json
+goblin-king fanouts list
+goblin-king fanouts show <fanout-id>
+```
+
+Retry a terminal job:
+
+```bash
+goblin-king jobs retry <job-id> --reason "try again"
+```
+
 ## Worker Images
 
 Each Docker worker lives in a self-contained folder with its own `Dockerfile`.
@@ -110,5 +126,6 @@ and write the same result to a mounted fallback file.
 The current kernel stores durable state in SQLite, schedules due jobs, executes Docker
 workers by default, uses Redis as result transport, and exposes a local/dev API control
 plane. It can also discover goblins from multiple registry files and installed package
-entry points. Kubernetes, fanout endpoints, Redis durability guarantees, production auth,
-and deployment hardening are planned for later phases.
+entry points, queue mixed-kind fanout batches, and create retry jobs from terminal jobs.
+Kubernetes, events/WebSockets, Redis durability guarantees, production auth, and
+deployment hardening are planned for later phases.

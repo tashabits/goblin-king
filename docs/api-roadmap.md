@@ -9,10 +9,12 @@ target phase below.
 - Registry discovery for package entry points and reusable project integration.
 - Package/project integration commands for adopting Goblin King from existing codebases.
 
-## Phase 6
+## Covered In Phase 6
 
 - `POST /jobs/fanout`: submit many related jobs and collect matching run IDs.
 - `POST /jobs/{job_id}/retry`: create a retry attempt from a failed or timed-out job.
+- `GET /fanouts`: list durable fanout batches with derived status.
+- `GET /fanouts/{fanout_id}`: inspect one fanout batch, child jobs, and runs.
 
 ## Phase 7
 

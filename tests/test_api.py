@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from goblin_king.api import create_app
 from goblin_king.api_settings import ApiSettings
-from goblin_king.contracts import ArtifactRecord, GoblinResult, JobRecord, RunRecord
+from goblin_king.contracts import ArtifactRecord, GoblinResult, JobRecord, RunRecord, utc_now
 from goblin_king.store import SQLiteStore
 
 
@@ -103,6 +103,72 @@ def test_jobs_endpoint_queues_without_running(tmp_path: Path) -> None:
     assert loaded.status == "queued"
     assert listed.status_code == 200
     assert listed.json()[0]["id"] == created.json()["id"]
+
+
+def test_fanout_api_creates_and_reads_batch(tmp_path: Path) -> None:
+    """Verify API fanout creates queued jobs and read endpoints derive status."""
+    client, _, _ = build_client(tmp_path)
+
+    unauthorized = client.post("/jobs/fanout", json={"items": []})
+    created = client.post(
+        "/jobs/fanout",
+        json={
+            "description": "demo",
+            "items": [
+                {"kind": "example.echo", "input": {"message": "one"}},
+                {"kind": "example.echo", "input": {"message": "two"}},
+            ],
+        },
+        headers=auth_headers(),
+    )
+    fanout_id = created.json()["fanout"]["id"]
+    shown = client.get(f"/fanouts/{fanout_id}")
+    listed = client.get("/fanouts")
+
+    assert unauthorized.status_code == 401
+    assert created.status_code == 200
+    assert created.json()["status"] == "queued"
+    assert len(created.json()["jobs"]) == 2
+    assert shown.status_code == 200
+    assert shown.json()["counts"]["total"] == 2
+    assert listed.status_code == 200
+    assert listed.json()[0]["fanout"]["id"] == fanout_id
+
+
+def test_retry_api_creates_new_job_for_terminal_source(tmp_path: Path) -> None:
+    """Verify API retry creates a queued job and rejects live sources."""
+    client, store, _ = build_client(tmp_path)
+    terminal = JobRecord(
+        id="terminal",
+        kind="example.echo",
+        input={"message": "old"},
+        created_at=utc_now(),
+        status="completed",
+    )
+    live = JobRecord(
+        id="live",
+        kind="example.echo",
+        input={},
+        created_at=utc_now(),
+        status="queued",
+    )
+    store.save_job(terminal)
+    store.save_job(live)
+
+    unauthorized = client.post("/jobs/terminal/retry", json={"reason": "again"})
+    retry = client.post(
+        "/jobs/terminal/retry",
+        json={"reason": "again", "input": {"message": "new"}},
+        headers=auth_headers(),
+    )
+    conflict = client.post("/jobs/live/retry", json={}, headers=auth_headers())
+
+    assert unauthorized.status_code == 401
+    assert retry.status_code == 200
+    assert retry.json()["status"] == "queued"
+    assert retry.json()["input"] == {"message": "new"}
+    assert retry.json()["metadata"]["retry"]["source_job_id"] == "terminal"
+    assert conflict.status_code == 409
 
 
 def test_get_job_and_cancel_job(tmp_path: Path) -> None:
