@@ -5,13 +5,13 @@ from __future__ import annotations
 import time
 from datetime import UTC, datetime, timedelta
 from threading import Event
+from typing import Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from croniter import croniter
 
 from goblin_king.contracts import (
-    GoblinContext,
     GoblinResult,
     JobRecord,
     RunRecord,
@@ -19,12 +19,14 @@ from goblin_king.contracts import (
     utc_now,
 )
 from goblin_king.registry import GoblinRegistry
-from goblin_king.runtime import InProcessRuntime
+from goblin_king.runtime import DockerRuntime, InProcessRuntime, new_run_context
 from goblin_king.store import SQLiteStore
+from goblin_king.workers import WorkerImageMap
 
 DEFAULT_LEASE_SECONDS = 60
 DEFAULT_CLAIM_LIMIT = 10
 DEFAULT_INTERVAL_SECONDS = 5
+RuntimeMode = Literal["docker", "in-process"]
 
 
 class Scheduler:
@@ -38,13 +40,23 @@ class Scheduler:
         worker_id: str | None = None,
         lease_seconds: int = DEFAULT_LEASE_SECONDS,
         claim_limit: int = DEFAULT_CLAIM_LIMIT,
+        runtime_mode: RuntimeMode = "docker",
+        workers: WorkerImageMap | None = None,
+        redis_url: str = "redis://localhost:6379/0",
     ) -> None:
         self.registry = registry
         self.store = store
         self.worker_id = worker_id or f"scheduler-{uuid4()}"
         self.lease_seconds = lease_seconds
         self.claim_limit = claim_limit
-        self.runtime = InProcessRuntime()
+        self.runtime_mode = runtime_mode
+        if runtime_mode == "docker" and workers is None:
+            raise ValueError("workers image map is required when runtime_mode='docker'")
+        self.runtime = (
+            DockerRuntime(workers=workers, redis_url=redis_url)
+            if runtime_mode == "docker"
+            else InProcessRuntime()
+        )
 
     def materialize_due_schedules(self, now: datetime | None = None) -> list[JobRecord]:
         """Create queued jobs for enabled schedules whose next run is due."""
@@ -89,13 +101,22 @@ class Scheduler:
         attempt = job.attempt_count + 1
         self.store.mark_job_running(job.id, attempt_count=attempt)
 
-        definition, entrypoint = self.registry.resolve(job.kind)
-        context = GoblinContext(
-            run_id=str(uuid4()),
-            artifact_root=f".goblin-king/artifacts/{job.id}",
-            metadata={"job_id": job.id, "kind": job.kind, "attempt": attempt},
-        )
-        result = self.runtime.run(definition, entrypoint, job.input, context)
+        if self.runtime_mode == "docker":
+            definition = self.registry.get(job.kind)
+            entrypoint = None
+        else:
+            definition, entrypoint = self.registry.resolve(job.kind)
+        context = new_run_context(job.id, job.kind, attempt)
+        if isinstance(self.runtime, DockerRuntime):
+            result = self.runtime.run(
+                definition,
+                entrypoint,
+                job.input,
+                context,
+                timeout_seconds=job.timeout_seconds,
+            )
+        else:
+            result = self.runtime.run(definition, entrypoint, job.input, context)
         finished_at = utc_now()
         status = _status_for_result(result, started_at, finished_at, job.timeout_seconds)
         error = result.error
