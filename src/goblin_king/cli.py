@@ -10,16 +10,20 @@ from uuid import uuid4
 import typer
 
 from goblin_king.contracts import JobRecord, RunRecord, ScheduleRecord, utc_now
+from goblin_king.project import ProjectSettings, ProjectSettingsError
 from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.runtime import DockerRuntime, InProcessRuntime, new_run_context
 from goblin_king.scheduler import DEFAULT_INTERVAL_SECONDS, Scheduler, next_run_after
 from goblin_king.store import DEFAULT_DB_PATH, SQLiteStore
+from goblin_king.templates import TemplateError, init_package
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
 
 app = typer.Typer(help="Run and inspect Goblin King jobs.")
 api_app = typer.Typer(help="Run the HTTP API control plane.")
 goblins_app = typer.Typer(help="Inspect registered goblins.")
 jobs_app = typer.Typer(help="Submit goblin jobs.")
+project_app = typer.Typer(help="Inspect and scaffold reusable Goblin King projects.")
+project_goblins_app = typer.Typer(help="Inspect project-discovered goblins.")
 runs_app = typer.Typer(help="Inspect goblin runs.")
 schedules_app = typer.Typer(help="Create and inspect schedules.")
 scheduler_app = typer.Typer(help="Run scheduler passes.")
@@ -27,6 +31,8 @@ workers_app = typer.Typer(help="Build Docker worker images.")
 app.add_typer(api_app, name="api")
 app.add_typer(goblins_app, name="goblins")
 app.add_typer(jobs_app, name="jobs")
+project_app.add_typer(project_goblins_app, name="goblins")
+app.add_typer(project_app, name="project")
 app.add_typer(runs_app, name="runs")
 app.add_typer(schedules_app, name="schedules")
 app.add_typer(scheduler_app, name="scheduler")
@@ -35,6 +41,7 @@ app.add_typer(workers_app, name="workers")
 RuntimeOption = Literal["docker", "in-process"]
 DEFAULT_IMAGES_PATH = Path("goblin-images.json")
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
+DEFAULT_PROJECT_PATH = Path("goblin-king-project.json")
 
 
 @api_app.command("run")
@@ -71,6 +78,55 @@ def list_goblins(
     loaded = _load_registry(registry)
     for definition in loaded.list():
         typer.echo(f"{definition.kind}\t{definition.display_name}")
+
+
+@project_goblins_app.command("list")
+def list_project_goblins(
+    project: Annotated[
+        Path,
+        typer.Option("--project", help="Goblin King project settings path."),
+    ] = DEFAULT_PROJECT_PATH,
+) -> None:
+    """Print goblins discovered from a project settings file."""
+    loaded = _load_project_registry(project)
+    for definition in loaded.list():
+        typer.echo(f"{definition.kind}\t{definition.display_name}")
+
+
+@project_app.command("validate")
+def validate_project(
+    project: Annotated[
+        Path,
+        typer.Option("--project", help="Goblin King project settings path."),
+    ] = DEFAULT_PROJECT_PATH,
+) -> None:
+    """Validate project settings, registry discovery, and worker image settings."""
+    settings = _load_project_settings(project)
+    registry = _load_project_registry(project)
+    workers = _load_workers(settings.images)
+    typer.echo(f"registries\t{len(settings.registries)}")
+    typer.echo(f"entry_points\t{settings.entry_points}")
+    typer.echo(f"goblins\t{len(registry.list())}")
+    typer.echo(f"workers\t{len(workers.items())}")
+
+
+@project_app.command("init-package")
+def init_project_package(
+    target_dir: Annotated[Path, typer.Argument(help="Directory to create.")],
+    kind: Annotated[str, typer.Option("--kind", help="Generated goblin kind.")],
+    package_name: Annotated[
+        str,
+        typer.Option("--package-name", help="Generated Python package name."),
+    ],
+    image: Annotated[str, typer.Option("--image", help="Generated worker image tag.")],
+) -> None:
+    """Generate a reusable goblin package and self-contained worker folder."""
+    try:
+        created = init_package(target_dir, kind=kind, package_name=package_name, image=image)
+    except TemplateError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+    typer.echo(f"created {created}")
 
 
 @jobs_app.command("submit")
@@ -338,6 +394,28 @@ def _load_workers(path: Path) -> WorkerImageMap:
     try:
         return WorkerImageMap.from_path(path)
     except WorkerConfigError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+
+
+def _load_project_settings(path: Path) -> ProjectSettings:
+    """Load project settings and translate errors into CLI exits."""
+    try:
+        return ProjectSettings.from_path(path)
+    except ProjectSettingsError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+
+
+def _load_project_registry(path: Path) -> GoblinRegistry:
+    """Load all goblins described by project settings."""
+    settings = _load_project_settings(path)
+    try:
+        return GoblinRegistry.from_project_sources(
+            settings.registries,
+            include_entry_points=settings.entry_points,
+        )
+    except RegistryError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
 

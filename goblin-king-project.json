@@ -1,0 +1,6 @@
+{
+  "registries": ["examples/goblins.json"],
+  "entry_points": true,
+  "images": "goblin-images.json",
+  "api_settings": "goblin-king-api.json"
+}
