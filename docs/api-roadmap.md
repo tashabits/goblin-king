@@ -16,7 +16,7 @@ target phase below.
 - `GET /fanouts`: list durable fanout batches with derived status.
 - `GET /fanouts/{fanout_id}`: inspect one fanout batch, child jobs, and runs.
 
-## Phase 7
+## Covered In Phase 7
 
 - `GET /events`: durable event stream for jobs, runs, scheduler activity, and workers.
 - `WS /ws/runs`: live run notifications over WebSockets.
@@ -37,3 +37,7 @@ target phase below.
 - Worker image registry promotion APIs.
 - Artifact storage provider APIs.
 - External webhook callbacks.
+- Optional Kubernetes deployment with Helm for projects that require cluster execution.
+- A web admin interface for Kubernetes deployments that reads the current goblin list,
+  lets operators spawn goblins, captures inbound/outbound traffic and messaging, and
+  proves each goblin works from the deployed environment.
