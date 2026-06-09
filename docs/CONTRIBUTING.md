@@ -36,6 +36,11 @@ When a phase includes Docker behavior, PR evidence must include real local Docke
 Mocked Docker tests are useful, but they do not replace building the worker image,
 running the Docker-backed path, and recording the observed result in the PR body.
 
+When a phase includes API behavior, PR evidence must include local HTTP smoke proof.
+At minimum, record a successful read endpoint, a rejected unauthenticated mutation,
+an accepted authenticated mutation, and a follow-up read that proves the mutation was
+persisted.
+
 ## Commenting Standards
 
 - New public modules should start with a concise file-level comment describing purpose and ownership.
@@ -48,3 +53,5 @@ running the Docker-backed path, and recording the observed result in the PR body
 Add or update local tests for new contracts, registry behavior, runtime behavior, persistence behavior, and CLI behavior.
 Docker runtime phases must also include local Docker tests that fail clearly when Docker
 is unavailable.
+API phases must include HTTP tests for success paths, auth failures, validation errors,
+not-found responses, and persistence effects.
