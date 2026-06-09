@@ -1,0 +1,10 @@
+{
+  "goblins": [
+    {
+      "kind": "example.plain",
+      "display_name": "Example Plain",
+      "module": "examples.goblins.plain_dict",
+      "entrypoint": "run"
+    }
+  ]
+}

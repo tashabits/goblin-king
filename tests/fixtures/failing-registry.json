@@ -1,0 +1,10 @@
+{
+  "goblins": [
+    {
+      "kind": "example.fail",
+      "display_name": "Example Fail",
+      "module": "examples.goblins.failing",
+      "entrypoint": "run"
+    }
+  ]
+}
