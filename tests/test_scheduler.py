@@ -45,6 +45,12 @@ def test_run_once_materializes_due_schedule_and_executes_echo(tmp_path: Path) ->
     assert runs[0].status == "completed"
     assert jobs[0].status == "completed"
     assert jobs[0].schedule_id == "schedule-1"
+    event_types = [event.event_type for event in store.list_events()]
+    assert "schedule.materialized" in event_types
+    assert "job.leased" in event_types
+    assert "job.running" in event_types
+    assert "job.completed" in event_types
+    assert store.get_heartbeat("test-worker") is not None
 
 
 def test_disabled_and_future_schedules_do_not_materialize(tmp_path: Path) -> None:
