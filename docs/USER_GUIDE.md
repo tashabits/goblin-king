@@ -132,6 +132,22 @@ container resolves that service name. In Helm, register `http://goblin-king-long
 The React admin preloads the correct default from `/admin/config.json` for each
 deployment.
 
+## Deploy-Time Discovery Reload
+
+When a host project deploys a new goblin plugin package, registry file, or worker image
+map, reload discovery before testing the new kind:
+
+```bash
+curl -X POST http://127.0.0.1:8000/admin/discovery/reload \
+  -H "Authorization: Bearer local-dev-token"
+curl -H "Authorization: Bearer local-dev-token" http://127.0.0.1:8000/admin/discovery/status
+```
+
+The React admin has the same flow in the **Discovery** panel. A successful reload
+updates the goblin dropdown and worker mapping table at runtime. A failed reload keeps
+the previous valid registry active and displays the validation error so the failed
+deployment can be fixed safely.
+
 ## Optional Kubernetes Deployment
 
 Render the chart locally:

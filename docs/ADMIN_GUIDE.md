@@ -61,6 +61,24 @@ If a goblin moves, the King writes it down.
 
 ![Events and live rail](images/admin/admin-events.png)
 
+## Reload Discovery
+
+Use **Discovery** after deploying a new project plugin package, registry file, or worker
+image map. Press **Reload discovery** to refresh the API-visible goblin list without
+rebuilding the React admin. The panel shows:
+
+- Active goblin count and discovery version.
+- Last successful and failed reload timestamps.
+- Registry files and whether entry-point discovery is enabled.
+- Worker image-map coverage and unmapped goblin kinds.
+- Rejected definitions and duplicate kind errors.
+
+If reload fails, the previous valid goblin list stays active and the error is displayed
+for proof. The King is fond of new goblins, but not fond enough to forget the last
+working court.
+
+![Discovery reload controls](images/admin/admin-discovery.png)
+
 ## Clean Up Old Rows
 
 Use **Admin & Auth -> Cleanup** after a test pass. Always press **Preview old rows**

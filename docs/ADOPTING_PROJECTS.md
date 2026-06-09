@@ -100,6 +100,22 @@ goblin-king workers build --images goblin-images.json
 
 Then start API, scheduler, Redis, and admin through Docker Compose or Helm.
 
+## Reload Discovery After Deploy
+
+After installing a new plugin wheel, mounting a changed registry, or updating
+`goblin-images.json`, reload discovery before submitting the new goblin kind:
+
+```bash
+curl -X POST http://127.0.0.1:8000/admin/discovery/reload \
+  -H "Authorization: Bearer local-dev-token"
+curl -H "Authorization: Bearer local-dev-token" http://127.0.0.1:8000/admin/discovery/sources
+```
+
+The React admin exposes the same flow in **Discovery**. It reads goblins dynamically
+from the API, so project goblin types appear after reload without a React rebuild. If a
+reload fails because of duplicate kinds, invalid registry files, or missing image maps,
+the previous valid registry remains active and the error is displayed for operators.
+
 ## Proof Checklist
 
 For a host project to be "off to the races":
@@ -107,6 +123,6 @@ For a host project to be "off to the races":
 - Project goblins appear in `goblin-king project goblins list`.
 - Worker image map covers every Docker-backed goblin.
 - Worker images build locally.
-- API/admin `GET /goblins` shows project goblins.
+- API/admin `GET /goblins` shows project goblins after discovery reload.
 - A short job completes through the scheduler.
 - Events, runs, heartbeats, and artifacts are visible in the admin guide paths.

@@ -510,14 +510,15 @@ Primary direction:
 
 ### Phase 13: Deploy-Time Discovery And Runtime Reload
 
+- Status: implemented in Phase 13.
 - Add runtime reload support for project settings, registry files, entry points, and
   worker image maps.
 - Add authenticated admin discovery endpoints: `POST /admin/discovery/reload`,
   `GET /admin/discovery/status`, and `GET /admin/discovery/sources`.
 - Reload updates in-memory API registry and worker image map state safely; failed reloads
   preserve the previous valid registry and report validation errors.
-- Scheduler reloads through the same discovery version marker, either before each pass or
-  through an explicit reload signal/API flow.
+- Scheduler reloads through the same discovery version marker through an explicit reload
+  hook.
 - Add an admin Discovery panel showing loaded sources, entry-point goblins, image map
   coverage, rejected definitions, duplicate kind errors, last reload time, current
   discovery version, and a reload button.
