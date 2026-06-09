@@ -275,6 +275,7 @@ class DockerRuntime:
         self.event_bus.emit(
             event_type,
             source="runtime",
+            project_id=context.metadata.get("project_id"),
             job_id=context.metadata.get("job_id"),
             run_id=context.run_id,
             worker_id=worker_id,
