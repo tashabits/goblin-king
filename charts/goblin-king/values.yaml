@@ -2,26 +2,78 @@ image:
   repository: goblin-king
   tag: local
   pullPolicy: IfNotPresent
+  pullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+podSecurityContext: {}
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
 
 api:
   replicas: 1
   port: 8000
   bootstrapAdminToken: local-dev-token
+  existingSecret: ""
+  existingSecretBootstrapTokenKey: bootstrap-admin-token
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 80
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
 
 scheduler:
   enabled: true
   replicas: 1
   intervalSeconds: 5
   runtime: kubernetes
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 80
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
 
 redis:
   image: redis:7-alpine
   port: 6379
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
 
 persistence:
   enabled: true
   size: 1Gi
   storageClassName: ""
+  accessModes:
+    - ReadWriteOnce
 
 config:
   registryPath: /app/examples/goblins.json
@@ -43,16 +95,46 @@ admin:
     pullPolicy: IfNotPresent
   port: 8080
   longHelloUrl: http://goblin-king-long-hello
+  replicas: 1
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 80
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
   ingress:
     enabled: true
     className: nginx
     host: goblin-king.local
     path: /
+    pathType: Prefix
     annotations: {}
+    tls: []
 
 workers:
   exampleLongHello:
     enabled: true
     image: goblin-king-example-long-hello:local
     port: 8080
+    pullPolicy: IfNotPresent
+    resources: {}
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
   extraLongServices: []
+
+networkPolicy:
+  enabled: false
+  ingressNamespaceSelector: {}
+  egress:
+    enabled: true

@@ -552,6 +552,62 @@ Primary direction:
   a plugin, define a goblin, build the worker image, start the stack, reload discovery,
   spawn the goblin from admin, and inspect run/events/heartbeats/artifacts.
 
+### Phase 16: Production Kubernetes Hardening
+
+- Status: implemented in Phase 16.
+- Add cloud-neutral Helm controls for resources, autoscaling, disruption budgets, pod
+  placement, security contexts, image pull secrets, service accounts/RBAC,
+  NetworkPolicy, ingress TLS/options, configurable PVC access modes, and externally
+  managed bootstrap secrets.
+- Keep Docker Compose as the default local path and leave cloud-specific managed
+  ingress, external secret operators, and storage classes to adopting projects.
+
+### Phase 17: Redis Streams Durable Delivery
+
+- Status: planned.
+- Add Redis Streams alongside SQLite event history and Redis pub/sub.
+- Add stream health, pending entry, consumer lag, and delivery proof surfaces in API,
+  CLI, and admin.
+
+### Phase 18: OIDC Authentication
+
+- Status: planned.
+- Add OIDC/JWT bearer validation with issuer, audience, JWKS cache, clock skew, and
+  claim-to-role/project mapping while preserving local API tokens.
+
+### Phase 19: Volume-Backed Artifact Management
+
+- Status: planned.
+- Keep artifact bytes on Docker volumes and Kubernetes PVCs.
+- Add artifact health/status, dry-run cleanup, retention policies, project-scoped
+  cleanup, and admin artifact management.
+
+### Phase 20: Scoped Runtime Termination
+
+- Status: planned.
+- Add hard termination only for Docker containers and Kubernetes jobs/pods created and
+  labeled by Goblin King, with audit/events and safe no-op behavior for finished work.
+
+### Phase 21: Image Promotion And Deployment Orchestration
+
+- Status: planned.
+- Add generic image promotion records and Docker registry-oriented plan/build/push/mark
+  flows plus Helm render/dry-run/apply intent records and admin proof trails.
+
+### Phase 22: Production Roadmap Closeout
+
+- Status: planned.
+- Update docs, screenshots, and roadmap audit after Phases 16-21.
+- Leave only explicit deferred items such as public PyPI, cloud-specific recipes,
+  object storage providers beyond volume/PVC, and identity providers beyond OIDC/JWT.
+
+### Phase 23: Repo-Wide Code Cleanup
+
+- Status: planned.
+- Split oversized backend and React admin files into smaller cohesive modules where
+  useful, extract small domain-specific helpers, reduce duplication, and document
+  non-obvious helpers without changing behavior or public adoption imports.
+
 ## Key Decisions To Make Before Coding
 
 1. Database default: SQLite-only MVP, or Postgres in Compose from day one.

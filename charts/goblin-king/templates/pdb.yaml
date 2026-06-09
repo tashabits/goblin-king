@@ -1,0 +1,18 @@
+{{- $root := . -}}
+{{- range $component := list "api" "scheduler" "admin" }}
+{{- $settings := index $root.Values $component }}
+{{- if and (or (ne $component "scheduler") $root.Values.scheduler.enabled) (or (ne $component "admin") $root.Values.admin.enabled) $settings.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "goblin-king.fullname" $root }}-{{ $component }}
+spec:
+  minAvailable: {{ $settings.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $root.Release.Name }}
+      app.kubernetes.io/component: {{ $component }}
+      app.kubernetes.io/name: {{ include "goblin-king.name" $root }}
+{{- end }}
+{{- end }}
