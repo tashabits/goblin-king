@@ -88,6 +88,13 @@ function mockFetch() {
     if (url.includes("/schedules")) return jsonResponse(fixtures.schedules);
     if (url.includes("/fanouts")) return jsonResponse(fixtures.fanouts);
     if (url.includes("/audit-logs")) return jsonResponse(fixtures.audits);
+    if (url.includes("/admin/cleanup/runtime")) {
+      return jsonResponse({
+        dry_run: init?.body ? JSON.parse(String(init.body)).dry_run : true,
+        deleted: init?.body ? !JSON.parse(String(init.body)).dry_run : false,
+        counts: { jobs: 1, runs: 1, long_services: 1, events: 2 },
+      });
+    }
     if (url.includes("/admin/users")) return jsonResponse({ id: "user-1" });
     if (url.includes("/admin/projects")) return jsonResponse({ id: "project-1" });
     return jsonResponse({});
@@ -144,6 +151,7 @@ describe("App", () => {
     expect(screen.getAllByText("Long Services").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Durable Events").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Admin & Auth").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Cleanup").length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: /kill \/ cancel/i }).length).toBeGreaterThan(0);
   });
 
@@ -174,5 +182,31 @@ describe("App", () => {
 
     expect(await screen.findByDisplayValue("http://test-long-hello")).toBeInTheDocument();
     expect(screen.getByText(/Deployment default: test uses/i)).toBeInTheDocument();
+  });
+
+  it("previews and removes historical runtime rows", async () => {
+    const fetchMock = mockFetch();
+    localStorage.setItem("goblinKingAdminToken", "test-token");
+    render(<App />);
+
+    await screen.findAllByText("Cleanup");
+    await userEvent.click(screen.getByRole("button", { name: /preview old rows/i }));
+    await waitFor(() => {
+      expect(screen.getAllByText(/\"jobs\": 1/i).length).toBeGreaterThan(0);
+    });
+    await userEvent.click(screen.getByRole("button", { name: /remove previewed rows/i }));
+
+    await waitFor(() => {
+      const cleanupCalls = fetchMock.mock.calls.filter((call) =>
+        String(call[0]).includes("/admin-api/admin/cleanup/runtime"),
+      );
+      expect(cleanupCalls).toHaveLength(2);
+      expect(cleanupCalls[0][1]).toEqual(
+        expect.objectContaining({ body: expect.stringContaining("\"dry_run\":true") }),
+      );
+      expect(cleanupCalls[1][1]).toEqual(
+        expect.objectContaining({ body: expect.stringContaining("\"dry_run\":false") }),
+      );
+    });
   });
 });

@@ -96,6 +96,17 @@ label {
   margin: 0.8rem 0 0.3rem;
 }
 
+.check-row {
+  align-items: center;
+  display: flex;
+  gap: 0.55rem;
+}
+
+.check-row input {
+  min-height: auto;
+  width: auto;
+}
+
 code,
 pre {
   font-family: "JetBrains Mono", "Cascadia Code", monospace;

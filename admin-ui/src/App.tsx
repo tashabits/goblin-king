@@ -114,6 +114,12 @@ type AdminConfig = {
   longHelloUrl: string;
 };
 
+type CleanupResponse = {
+  dry_run: boolean;
+  deleted: boolean;
+  counts: Record<string, number>;
+};
+
 function latestFirst<T>(items: T[]): T[] {
   return [...items].sort((left, right) => {
     const leftRecord = left as Record<string, unknown>;
@@ -171,6 +177,8 @@ export function App() {
   const [serviceUrl, setServiceUrl] = useState(DEFAULT_LONG_HELLO_URL);
   const [retryJobId, setRetryJobId] = useState("");
   const [artifactRunId, setArtifactRunId] = useState("");
+  const [cleanupPreview, setCleanupPreview] = useState<CleanupResponse | null>(null);
+  const [includeUnprobedServices, setIncludeUnprobedServices] = useState(true);
   const [traffic, setTraffic] = useState<TrafficEntry[]>([]);
   const [error, setError] = useState("");
   const [liveEvents, setLiveEvents] = useState<EventRecord[]>([]);
@@ -396,6 +404,26 @@ export function App() {
     await refreshAll();
   }
 
+  async function cleanupRuntimeRows(dryRun: boolean) {
+    const response = await api(
+      "/admin/cleanup/runtime",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          dry_run: dryRun,
+          include_unprobed_services: includeUnprobedServices,
+        }),
+      },
+      dryRun ? "POST /admin/cleanup/runtime dry-run" : "POST /admin/cleanup/runtime delete",
+    ) as CleanupResponse;
+    setCleanupPreview(response);
+    await refreshAll();
+  }
+
+  const cleanupTotal = cleanupPreview
+    ? Object.values(cleanupPreview.counts).reduce((total, value) => total + value, 0)
+    : 0;
+
   const counts = {
     active: jobs.filter((job) => ["queued", "leased", "running", "retrying"].includes(job.status)).length,
     failed: jobs.filter((job) => ["failed", "timed_out", "cancelled"].includes(job.status)).length,
@@ -588,6 +616,32 @@ export function App() {
               <button onClick={() => void createPrincipal("project")}>Create test project</button>
               <button onClick={() => void createPrincipal("token")}>Token path note</button>
             </div>
+            <h3><Ban /> Cleanup</h3>
+            <p className="muted">
+              Preview and remove historical terminal jobs, runs, fanouts, events, old service registrations, and worker heartbeats.
+              Running work, schedules, users, projects, and tokens are preserved.
+            </p>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={includeUnprobedServices}
+                onChange={(event) => setIncludeUnprobedServices(event.target.checked)}
+              />
+              Include unprobed registered services
+            </label>
+            <div className="button-row">
+              <button onClick={() => void cleanupRuntimeRows(true)}>Preview old rows</button>
+              <button
+                className="danger"
+                disabled={!cleanupPreview || cleanupPreview.deleted || cleanupTotal === 0}
+                onClick={() => void cleanupRuntimeRows(false)}
+              >
+                Remove previewed rows
+              </button>
+            </div>
+            {cleanupPreview && (
+              <pre className="traffic">{JSON.stringify(cleanupPreview, null, 2)}</pre>
+            )}
           </div>
           <Table title="Audit Logs" rows={auditLogs.map((log) => [log.action, log.outcome, log.created_at])} />
         </section>

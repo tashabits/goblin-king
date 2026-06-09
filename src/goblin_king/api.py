@@ -194,6 +194,22 @@ class LongServiceProbeResponse(BaseModel):
     response: dict[str, Any]
 
 
+class RuntimeCleanupRequest(BaseModel):
+    """Admin request for pruning historical local runtime rows."""
+
+    dry_run: bool = True
+    project_id: str | None = None
+    include_unprobed_services: bool = True
+
+
+class RuntimeCleanupResponse(BaseModel):
+    """Counts of runtime rows selected or deleted by an admin cleanup."""
+
+    dry_run: bool
+    deleted: bool
+    counts: dict[str, int]
+
+
 class AppState:
     """Runtime dependencies shared by API route handlers."""
 
@@ -398,6 +414,50 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             resource_id=token.id,
         )
         return TokenCreateResponse(token=token, raw_token=raw_token)
+
+    @app.post(
+        "/admin/cleanup/runtime",
+        response_model=RuntimeCleanupResponse,
+        tags=["admin"],
+        operation_id="cleanupRuntimeRows",
+    )
+    def cleanup_runtime_rows(
+        request: RuntimeCleanupRequest,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> RuntimeCleanupResponse:
+        """Preview or delete historical runtime rows without touching auth/project data."""
+        project_id = project_for_request(principal, request.project_id)
+        counts = state.store.cleanup_runtime_rows(
+            project_id=project_id,
+            dry_run=request.dry_run,
+            include_unprobed_services=request.include_unprobed_services,
+        )
+        action = "runtime.cleanup.preview" if request.dry_run else "runtime.cleanup"
+        if not request.dry_run:
+            state.event_bus.emit(
+                "admin.runtime.cleaned",
+                source="api",
+                project_id=project_id,
+                payload={"counts": counts},
+            )
+        audit(
+            state.store,
+            action=action,
+            outcome="success",
+            principal=principal,
+            project_id=project_id,
+            resource_type="runtime_rows",
+            detail={
+                "dry_run": request.dry_run,
+                "include_unprobed_services": request.include_unprobed_services,
+                "counts": counts,
+            },
+        )
+        return RuntimeCleanupResponse(
+            dry_run=request.dry_run,
+            deleted=not request.dry_run,
+            counts=counts,
+        )
 
     @app.post(
         "/services/long-running",

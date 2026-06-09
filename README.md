@@ -147,7 +147,11 @@ Log in with `local-dev-token`. The admin service serves the same React build in 
 and Helm, proxies HTTP calls through `/admin-api/*`, and proxies WebSocket run events
 through `/admin-ws/runs`. It lists current goblins, worker mappings, jobs, schedules,
 runs, fanouts, long-running services, events, heartbeats, artifacts, audit logs, and
-rate-limit proof panels.
+rate-limit proof panels. The Admin/Auth panel also has cleanup controls for old
+runtime rows: preview first, then remove terminal jobs/runs, completed fanouts,
+captured events, worker heartbeats, and stopped or unprobed long-service rows while
+leaving schedules, auth/project data, active jobs, running services, and scheduler
+heartbeat intact.
 
 The tester buttons labeled kill perform King-side cancellation or registered-service
 stop actions. They do not hard-kill Docker containers or Kubernetes pods. As the court

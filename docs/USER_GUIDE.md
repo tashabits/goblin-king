@@ -87,6 +87,12 @@ captures request payloads, responses, durable events, and live WebSocket message
 King-side kill controls cancel jobs or stop registered services; they do not hard-kill
 containers or pods.
 
+Use the Admin/Auth cleanup controls to remove old runtime rows after a testing pass.
+Always preview first; removal clears terminal jobs and runs, completed fanouts, captured
+events, worker heartbeats, and stopped or unprobed long-service rows. It preserves
+schedules, users, projects, API tokens, active jobs, running services, and scheduler
+heartbeat.
+
 The API requires bearer auth for everything except `/health`:
 
 ```bash
