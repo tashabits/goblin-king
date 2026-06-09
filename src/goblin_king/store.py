@@ -35,6 +35,7 @@ from goblin_king.contracts import (
     HandoffRecord,
     HeartbeatRecord,
     JobRecord,
+    LongServiceRecord,
     MembershipRecord,
     ProjectRecord,
     RateLimitRecord,
@@ -239,6 +240,21 @@ heartbeats_table = Table(
     Column("job_id", String, nullable=True),
     Column("run_id", String, nullable=True),
     Column("payload_json", Text, nullable=False, default="{}"),
+)
+
+long_services_table = Table(
+    "long_services",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("kind", String, nullable=False),
+    Column("project_id", String, nullable=True),
+    Column("image", String, nullable=True),
+    Column("base_url", Text, nullable=False),
+    Column("status", String, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("created_by", String, nullable=False),
+    Column("last_probe_at", DateTime(timezone=True), nullable=True),
+    Column("last_probe_json", Text, nullable=True),
 )
 
 
@@ -610,6 +626,70 @@ class SQLiteStore:
         if row is None:
             return None
         return _row_to_heartbeat(dict(row))
+
+    def save_long_service(self, service: LongServiceRecord) -> None:
+        """Insert one registered long-running service goblin."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                long_services_table.insert().values(
+                    id=service.id,
+                    kind=service.kind,
+                    project_id=service.project_id,
+                    image=service.image,
+                    base_url=service.base_url,
+                    status=service.status,
+                    created_at=service.created_at,
+                    created_by=service.created_by,
+                    last_probe_at=service.last_probe_at,
+                    last_probe_json=(
+                        json.dumps(service.last_probe_json)
+                        if service.last_probe_json is not None
+                        else None
+                    ),
+                )
+            )
+
+    def get_long_service(self, service_id: str) -> LongServiceRecord | None:
+        """Load one long-running service goblin by ID."""
+        with self.engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(long_services_table).where(long_services_table.c.id == service_id)
+                )
+                .mappings()
+                .one_or_none()
+            )
+        return _row_to_long_service(dict(row)) if row else None
+
+    def list_long_services(self, *, project_id: str | None = None) -> list[LongServiceRecord]:
+        """Return registered long-running service goblins ordered by creation time."""
+        with self.engine.connect() as connection:
+            query = select(long_services_table).order_by(long_services_table.c.created_at)
+            if project_id is not None:
+                query = query.where(long_services_table.c.project_id == project_id)
+            rows = connection.execute(query).mappings().all()
+        return [_row_to_long_service(dict(row)) for row in rows]
+
+    def update_long_service_probe(
+        self,
+        service_id: str,
+        *,
+        status: str,
+        last_probe_at: datetime,
+        last_probe_json: dict[str, Any],
+    ) -> LongServiceRecord | None:
+        """Persist the latest probe result for a long-running service goblin."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                update(long_services_table)
+                .where(long_services_table.c.id == service_id)
+                .values(
+                    status=status,
+                    last_probe_at=last_probe_at,
+                    last_probe_json=json.dumps(last_probe_json),
+                )
+            )
+        return self.get_long_service(service_id)
 
     def save_fanout(self, fanout: FanoutRecord) -> None:
         """Insert one durable fanout batch record."""
@@ -1198,6 +1278,26 @@ def _row_to_heartbeat(payload: dict[str, Any]) -> HeartbeatRecord:
     )
 
 
+def _row_to_long_service(payload: dict[str, Any]) -> LongServiceRecord:
+    """Convert a SQLAlchemy row mapping into a LongServiceRecord."""
+    return LongServiceRecord(
+        id=payload["id"],
+        kind=payload["kind"],
+        project_id=payload.get("project_id"),
+        image=payload.get("image"),
+        base_url=payload["base_url"],
+        status=payload["status"],
+        created_at=_coerce_datetime(payload["created_at"]),
+        created_by=payload["created_by"],
+        last_probe_at=(
+            _coerce_datetime(payload["last_probe_at"]) if payload.get("last_probe_at") else None
+        ),
+        last_probe_json=(
+            json.loads(payload["last_probe_json"]) if payload.get("last_probe_json") else None
+        ),
+    )
+
+
 def _coerce_datetime(value: datetime | str) -> datetime:
     """Normalize SQLite-returned timestamp values for Pydantic models."""
     if isinstance(value, datetime):
@@ -1218,5 +1318,6 @@ __all__ = [
     "FanoutRecord",
     "HeartbeatRecord",
     "HandoffRecord",
+    "LongServiceRecord",
     "SQLiteStore",
 ]

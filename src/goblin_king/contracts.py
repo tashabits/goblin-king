@@ -23,6 +23,7 @@ RunStatus = Literal["running", "completed", "failed", "timed_out"]
 EventSource = Literal["api", "scheduler", "runtime", "worker", "cli"]
 HeartbeatOwnerType = Literal["scheduler", "worker"]
 PrincipalRole = Literal["admin", "member", "viewer"]
+LongServiceStatus = Literal["registered", "running", "failed", "stopped"]
 
 
 def utc_now() -> datetime:
@@ -186,6 +187,21 @@ class HeartbeatRecord(BaseModel):
     job_id: str | None = None
     run_id: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class LongServiceRecord(BaseModel):
+    """Track a long-running service-style goblin and its latest probe proof."""
+
+    id: str
+    kind: str
+    project_id: str | None = None
+    image: str | None = None
+    base_url: str = Field(min_length=1)
+    status: LongServiceStatus = "registered"
+    created_at: datetime
+    created_by: str = "api"
+    last_probe_at: datetime | None = None
+    last_probe_json: dict[str, Any] | None = None
 
 
 class RunRecord(BaseModel):
