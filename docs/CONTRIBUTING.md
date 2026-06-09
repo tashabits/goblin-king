@@ -55,6 +55,10 @@ durable event proof, Redis pub/sub proof, WebSocket proof, scheduler heartbeat p
 and worker heartbeat proof. Record the command output or HTTP/WebSocket payloads that
 show the same work moving through durable history and live streaming paths.
 
+When a phase includes API hardening behavior, PR evidence must include auth/RBAC proof,
+project-scope denial proof, token hashing proof, audit-log proof, rate-limit proof,
+pagination proof, OpenAPI proof, and Docker regression proof for scheduler execution.
+
 ## Commenting Standards
 
 - New public modules should start with a concise file-level comment describing purpose and ownership.
@@ -76,3 +80,7 @@ auth, CLI commands, retry lineage, rejected live-job retries, and scheduler exec
 Event/heartbeat phases must include tests for event persistence, API event reads,
 WebSocket streaming, Redis pub/sub handling, scheduler event emission, worker heartbeat
 ingestion, malformed heartbeat handling, and CLI inspection commands.
+API hardening phases must include tests for local users/projects/tokens, hashed token
+storage, missing/invalid/revoked token failures, project-scope authorization, audit
+logging, local rate limits, paginated envelopes, OpenAPI metadata, and existing Docker
+execution regressions.
