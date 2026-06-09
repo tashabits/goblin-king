@@ -46,6 +46,43 @@ def test_health_and_goblins_endpoints(tmp_path: Path) -> None:
     assert goblins.json()[0]["worker_mapped"] is True
 
 
+def test_goblins_endpoint_uses_project_settings(tmp_path: Path) -> None:
+    """Verify API goblin discovery can load project settings."""
+    project_path = tmp_path / "goblin-king-project.json"
+    project_path.write_text(
+        """
+{
+  "registries": ["goblins.json"],
+  "entry_points": false,
+  "images": "images.json",
+  "api_settings": "api.json"
+}
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "goblins.json").write_text(
+        """
+{"goblins":[{"kind":"project.echo","display_name":"Project Echo","module":"examples.goblins.echo"}]}
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "images.json").write_text('{"workers":{}}', encoding="utf-8")
+    settings = ApiSettings(
+        registry=Path("examples/goblins.json").resolve(),
+        images=tmp_path / "images.json",
+        db=tmp_path / "api.sqlite3",
+        artifact_root=tmp_path / "artifacts",
+        auth_token="test-token",
+        project=project_path,
+    )
+    client = TestClient(create_app(settings))
+
+    response = client.get("/goblins")
+
+    assert response.status_code == 200
+    assert response.json()[0]["kind"] == "project.echo"
+
+
 def test_jobs_endpoint_queues_without_running(tmp_path: Path) -> None:
     """Verify POST /jobs creates a queued job and does not create a run."""
     client, store, _ = build_client(tmp_path)

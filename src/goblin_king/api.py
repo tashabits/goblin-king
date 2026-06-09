@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from goblin_king.api_settings import ApiSettings
 from goblin_king.contracts import ArtifactRecord, JobRecord, ScheduleRecord, utc_now
+from goblin_king.project import ProjectSettings
 from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.scheduler import next_run_after
 from goblin_king.store import SQLiteStore
@@ -65,7 +66,14 @@ class AppState:
     def __init__(self, settings: ApiSettings) -> None:
         self.settings = settings
         self.store = SQLiteStore(settings.db)
-        self.registry = GoblinRegistry.from_path(settings.registry)
+        if settings.project is not None:
+            project = ProjectSettings.from_path(settings.project)
+            self.registry = GoblinRegistry.from_project_sources(
+                project.registries,
+                include_entry_points=project.entry_points,
+            )
+        else:
+            self.registry = GoblinRegistry.from_path(settings.registry)
         self.workers = WorkerImageMap.from_path(settings.images)
         self.artifact_root = settings.artifact_root.resolve()
         self.artifact_root.mkdir(parents=True, exist_ok=True)

@@ -41,6 +41,41 @@ def test_goblins_list_prints_example_echo() -> None:
     assert "example.echo" in result.stdout
 
 
+def test_project_goblins_list_and_validate() -> None:
+    """Verify project commands load merged project settings."""
+    listed = runner.invoke(
+        app,
+        ["project", "goblins", "list", "--project", "goblin-king-project.json"],
+    )
+    validated = runner.invoke(app, ["project", "validate", "--project", "goblin-king-project.json"])
+
+    assert listed.exit_code == 0
+    assert "example.echo" in listed.stdout
+    assert validated.exit_code == 0
+    assert "goblins\t1" in validated.stdout
+
+
+def test_project_init_package_creates_template(tmp_path: Path) -> None:
+    """Verify the package template generator is reachable from the CLI."""
+    result = runner.invoke(
+        app,
+        [
+            "project",
+            "init-package",
+            str(tmp_path / "generated"),
+            "--kind",
+            "sample.echo",
+            "--package-name",
+            "sample_echo",
+            "--image",
+            "sample-echo:local",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert (tmp_path / "generated" / "pyproject.toml").exists()
+
+
 def test_jobs_submit_persists_completed_run(tmp_path: Path) -> None:
     """Verify a successful CLI submit prints and persists a completed run."""
     db_path = tmp_path / "goblin.sqlite3"

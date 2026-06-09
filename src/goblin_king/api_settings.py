@@ -22,6 +22,7 @@ class ApiSettings(BaseModel):
     redis_url: str = "redis://localhost:6379/0"
     artifact_root: Path = Path(".goblin-king/artifacts")
     auth_token: str = Field(default="local-dev-token", min_length=1)
+    project: Path | None = None
 
     @classmethod
     def from_path(cls, path: str | Path) -> ApiSettings:
@@ -53,6 +54,7 @@ class ApiSettings(BaseModel):
                 "images": _resolve(root, self.images),
                 "db": _resolve(root, self.db),
                 "artifact_root": _resolve(root, self.artifact_root),
+                "project": _resolve(root, self.project) if self.project else None,
             }
         )
 
