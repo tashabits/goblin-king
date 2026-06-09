@@ -1,0 +1,52 @@
+{{- if .Values.scheduler.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "goblin-king.fullname" . }}-scheduler
+spec:
+  replicas: {{ .Values.scheduler.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: scheduler
+      app.kubernetes.io/name: {{ include "goblin-king.name" . }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: scheduler
+        app.kubernetes.io/name: {{ include "goblin-king.name" . }}
+    spec:
+      containers:
+        - name: scheduler
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: data
+              mountPath: /data
+          command:
+            - goblin-king
+            - scheduler
+            - run
+            - --registry
+            - {{ .Values.config.registryPath }}
+            - --images
+            - {{ .Values.config.imagesPath }}
+            - --db
+            - {{ .Values.config.dbPath }}
+            - --redis-url
+            - {{ .Values.config.redisUrl }}
+            - --interval-seconds
+            - "{{ .Values.scheduler.intervalSeconds }}"
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "goblin-king.fullname" . }}-config
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "goblin-king.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+{{- end }}

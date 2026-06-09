@@ -1,0 +1,25 @@
+{{- if and .Values.admin.enabled .Values.admin.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "goblin-king.fullname" . }}-admin
+  {{- with .Values.admin.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.admin.ingress.className }}
+  ingressClassName: {{ .Values.admin.ingress.className }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.admin.ingress.host }}
+      http:
+        paths:
+          - path: {{ .Values.admin.ingress.path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "goblin-king.fullname" . }}-api
+                port:
+                  number: {{ .Values.api.port }}
+{{- end }}

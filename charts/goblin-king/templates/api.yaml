@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "goblin-king.fullname" . }}-api
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: api
+      app.kubernetes.io/name: {{ include "goblin-king.name" . }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: api
+        app.kubernetes.io/name: {{ include "goblin-king.name" . }}
+    spec:
+      containers:
+        - name: api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.api.port }}
+          env:
+            - name: GOBLIN_KING_BOOTSTRAP_ADMIN_TOKEN
+              value: {{ .Values.api.bootstrapAdminToken | quote }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: data
+              mountPath: /data
+          command:
+            - goblin-king
+            - api
+            - run
+            - --settings
+            - /config/goblin-king-api.json
+            - --host
+            - 0.0.0.0
+            - --port
+            - "{{ .Values.api.port }}"
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "goblin-king.fullname" . }}-config
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "goblin-king.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "goblin-king.fullname" . }}-api
+spec:
+  selector:
+    app.kubernetes.io/component: api
+    app.kubernetes.io/name: {{ include "goblin-king.name" . }}
+  ports:
+    - name: http
+      port: {{ .Values.api.port }}
+      targetPort: {{ .Values.api.port }}

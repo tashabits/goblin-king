@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "goblin-king.fullname" . }}-config
+data:
+  goblin-king-api.json: |
+    {
+      "registry": "{{ .Values.config.registryPath }}",
+      "images": "{{ .Values.config.imagesPath }}",
+      "db": "{{ .Values.config.dbPath }}",
+      "redis_url": "{{ .Values.config.redisUrl }}",
+      "artifact_root": "{{ .Values.config.artifactRoot }}",
+      "bootstrap_admin_token": "{{ .Values.api.bootstrapAdminToken }}"
+    }
