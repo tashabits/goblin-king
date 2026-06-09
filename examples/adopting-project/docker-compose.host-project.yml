@@ -1,0 +1,57 @@
+services:
+  api:
+    volumes:
+      - ${HOST_PROJECT_PATH:-./examples/adopting-project}:/project
+    command:
+      - sh
+      - -c
+      - >
+        pip install -e /app &&
+        goblin-king api run
+        --settings /project/goblin-king-api.json
+        --host 0.0.0.0
+        --port 8000
+
+  scheduler:
+    volumes:
+      - ${HOST_PROJECT_PATH:-./examples/adopting-project}:/project
+      - /var/run/docker.sock:/var/run/docker.sock
+    command:
+      - scheduler
+      - run
+      - --project
+      - /project/goblin-king-project.json
+      - --db
+      - /project/.goblin-king/goblin-king.sqlite3
+      - --redis-url
+      - redis://redis:6379/0
+
+  scheduler-run-once:
+    volumes:
+      - ${HOST_PROJECT_PATH:-./examples/adopting-project}:/project
+      - /var/run/docker.sock:/var/run/docker.sock
+    command:
+      - scheduler
+      - run-once
+      - --project
+      - /project/goblin-king-project.json
+      - --db
+      - /project/.goblin-king/goblin-king.sqlite3
+      - --redis-url
+      - redis://redis:6379/0
+
+  worker-project-maintenance-hello:
+    image: project-maintenance-hello:local
+    build:
+      context: ${PROJECT_HELLO_WORKER_CONTEXT:-./workers/example.hello}
+      dockerfile: Dockerfile
+    profiles: ["project-workers"]
+    command: ["python", "-c", "print('project.maintenance.hello worker image built')"]
+
+  worker-project-reports-long-service:
+    image: project-reports-long-service:local
+    build:
+      context: ${PROJECT_LONG_SERVICE_CONTEXT:-./workers/example.long-hello}
+      dockerfile: Dockerfile
+    profiles: ["project-workers"]
+    command: ["python", "-c", "print('project.reports.long-service worker image built')"]

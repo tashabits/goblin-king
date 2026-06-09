@@ -60,12 +60,19 @@ spec:
               mountPath: /config
             - name: data
               mountPath: /data
+            {{- with .Values.project.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           command:
             - goblin-king
             - scheduler
             - run
             - --runtime
             - {{ .Values.scheduler.runtime }}
+            {{- if .Values.config.projectSettingsPath }}
+            - --project
+            - {{ .Values.config.projectSettingsPath }}
+            {{- end }}
             - --registry
             - {{ .Values.config.registryPath }}
             - --images
@@ -87,4 +94,7 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- with .Values.project.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
 {{- end }}

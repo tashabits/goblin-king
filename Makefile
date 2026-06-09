@@ -5,8 +5,13 @@ IMAGES ?= goblin-images.json
 INPUT ?= examples/input.json
 REDIS_URL ?= redis://localhost:6379/0
 LONG_HELLO_URL ?= http://long-hello:8080
+HOST_PROJECT ?= examples/adopting-project
+PROJECT ?= $(HOST_PROJECT)/goblin-king-project.json
+PROJECT_IMAGES ?= $(HOST_PROJECT)/goblin-images.json
+ADMIN_BASE ?= http://127.0.0.1:8080
+ADMIN_TOKEN ?= local-dev-token
 
-.PHONY: help install test lint local-ci build-workers admin-build redis-up redis-down deploy run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke helm-template helm-admin-smoke kind-smoke clean docker-clean
+.PHONY: help install test lint local-ci build-workers admin-build redis-up redis-down deploy run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke project-validate project-build-workers project-discovery-reload project-admin-proof helm-template helm-admin-smoke kind-smoke clean docker-clean
 
 help:
 	@echo "Targets:"
@@ -28,6 +33,10 @@ help:
 	@echo "  long-hello-up  Start the long-running hello service with Compose"
 	@echo "  admin-up       Start the React admin, API, Redis, and long service"
 	@echo "  admin-smoke    Exercise Docker React admin API proof flow"
+	@echo "  project-validate Validate host-project discovery settings"
+	@echo "  project-build-workers Build host-project worker images"
+	@echo "  project-discovery-reload Reload host-project discovery through admin API"
+	@echo "  project-admin-proof Prove host-project goblins are visible through admin API"
 	@echo "  helm-template  Render the optional Helm chart"
 	@echo "  helm-admin-smoke Exercise Helm React admin through goblin-king.local"
 	@echo "  kind-smoke     Render Helm and report whether kind is available"
@@ -89,6 +98,18 @@ long-hello-down:
 
 admin-smoke:
 	$(PYTHON) -c "import json, time, urllib.request; base='http://127.0.0.1:8080'; token='local-dev-token'; service_url='http://long-hello:8080'; headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'}; print('admin_status=' + str(urllib.request.urlopen(base+'/admin').status)); req=urllib.request.Request(base+'/admin-api/goblins', headers={'Authorization':'Bearer '+token}); print('goblins=' + urllib.request.urlopen(req).read().decode()); body=json.dumps({'kind':'example.hello','input':{'name':'World'}}).encode(); req=urllib.request.Request(base+'/admin-api/jobs', data=body, headers=headers, method='POST'); job=json.loads(urllib.request.urlopen(req).read()); print('hello_job=' + job['id']); cancel=urllib.request.Request(base+'/admin-api/jobs/'+job['id']+'/cancel', headers={'Authorization':'Bearer '+token}, method='POST'); print('cancel_status=' + json.loads(urllib.request.urlopen(cancel).read())['status']); body=json.dumps({'kind':'example.long-hello','base_url':service_url}).encode(); req=urllib.request.Request(base+'/admin-api/services/long-running', data=body, headers=headers, method='POST'); service=json.loads(urllib.request.urlopen(req).read()); print('service=' + service['id']); req=urllib.request.Request(base+'/admin-api/services/long-running/'+service['id']+'/probe', headers={'Authorization':'Bearer '+token}, method='POST'); first=json.loads(urllib.request.urlopen(req).read()); time.sleep(1); second=json.loads(urllib.request.urlopen(req).read()); print(first['response']['json']['message']); print('timestamp_changed=' + str(first['response']['json']['timestamp'] != second['response']['json']['timestamp'])); stop=urllib.request.Request(base+'/admin-api/services/long-running/'+service['id']+'/stop', headers={'Authorization':'Bearer '+token}, method='POST'); print('service_stop=' + json.loads(urllib.request.urlopen(stop).read())['status']); req=urllib.request.Request(base+'/admin-api/events?limit=10', headers={'Authorization':'Bearer '+token}); print(urllib.request.urlopen(req).read().decode())"
+
+project-validate:
+	$(PYTHON) -m goblin_king.cli project validate --project $(PROJECT)
+
+project-build-workers:
+	$(PYTHON) -m goblin_king.cli workers build --images $(PROJECT_IMAGES)
+
+project-discovery-reload:
+	$(PYTHON) -c "import urllib.request; base='$(ADMIN_BASE)'; token='$(ADMIN_TOKEN)'; req=urllib.request.Request(base+'/admin-api/admin/discovery/reload', headers={'Authorization':'Bearer '+token}, method='POST'); print(urllib.request.urlopen(req).read().decode())"
+
+project-admin-proof:
+	$(PYTHON) -c "import urllib.request; base='$(ADMIN_BASE)'; token='$(ADMIN_TOKEN)'; req=urllib.request.Request(base+'/admin-api/goblins', headers={'Authorization':'Bearer '+token}); print(urllib.request.urlopen(req).read().decode())"
 
 helm-template:
 	helm template goblin-king charts/goblin-king

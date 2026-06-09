@@ -122,6 +122,19 @@ Failed reloads leave the previous valid registry active and report validation er
 for the Discovery panel. New goblin kinds are read from the API at runtime, so the
 React admin does not need a rebuild when project goblins are added.
 
+For host-project deployment integration, see
+`examples/adopting-project/`. It includes:
+
+- `docker-compose.host-project.yml` for layering project workers and project settings
+  over the base Docker Compose stack.
+- `helm-values.yaml` for mounting project config, passing scheduler `--project`, and
+  adding project long-running services.
+- Makefile proof targets:
+  - `make project-validate`
+  - `make project-build-workers`
+  - `make project-discovery-reload`
+  - `make project-admin-proof`
+
 Queue a fanout batch and inspect it:
 
 ```bash

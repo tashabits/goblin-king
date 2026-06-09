@@ -527,6 +527,7 @@ Primary direction:
 
 ### Phase 14: Host Project Deployment Integration
 
+- Status: implemented in Phase 14.
 - Add deployment conventions for installing project plugin wheels into API/scheduler
   images and mounting or baking project registry/image-map files.
 - Add Docker Compose extension examples for a host project that uses Goblin King services

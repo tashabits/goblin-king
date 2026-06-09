@@ -11,4 +11,7 @@ data:
       "redis_url": "{{ .Values.config.redisUrl }}",
       "artifact_root": "{{ .Values.config.artifactRoot }}",
       "bootstrap_admin_token": "{{ .Values.api.bootstrapAdminToken }}"
+      {{- if .Values.config.projectSettingsPath }},
+      "project": "{{ .Values.config.projectSettingsPath }}"
+      {{- end }}
     }

@@ -28,6 +28,9 @@ spec:
               mountPath: /config
             - name: data
               mountPath: /data
+            {{- with .Values.project.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           command:
             - goblin-king
             - api
@@ -49,6 +52,9 @@ spec:
           {{- else }}
           emptyDir: {}
           {{- end }}
+        {{- with .Values.project.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service

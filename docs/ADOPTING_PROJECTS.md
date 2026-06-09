@@ -100,6 +100,40 @@ goblin-king workers build --images goblin-images.json
 
 Then start API, scheduler, Redis, and admin through Docker Compose or Helm.
 
+For a concrete Compose extension, see
+`examples/adopting-project/docker-compose.host-project.yml`. From the repository root:
+
+```bash
+docker compose \
+  -f docker-compose.yml \
+  -f examples/adopting-project/docker-compose.host-project.yml \
+  --profile api \
+  --profile admin \
+  --profile project-workers \
+  up -d --build redis api admin long-hello worker-project-maintenance-hello
+```
+
+The extension mounts the project fixture at `/project`, runs the API with
+`/project/goblin-king-api.json`, and runs the scheduler with
+`--project /project/goblin-king-project.json`.
+
+## Use Helm
+
+Host projects can supply extra values rather than forking the chart:
+
+```bash
+helm template goblin-king charts/goblin-king -f examples/adopting-project/helm-values.yaml
+```
+
+The pattern is:
+
+- Mount project configuration with `project.extraVolumes` and
+  `project.extraVolumeMounts`.
+- Set `config.projectSettingsPath` so API and scheduler both load the host project.
+- Keep `config.registryPath` and `config.imagesPath` as fallback/direct paths.
+- Add long-running service workers with `workers.extraLongServices`.
+- Reload discovery after deploy or upgrade so the admin goblin list updates at runtime.
+
 ## Reload Discovery After Deploy
 
 After installing a new plugin wheel, mounting a changed registry, or updating
@@ -115,6 +149,15 @@ The React admin exposes the same flow in **Discovery**. It reads goblins dynamic
 from the API, so project goblin types appear after reload without a React rebuild. If a
 reload fails because of duplicate kinds, invalid registry files, or missing image maps,
 the previous valid registry remains active and the error is displayed for operators.
+
+Makefile shortcuts for the local fixture:
+
+```bash
+make project-validate
+make project-build-workers
+make project-discovery-reload
+make project-admin-proof
+```
 
 ## Proof Checklist
 

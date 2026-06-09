@@ -148,6 +148,19 @@ updates the goblin dropdown and worker mapping table at runtime. A failed reload
 the previous valid registry active and displays the validation error so the failed
 deployment can be fixed safely.
 
+For the included host-project fixture, run:
+
+```bash
+make project-validate
+make project-build-workers
+make project-discovery-reload
+make project-admin-proof
+```
+
+The proof should show `project.maintenance.hello` and `project.reports.long-service`
+coming from the mounted project settings. The admin Discovery panel screenshot in the
+Admin Guide shows where the reload and source coverage appear in the UI.
+
 ## Optional Kubernetes Deployment
 
 Render the chart locally:

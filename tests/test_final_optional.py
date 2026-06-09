@@ -155,8 +155,27 @@ def test_helm_chart_includes_optional_default_on_ingress() -> None:
     values = Path("charts/goblin-king/values.yaml").read_text(encoding="utf-8")
     ingress = Path("charts/goblin-king/templates/ingress.yaml").read_text(encoding="utf-8")
     api = Path("charts/goblin-king/templates/api.yaml").read_text(encoding="utf-8")
+    config = Path("charts/goblin-king/templates/configmap.yaml").read_text(encoding="utf-8")
+    scheduler = Path("charts/goblin-king/templates/scheduler.yaml").read_text(encoding="utf-8")
+    long_hello = Path("charts/goblin-king/templates/long-hello.yaml").read_text(
+        encoding="utf-8"
+    )
+    host_values = Path("examples/adopting-project/helm-values.yaml").read_text(
+        encoding="utf-8"
+    )
+    compose_extension = Path(
+        "examples/adopting-project/docker-compose.host-project.yml"
+    ).read_text(encoding="utf-8")
 
     assert "enabled: true" in values
     assert "kind: Ingress" in ingress
     assert ".Values.admin.ingress.enabled" in ingress
     assert "goblin-king-api.json" in api
+    assert "projectSettingsPath" in values
+    assert '"project": "{{ .Values.config.projectSettingsPath }}"' in config
+    assert "--project" in scheduler
+    assert "extraVolumeMounts" in api
+    assert "extraLongServices" in long_hello
+    assert "project-goblin-config" in host_values
+    assert "--project" in compose_extension
+    assert "worker-project-maintenance-hello" in compose_extension

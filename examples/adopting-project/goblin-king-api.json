@@ -4,5 +4,6 @@
   "db": ".goblin-king/goblin-king.sqlite3",
   "redis_url": "redis://localhost:6379/0",
   "artifact_root": ".goblin-king/artifacts",
-  "bootstrap_admin_token": "local-dev-token"
+  "bootstrap_admin_token": "local-dev-token",
+  "project": "goblin-king-project.json"
 }

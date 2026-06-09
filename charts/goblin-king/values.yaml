@@ -26,9 +26,14 @@ persistence:
 config:
   registryPath: /app/examples/goblins.json
   imagesPath: /app/goblin-images.json
+  projectSettingsPath: ""
   dbPath: /data/goblin-king.sqlite3
   artifactRoot: /data/artifacts
   redisUrl: redis://goblin-king-redis:6379/0
+
+project:
+  extraVolumes: []
+  extraVolumeMounts: []
 
 admin:
   enabled: true
@@ -50,3 +55,4 @@ workers:
     enabled: true
     image: goblin-king-example-long-hello:local
     port: 8080
+  extraLongServices: []

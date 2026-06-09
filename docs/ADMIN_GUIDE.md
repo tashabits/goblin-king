@@ -77,7 +77,16 @@ If reload fails, the previous valid goblin list stays active and the error is di
 for proof. The King is fond of new goblins, but not fond enough to forget the last
 working court.
 
+For host-project deployments, this is the final proof step after building project worker
+images and applying the Docker Compose extension or Helm values. The new project goblin
+kinds should appear in **Active Goblin Kinds** after reload.
+
 ![Discovery reload controls](images/admin/admin-discovery.png)
+
+The included host-project fixture shows project registry sources and project goblin
+kinds after reload:
+
+![Host project discovery proof](images/admin/admin-project-discovery.png)
 
 ## Clean Up Old Rows
 
