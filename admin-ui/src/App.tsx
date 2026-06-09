@@ -108,6 +108,28 @@ type TrafficEntry = {
   response: unknown;
 };
 
+function latestFirst<T>(items: T[]): T[] {
+  return [...items].sort((left, right) => {
+    const leftRecord = left as Record<string, unknown>;
+    const rightRecord = right as Record<string, unknown>;
+    const leftDate = leftRecord.created_at || leftRecord.submitted_at || leftRecord.started_at;
+    const rightDate = rightRecord.created_at || rightRecord.submitted_at || rightRecord.started_at;
+    const leftTime = typeof leftDate === "string" ? Date.parse(leftDate) : 0;
+    const rightTime = typeof rightDate === "string" ? Date.parse(rightDate) : 0;
+    return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime);
+  });
+}
+
+function serviceRank(service: LongService): number {
+  if (service.status === "running") return 0;
+  if (service.status === "registered") return 1;
+  return 2;
+}
+
+function usefulServicesFirst(services: LongService[]): LongService[] {
+  return latestFirst(services).sort((left, right) => serviceRank(left) - serviceRank(right));
+}
+
 function quoteFor(seed: number) {
   return QUOTES[seed % QUOTES.length];
 }
@@ -193,14 +215,14 @@ export function App() {
         api("/audit-logs?limit=20", {}, "GET /audit-logs"),
       ]);
       setGoblins(goblinPayload);
-      setJobs(jobPayload.items);
-      setRuns(runPayload.items);
-      setEvents(eventPayload.items);
+      setJobs(latestFirst(jobPayload.items));
+      setRuns(latestFirst(runPayload.items));
+      setEvents(latestFirst(eventPayload.items));
       setHeartbeats(heartbeatPayload);
-      setServices(servicePayload);
+      setServices(usefulServicesFirst(servicePayload));
       setSchedules(schedulePayload);
       setFanouts(fanoutPayload);
-      setAuditLogs(auditPayload.items);
+      setAuditLogs(latestFirst(auditPayload.items));
       setSelectedKind((current) => goblinPayload.find((item: Goblin) => item.kind === current)?.kind || goblinPayload[0]?.kind || "example.hello");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -499,8 +521,19 @@ export function App() {
                 <h4>{service.kind}</h4>
                 <code>{service.base_url}</code>
                 <pre>{JSON.stringify(service.last_probe_json || {}, null, 2)}</pre>
-                <button onClick={() => void probeService(service.id)}>Probe</button>
-                <button className="danger" onClick={() => void stopService(service.id)}><Square size={16} /> Stop service</button>
+                <button
+                  disabled={service.status === "stopped"}
+                  onClick={() => void probeService(service.id)}
+                >
+                  {service.status === "stopped" ? "Stopped" : "Probe"}
+                </button>
+                <button
+                  className="danger"
+                  disabled={service.status === "stopped"}
+                  onClick={() => void stopService(service.id)}
+                >
+                  <Square size={16} /> {service.status === "stopped" ? "Stopped" : "Stop service"}
+                </button>
               </article>
             ))}
           </div>

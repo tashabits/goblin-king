@@ -930,7 +930,7 @@ class SQLiteStore:
     ) -> list[JobRecord]:
         """Return a bounded page of jobs for API responses."""
         with self.engine.connect() as connection:
-            query = select(jobs_table).order_by(jobs_table.c.created_at)
+            query = select(jobs_table).order_by(jobs_table.c.created_at.desc())
             if project_id is not None:
                 query = query.where(jobs_table.c.project_id == project_id)
             if status is not None:

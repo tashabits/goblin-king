@@ -168,6 +168,8 @@ Render the optional Kubernetes chart:
 
 ```bash
 docker build -t goblin-king:local .
+python -m goblin_king.cli workers build --images goblin-images.json
+docker build -t goblin-king-admin-ui:local admin-ui
 docker build -t goblin-king-example-long-hello:local workers/example.long-hello
 make helm-template
 ```
@@ -203,6 +205,30 @@ endpoint. On Windows, open Notepad as Administrator, edit
 Then browse to `http://goblin-king.local/admin` and log in with `local-dev-token`. If
 your local cluster exposes ingress on a different IP, use that IP instead of
 `127.0.0.1`.
+
+Docker Desktop Kubernetes may use a separate containerd image store from the Docker
+CLI image list. If Helm pods report `ErrImageNeverPull` or keep running an older
+`:local` image, import the rebuilt images into the worker node before the Helm smoke:
+
+```powershell
+docker save goblin-king:local -o goblin-king-local.tar
+docker save goblin-king-admin-ui:local -o goblin-king-admin-local.tar
+docker save goblin-king-example-hello:local goblin-king-example-echo:local `
+  goblin-king-example-progress:local goblin-king-example-artifact:local `
+  goblin-king-example-environment:local goblin-king-example-controlled-failure:local `
+  -o goblin-king-workers.tar
+kubectl debug node/desktop-worker --image=busybox -- sleep 600
+kubectl cp .\goblin-king-local.tar <debug-pod>:/host/tmp/goblin-king-local.tar
+kubectl cp .\goblin-king-admin-local.tar <debug-pod>:/host/tmp/goblin-king-admin-local.tar
+kubectl cp .\goblin-king-workers.tar <debug-pod>:/host/tmp/goblin-king-workers.tar
+kubectl exec <debug-pod> -- chroot /host ctr -n k8s.io images import /tmp/goblin-king-local.tar
+kubectl exec <debug-pod> -- chroot /host ctr -n k8s.io images import /tmp/goblin-king-admin-local.tar
+kubectl exec <debug-pod> -- chroot /host ctr -n k8s.io images import /tmp/goblin-king-workers.tar
+```
+
+The Helm admin proof should show both a completed short `example.hello` job with
+`Hello World` and a long-running `example.long-hello` service probe whose timestamp
+changes between probes.
 
 ## Worker Images
 

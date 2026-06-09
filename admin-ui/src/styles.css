@@ -43,6 +43,12 @@ button:hover {
   filter: brightness(1.08);
 }
 
+button:disabled {
+  cursor: not-allowed;
+  filter: saturate(0.35);
+  opacity: 0.55;
+}
+
 button.ghost {
   background: rgba(255, 255, 255, 0.08);
   color: #e9edf4;

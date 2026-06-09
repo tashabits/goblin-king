@@ -145,6 +145,22 @@ http://goblin-king.local/admin
 The admin service proxies API traffic through `/admin-api/*` and live run events through
 `/admin-ws/runs`, so the browser uses the same UI paths in Docker and Kubernetes.
 
+For a Docker Desktop Kubernetes smoke test, make sure the cluster can see the locally
+built images. Some local clusters use a separate containerd image store from `docker
+image ls`. If pods report `ErrImageNeverPull` or appear to use stale `:local` images,
+save the rebuilt API/admin/worker images, copy them into a node debug pod under
+`/host/tmp`, and import them with:
+
+```bash
+chroot /host ctr -n k8s.io images import /tmp/goblin-king-local.tar
+chroot /host ctr -n k8s.io images import /tmp/goblin-king-admin-local.tar
+chroot /host ctr -n k8s.io images import /tmp/goblin-king-workers.tar
+```
+
+The Kubernetes proof flow should include a completed `example.hello` run returning
+`Hello World` and two `example.long-hello` probes returning `Hello World from long
+running service` with different timestamps.
+
 ## Sample Goblins
 
 - `example.hello`: short-running Hello World proof.

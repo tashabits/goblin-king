@@ -12,6 +12,7 @@ scheduler:
   enabled: true
   replicas: 1
   intervalSeconds: 5
+  runtime: kubernetes
 
 redis:
   image: redis:7-alpine

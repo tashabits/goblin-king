@@ -1,4 +1,39 @@
 {{- if .Values.scheduler.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "goblin-king.fullname" . }}-scheduler
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "goblin-king.fullname" . }}-scheduler
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "delete", "get"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "delete", "get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "goblin-king.fullname" . }}-scheduler
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "goblin-king.fullname" . }}-scheduler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "goblin-king.fullname" . }}-scheduler
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,6 +50,7 @@ spec:
         app.kubernetes.io/component: scheduler
         app.kubernetes.io/name: {{ include "goblin-king.name" . }}
     spec:
+      serviceAccountName: {{ include "goblin-king.fullname" . }}-scheduler
       containers:
         - name: scheduler
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -28,6 +64,8 @@ spec:
             - goblin-king
             - scheduler
             - run
+            - --runtime
+            - {{ .Values.scheduler.runtime }}
             - --registry
             - {{ .Values.config.registryPath }}
             - --images
