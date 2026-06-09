@@ -1,0 +1,56 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  scheduler:
+    image: python:3.12-slim
+    profiles: ["scheduler"]
+    working_dir: /app
+    depends_on:
+      - redis
+    volumes:
+      - .:/app
+      - goblin-king-data:/app/.goblin-king
+    command:
+      - sh
+      - -c
+      - >
+        pip install -e . &&
+        goblin-king scheduler run
+        --registry examples/goblins.json
+        --images goblin-images.json
+        --db .goblin-king/goblin-king.sqlite3
+        --redis-url redis://redis:6379/0
+
+  scheduler-run-once:
+    image: python:3.12-slim
+    profiles: ["run-once"]
+    working_dir: /app
+    depends_on:
+      - redis
+    volumes:
+      - .:/app
+      - goblin-king-data:/app/.goblin-king
+    command:
+      - sh
+      - -c
+      - >
+        pip install -e . &&
+        goblin-king scheduler run-once
+        --registry examples/goblins.json
+        --images goblin-images.json
+        --db .goblin-king/goblin-king.sqlite3
+        --redis-url redis://redis:6379/0
+
+  worker-example-echo:
+    image: goblin-king-example-echo:local
+    profiles: ["workers"]
+    build:
+      context: workers/example.echo
+      dockerfile: Dockerfile
+    command: ["python", "-c", "print('example.echo worker image built')"]
+
+volumes:
+  goblin-king-data:
