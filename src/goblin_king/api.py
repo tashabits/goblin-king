@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import asyncio
-import html
 import json
 from pathlib import Path
 from typing import Any
@@ -44,6 +43,7 @@ from goblin_king.contracts import (
     JobRecord,
     LongServiceRecord,
     ProjectRecord,
+    RunRecord,
     ScheduleRecord,
     UserRecord,
     utc_now,
@@ -100,6 +100,13 @@ class AuditLogListResponse(BaseModel):
     """Paginated audit log list response."""
 
     items: list[AuditLogRecord]
+    meta: PageMeta
+
+
+class RunListResponse(BaseModel):
+    """Paginated run list response."""
+
+    items: list[RunRecord]
     meta: PageMeta
 
 
@@ -302,32 +309,21 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         }
 
     @app.get("/admin", response_class=HTMLResponse, tags=["admin"], operation_id="getAdminUi")
-    def admin_ui(token: str | None = None) -> HTMLResponse:
-        """Render the local admin proof interface for Docker and Helm deployments."""
-        if token is None:
-            raise HTTPException(status_code=401, detail="missing admin token")
-        try:
-            principal = authenticate_token(
-                state.store,
-                token,
-                bootstrap_token=state.settings.bootstrap_admin_token,
-            )
-        except AuthError as error:
-            raise HTTPException(status_code=error.status_code, detail=str(error)) from error
-        goblins = list_goblins(principal)
-        jobs = state.store.list_jobs_page(project_id=principal.project_id, limit=25)
-        events = state.store.list_events(project_id=principal.project_id, limit=25)
-        heartbeats = state.store.list_heartbeats()
-        services = state.store.list_long_services(project_id=principal.project_id)
-        content = _admin_html(
-            token=token,
-            goblins=goblins,
-            jobs=jobs,
-            events=events,
-            heartbeats=heartbeats,
-            services=services,
+    def admin_ui() -> HTMLResponse:
+        """Point direct API users to the separate React admin service."""
+        return HTMLResponse(
+            """
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Goblin King Admin</title></head>
+<body>
+  <h1>Goblin King React Admin</h1>
+  <p>The admin interface is served by the separate React admin service at <code>/admin</code>.</p>
+  <p>Use Docker Compose or Helm to run the admin service, then log in with your API token.</p>
+</body>
+</html>
+""",
         )
-        return HTMLResponse(content)
 
     @app.post(
         "/admin/users",
@@ -465,6 +461,23 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         """List registered long-running service goblins visible to the caller."""
         return state.store.list_long_services(project_id=principal.project_id)
 
+    @app.get(
+        "/services/long-running/{service_id}",
+        response_model=LongServiceRecord,
+        tags=["services"],
+        operation_id="getLongRunningService",
+    )
+    def get_long_running_service(
+        service_id: str,
+        principal: Principal = Depends(require_principal),
+    ) -> LongServiceRecord:
+        """Return one registered long-running service goblin."""
+        service = state.store.get_long_service(service_id)
+        if service is None:
+            raise HTTPException(status_code=404, detail=f"long service not found: {service_id}")
+        project_for_request(principal, service.project_id)
+        return service
+
     @app.post(
         "/services/long-running/{service_id}/probe",
         response_model=LongServiceProbeResponse,
@@ -480,6 +493,8 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         if service is None:
             raise HTTPException(status_code=404, detail=f"long service not found: {service_id}")
         project_for_request(principal, service.project_id)
+        if service.status == "stopped":
+            raise HTTPException(status_code=409, detail=f"long service is stopped: {service_id}")
         probe_url = f"{service.base_url}/hello"
         request_payload = {"method": "GET", "url": probe_url}
         try:
@@ -535,6 +550,50 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             request=request_payload,
             response=response_payload,
         )
+
+    @app.post(
+        "/services/long-running/{service_id}/stop",
+        response_model=LongServiceRecord,
+        tags=["services"],
+        operation_id="stopLongRunningService",
+    )
+    def stop_long_running_service(
+        service_id: str,
+        principal: Principal = Depends(require_principal),
+    ) -> LongServiceRecord:
+        """Mark a registered long-running service as stopped for tester kill controls."""
+        service = state.store.get_long_service(service_id)
+        if service is None:
+            raise HTTPException(status_code=404, detail=f"long service not found: {service_id}")
+        project_for_request(principal, service.project_id)
+        if service.status == "stopped":
+            return service
+        stopped = state.store.update_long_service_status(
+            service.id,
+            status="stopped",
+            last_probe_json={
+                "message": "service stopped by King-side admin control",
+                "previous_status": service.status,
+            },
+        )
+        assert stopped is not None
+        state.event_bus.emit(
+            "admin.service.stopped",
+            source="api",
+            project_id=service.project_id,
+            worker_id=service.id,
+            payload={"kind": service.kind, "base_url": service.base_url},
+        )
+        audit(
+            state.store,
+            action="service.stopped",
+            outcome="success",
+            principal=principal,
+            project_id=service.project_id,
+            resource_type="long_service",
+            resource_id=service.id,
+        )
+        return stopped
 
     @app.get(
         "/audit-logs",
@@ -988,6 +1047,29 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         project_for_request(principal, job.project_id if job else run.project_id)
         return run
 
+    @app.get("/runs", response_model=RunListResponse, tags=["runs"], operation_id="listRuns")
+    def list_runs(
+        limit: int = Query(default=100, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        status: str | None = None,
+        kind: str | None = None,
+        project_id: str | None = None,
+        principal: Principal = Depends(require_principal),
+    ) -> RunListResponse:
+        """Return persisted runs with bounded filters for the admin UI."""
+        scoped_project = project_for_request(principal, project_id)
+        items = state.store.list_runs_page(
+            project_id=scoped_project,
+            status=status,
+            kind=kind,
+            limit=limit,
+            offset=offset,
+        )
+        return RunListResponse(
+            items=items,
+            meta=PageMeta(limit=limit, offset=offset, count=len(items)),
+        )
+
     @app.get("/runs/{run_id}/artifacts", tags=["runs"], operation_id="listRunArtifacts")
     def list_run_artifacts(
         run_id: str,
@@ -1101,128 +1183,3 @@ def _artifact_file_path(root: Path, artifact: ArtifactRecord) -> Path | None:
     except ValueError:
         return None
     return resolved
-
-
-def _admin_html(
-    *,
-    token: str,
-    goblins: list[dict[str, Any]],
-    jobs: list[JobRecord],
-    events: list[EventRecord],
-    heartbeats: list[HeartbeatRecord],
-    services: list[LongServiceRecord],
-) -> str:
-    """Build a small self-contained admin page without a frontend build stack."""
-    goblin_rows = "\n".join(
-        f"<tr><td>{html.escape(item['kind'])}</td>"
-        f"<td>{html.escape(item['display_name'])}</td>"
-        f"<td>{html.escape(str(item.get('worker_image') or 'unmapped'))}</td></tr>"
-        for item in goblins
-    )
-    job_rows = "\n".join(
-        f"<tr><td>{html.escape(job.id)}</td><td>{html.escape(job.kind)}</td>"
-        f"<td>{html.escape(job.status)}</td></tr>"
-        for job in jobs
-    )
-    service_rows = "\n".join(
-        f"<tr><td>{html.escape(service.id)}</td><td>{html.escape(service.kind)}</td>"
-        f"<td>{html.escape(service.status)}</td><td>{html.escape(service.base_url)}</td></tr>"
-        for service in services
-    )
-    event_rows = "\n".join(
-        f"<tr><td>{html.escape(event.created_at.isoformat())}</td>"
-        f"<td>{html.escape(event.event_type)}</td>"
-        f"<td><code>{html.escape(json.dumps(event.payload, default=str))}</code></td></tr>"
-        for event in events
-    )
-    heartbeat_rows = "\n".join(
-        f"<tr><td>{html.escape(heartbeat.owner_id)}</td>"
-        f"<td>{html.escape(heartbeat.owner_type)}</td>"
-        f"<td>{html.escape(heartbeat.status)}</td></tr>"
-        for heartbeat in heartbeats
-    )
-    escaped_token = html.escape(token, quote=True)
-    options = "\n".join(
-        f"<option value=\"{html.escape(item['kind'], quote=True)}\">"
-        f"{html.escape(item['kind'])}</option>"
-        for item in goblins
-    )
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Goblin King Admin</title>
-  <style>
-    body {{ font-family: system-ui, sans-serif; margin: 2rem; color: #172026; }}
-    main {{ display: grid; gap: 1.25rem; max-width: 1180px; }}
-    section {{ border: 1px solid #ccd4dd; border-radius: 8px; padding: 1rem; }}
-    table {{ border-collapse: collapse; width: 100%; }}
-    th, td {{ border-bottom: 1px solid #e3e8ef; padding: 0.45rem; text-align: left; }}
-    input, select, button {{ padding: 0.45rem; margin: 0.2rem; }}
-    code {{ white-space: pre-wrap; }}
-  </style>
-</head>
-<body>
-<main>
-  <h1>Goblin King Admin</h1>
-  <section>
-    <h2>Proof Controls</h2>
-    <label for="kind">Goblin</label>
-    <select id="kind">{options}</select>
-    <button type="button" onclick="spawnJob()">Spawn Job</button>
-    <button type="button" onclick="spawnHello()">Spawn Hello Proof</button>
-    <button type="button" onclick="registerService()">Register Long Service</button>
-    <button type="button" onclick="probeService()">Probe Long Service</button>
-    <input id="service-url" value="http://localhost:8090" aria-label="Long service URL">
-    <pre id="traffic"></pre>
-  </section>
-  <section><h2>Registered Goblins</h2><table><tbody>{goblin_rows}</tbody></table></section>
-  <section><h2>Long Services</h2><table><tbody>{service_rows}</tbody></table></section>
-  <section><h2>Jobs</h2><table><tbody>{job_rows}</tbody></table></section>
-  <section><h2>Events</h2><table><tbody>{event_rows}</tbody></table></section>
-  <section><h2>Heartbeats</h2><table><tbody>{heartbeat_rows}</tbody></table></section>
-</main>
-<script>
-const token = "{escaped_token}";
-let currentServiceId = null;
-async function callApi(path, body) {{
-  const response = await fetch(path, {{
-    method: "POST",
-    headers: {{
-      "Authorization": "Bearer " + token,
-      "Content-Type": "application/json"
-    }},
-    body: JSON.stringify(body || {{}})
-  }});
-  const text = await response.text();
-  const payload = text ? JSON.parse(text) : {{}};
-  document.getElementById("traffic").textContent = JSON.stringify({{
-    request: {{path, body}},
-    response: {{status: response.status, payload}}
-  }}, null, 2);
-  return payload;
-}}
-async function spawnJob() {{
-  const kind = document.getElementById("kind").value;
-  await callApi("/jobs", {{kind, input: {{source: "admin-ui"}}}});
-}}
-async function spawnHello() {{
-  await callApi("/jobs", {{kind: "example.hello", input: {{name: "World"}}}});
-}}
-async function registerService() {{
-  const baseUrl = document.getElementById("service-url").value;
-  const payload = await callApi("/services/long-running", {{
-    kind: "example.long-hello",
-    base_url: baseUrl
-  }});
-  currentServiceId = payload.id;
-}}
-async function probeService() {{
-  if (!currentServiceId) {{
-    await registerService();
-  }}
-  await callApi("/services/long-running/" + currentServiceId + "/probe", {{}});
-}}
-</script>
-</body>
-</html>"""

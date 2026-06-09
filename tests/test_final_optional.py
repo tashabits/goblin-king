@@ -64,17 +64,14 @@ def test_sample_worker_image_map_covers_demo_goblins() -> None:
 
 
 def test_admin_ui_requires_auth_and_renders_goblin_inventory(tmp_path: Path) -> None:
-    """Verify the FastAPI-served admin page is authenticated and lists goblins."""
+    """Verify the API admin route points users toward the React admin service."""
     client, _ = _client(tmp_path)
 
-    missing = client.get("/admin")
-    rendered = client.get("/admin?token=test-token")
+    rendered = client.get("/admin")
 
-    assert missing.status_code == 401
     assert rendered.status_code == 200
-    assert "Goblin King Admin" in rendered.text
-    assert "example.hello" in rendered.text
-    assert "example.long-hello" in rendered.text
+    assert "Goblin King React Admin" in rendered.text
+    assert "separate React admin service" in rendered.text
 
 
 def test_long_running_service_registration_and_probe_records_traffic(tmp_path: Path) -> None:
@@ -127,6 +124,30 @@ def test_long_running_service_registration_and_probe_records_traffic(tmp_path: P
     assert first_timestamp != second_timestamp
     assert store.get_long_service(service_id).status == "running"  # type: ignore[union-attr]
     assert store.list_events(event_type="admin.service.probed")
+
+
+def test_long_running_service_detail_stop_and_stopped_probe_conflict(tmp_path: Path) -> None:
+    """Verify service stop supports tester kill controls without hard-killing containers."""
+    client, store = _client(tmp_path)
+    created = client.post(
+        "/services/long-running",
+        json={"kind": "example.long-hello", "base_url": "http://service.example"},
+        headers=_auth(),
+    )
+    service_id = created.json()["id"]
+
+    detail = client.get(f"/services/long-running/{service_id}", headers=_auth())
+    stopped = client.post(f"/services/long-running/{service_id}/stop", headers=_auth())
+    probe = client.post(f"/services/long-running/{service_id}/probe", headers=_auth())
+
+    assert created.status_code == 200
+    assert detail.status_code == 200
+    assert detail.json()["id"] == service_id
+    assert stopped.status_code == 200
+    assert stopped.json()["status"] == "stopped"
+    assert probe.status_code == 409
+    assert store.get_long_service(service_id).status == "stopped"  # type: ignore[union-attr]
+    assert store.list_events(event_type="admin.service.stopped")
 
 
 def test_helm_chart_includes_optional_default_on_ingress() -> None:

@@ -360,11 +360,14 @@ def test_run_and_artifact_endpoints(tmp_path: Path) -> None:
     )
 
     run = client.get("/runs/run-1", headers=auth_headers())
+    runs = client.get("/runs", headers=auth_headers())
     artifacts = client.get("/runs/run-1/artifacts", headers=auth_headers())
     download = client.get("/runs/run-1/artifacts/report.txt", headers=auth_headers())
 
     assert run.status_code == 200
     assert run.json()["id"] == "run-1"
+    assert runs.status_code == 200
+    assert runs.json()["items"][0]["id"] == "run-1"
     assert artifacts.status_code == 200
     assert artifacts.json()[0]["download_url"] == "/runs/run-1/artifacts/report.txt"
     assert download.status_code == 200

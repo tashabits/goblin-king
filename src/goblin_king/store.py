@@ -691,6 +691,25 @@ class SQLiteStore:
             )
         return self.get_long_service(service_id)
 
+    def update_long_service_status(
+        self,
+        service_id: str,
+        *,
+        status: str,
+        last_probe_json: dict[str, Any] | None = None,
+    ) -> LongServiceRecord | None:
+        """Update the lifecycle status for a registered long-running service goblin."""
+        values: dict[str, Any] = {"status": status}
+        if last_probe_json is not None:
+            values["last_probe_json"] = json.dumps(last_probe_json)
+        with self.engine.begin() as connection:
+            connection.execute(
+                update(long_services_table)
+                .where(long_services_table.c.id == service_id)
+                .values(**values)
+            )
+        return self.get_long_service(service_id)
+
     def save_fanout(self, fanout: FanoutRecord) -> None:
         """Insert one durable fanout batch record."""
         with self.engine.begin() as connection:
@@ -1030,6 +1049,31 @@ class SQLiteStore:
         if row is None:
             return None
         return _row_to_run(dict(row))
+
+    def list_runs_page(
+        self,
+        *,
+        project_id: str | None = None,
+        status: str | None = None,
+        kind: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[RunRecord]:
+        """Return a bounded page of runs for API and admin UI inspection."""
+        with self.engine.connect() as connection:
+            query = select(runs_table).order_by(runs_table.c.started_at.desc())
+            if project_id is not None:
+                query = query.where(runs_table.c.project_id == project_id)
+            if status is not None:
+                query = query.where(runs_table.c.status == status)
+            if kind is not None:
+                query = query.where(runs_table.c.kind == kind)
+            rows = (
+                connection.execute(query.offset(max(offset, 0)).limit(max(1, min(limit, 500))))
+                .mappings()
+                .all()
+            )
+        return [_row_to_run(dict(row)) for row in rows]
 
     def get_job(self, job_id: str) -> JobRecord | None:
         """Load one job record by ID for tests and CLI inspection."""
