@@ -2,18 +2,29 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from croniter import CroniterBadCronError, croniter
-from fastapi import Depends, FastAPI, Header, HTTPException, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, WebSocket
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+from redis import Redis
+from redis.exceptions import RedisError
 
 from goblin_king.api_settings import ApiSettings
-from goblin_king.contracts import ArtifactRecord, JobRecord, ScheduleRecord, utc_now
+from goblin_king.contracts import (
+    ArtifactRecord,
+    EventRecord,
+    HeartbeatRecord,
+    JobRecord,
+    ScheduleRecord,
+    utc_now,
+)
+from goblin_king.events import EventBus
 from goblin_king.fanout import (
     FanoutCreateRequest,
     FanoutDetail,
@@ -86,6 +97,7 @@ class AppState:
         self.workers = WorkerImageMap.from_path(settings.images)
         self.artifact_root = settings.artifact_root.resolve()
         self.artifact_root.mkdir(parents=True, exist_ok=True)
+        self.event_bus = EventBus(store=self.store, redis_url=settings.redis_url)
 
 
 def create_app(settings: ApiSettings | None = None) -> FastAPI:
@@ -146,6 +158,12 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             timeout_seconds=request.timeout_seconds,
         )
         state.store.save_job(job)
+        state.event_bus.emit(
+            "job.queued",
+            source="api",
+            job_id=job.id,
+            payload={"kind": job.kind, "created_by": job.created_by},
+        )
         return job
 
     @app.get("/jobs")
@@ -172,18 +190,41 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         cancelled = state.store.cancel_job(job_id)
         if cancelled is None:
             raise HTTPException(status_code=404, detail=f"job not found: {job_id}")
+        state.event_bus.emit(
+            "job.cancelled",
+            source="api",
+            job_id=cancelled.id,
+            fanout_id=cancelled.fanout_id,
+            schedule_id=cancelled.schedule_id,
+            payload={"kind": cancelled.kind},
+        )
         return cancelled
 
     @app.post("/jobs/fanout", dependencies=[Depends(require_token)])
     def create_jobs_fanout(request: FanoutCreateRequest) -> FanoutDetail:
         """Create a mixed-kind fanout batch of queued jobs."""
         try:
-            return create_fanout(
+            detail = create_fanout(
                 store=state.store,
                 registry=state.registry,
                 request=request,
                 created_by="api",
             )
+            state.event_bus.emit(
+                "fanout.created",
+                source="api",
+                fanout_id=detail.fanout.id,
+                payload={"jobs": [job.id for job in detail.jobs], "count": len(detail.jobs)},
+            )
+            for job in detail.jobs:
+                state.event_bus.emit(
+                    "job.queued",
+                    source="api",
+                    job_id=job.id,
+                    fanout_id=job.fanout_id,
+                    payload={"kind": job.kind, "created_by": job.created_by},
+                )
+            return detail
         except RegistryError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
@@ -204,12 +245,24 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     def retry_api_job(job_id: str, request: RetryCreateRequest) -> JobRecord:
         """Queue a fresh retry job copied from a terminal source job."""
         try:
-            return retry_job(
+            retry = retry_job(
                 store=state.store,
                 job_id=job_id,
                 request=request,
                 created_by="api-retry",
             )
+            state.event_bus.emit(
+                "job.retry_queued",
+                source="api",
+                job_id=retry.id,
+                fanout_id=retry.fanout_id,
+                payload={
+                    "kind": retry.kind,
+                    "source_job_id": job_id,
+                    "reason": request.reason,
+                },
+            )
+            return retry
         except KeyError as error:
             raise HTTPException(status_code=404, detail=f"job not found: {job_id}") from error
         except ValueError as error:
@@ -220,6 +273,12 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         """Create one recurring schedule."""
         schedule = _schedule_from_request(state.registry, request)
         state.store.save_schedule(schedule)
+        state.event_bus.emit(
+            "schedule.created",
+            source="api",
+            schedule_id=schedule.id,
+            payload={"kind": schedule.kind, "next_run_at": schedule.next_run_at.isoformat()},
+        )
         return schedule
 
     @app.get("/schedules")
@@ -242,7 +301,70 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         if changed_timing:
             patched = patched.model_copy(update={"next_run_at": next_run_after(patched, utc_now())})
         state.store.update_schedule(patched)
+        state.event_bus.emit(
+            "schedule.updated",
+            source="api",
+            schedule_id=patched.id,
+            payload={"kind": patched.kind, "enabled": patched.enabled},
+        )
         return patched
+
+    @app.get("/events")
+    def list_events(
+        limit: int = Query(default=100, ge=1, le=500),
+        event_type: str | None = None,
+        after_id: str | None = None,
+        job_id: str | None = None,
+        run_id: str | None = None,
+        fanout_id: str | None = None,
+        schedule_id: str | None = None,
+        worker_id: str | None = None,
+        scheduler_id: str | None = None,
+    ) -> list[EventRecord]:
+        """Return durable event history with simple bounded filters."""
+        return state.store.list_events(
+            limit=limit,
+            event_type=event_type,
+            after_id=after_id,
+            job_id=job_id,
+            run_id=run_id,
+            fanout_id=fanout_id,
+            schedule_id=schedule_id,
+            worker_id=worker_id,
+            scheduler_id=scheduler_id,
+        )
+
+    @app.websocket("/ws/runs")
+    async def stream_runs(websocket: WebSocket) -> None:
+        """Stream live event envelopes from Redis pub/sub to WebSocket clients."""
+        await websocket.accept()
+        pubsub = Redis.from_url(state.settings.redis_url).pubsub()
+        try:
+            await asyncio.to_thread(pubsub.subscribe, state.event_bus.event_channel)
+            while True:
+                message = await asyncio.to_thread(pubsub.get_message, True, 1.0)
+                if message is None or message.get("type") != "message":
+                    continue
+                data = message.get("data")
+                text = data.decode("utf-8") if isinstance(data, bytes) else str(data)
+                await websocket.send_text(text)
+        except RedisError as error:
+            await websocket.send_json({"error": f"redis pubsub failed: {error}"})
+        finally:
+            await asyncio.to_thread(pubsub.close)
+
+    @app.get("/heartbeats")
+    def list_heartbeats() -> list[HeartbeatRecord]:
+        """Return scheduler and worker heartbeat records."""
+        return state.store.list_heartbeats()
+
+    @app.get("/heartbeats/{owner_id}")
+    def get_heartbeat(owner_id: str) -> HeartbeatRecord:
+        """Return one scheduler or worker heartbeat."""
+        heartbeat = state.store.get_heartbeat(owner_id)
+        if heartbeat is None:
+            raise HTTPException(status_code=404, detail=f"heartbeat not found: {owner_id}")
+        return heartbeat
 
     @app.get("/runs/{run_id}")
     def get_run(run_id: str) -> Any:

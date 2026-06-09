@@ -175,6 +175,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 from redis import Redis
@@ -186,7 +187,11 @@ def main() -> None:
     context = json.loads(Path(os.environ["GOBLIN_CONTEXT_PATH"]).read_text())
     result_path = Path(os.environ["GOBLIN_RESULT_PATH"])
     run_id = os.environ["GOBLIN_RUN_ID"]
+    job_id = os.environ.get("GOBLIN_JOB_ID") or None
+    worker_id = os.environ["GOBLIN_WORKER_ID"]
+    heartbeat_url = os.environ["GOBLIN_HEARTBEAT_REDIS_URL"]
 
+    _heartbeat("running", heartbeat_url, worker_id, run_id, job_id)
     result = {
         "status": "success",
         "data": {
@@ -207,6 +212,30 @@ def main() -> None:
         result_json,
         ex=3600,
     )
+    _heartbeat("completed", heartbeat_url, worker_id, run_id, job_id)
+
+
+def _heartbeat(
+    status: str,
+    redis_url: str,
+    worker_id: str,
+    run_id: str,
+    job_id: str | None,
+) -> None:
+    """Publish a worker heartbeat through Redis for the host runtime to persist."""
+    payload = {
+        "owner_id": worker_id,
+        "owner_type": "worker",
+        "status": status,
+        "last_seen_at": datetime.now(UTC).isoformat(),
+        "job_id": job_id,
+        "run_id": run_id,
+        "payload": {"generated": True},
+    }
+    encoded = json.dumps(payload)
+    client = Redis.from_url(redis_url)
+    client.rpush(os.environ["GOBLIN_HEARTBEAT_KEY"], encoded)
+    client.publish(os.environ["GOBLIN_HEARTBEAT_CHANNEL"], encoded)
 
 
 if __name__ == "__main__":

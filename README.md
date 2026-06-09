@@ -11,6 +11,8 @@ Phase 5 adds reusable project integration through project settings, multiple reg
 files, Python package entry point discovery, and a package/worker template generator.
 Phase 6 adds durable fanout batches and retry APIs/CLI commands for queueing related
 work without executing it inline.
+Phase 7 adds durable event history, Redis pub/sub streaming, WebSocket run updates,
+and scheduler/worker heartbeat tracking.
 
 ## Quick Start
 
@@ -93,6 +95,22 @@ Retry a terminal job:
 goblin-king jobs retry <job-id> --reason "try again"
 ```
 
+Inspect event history and heartbeats after scheduler work:
+
+```bash
+goblin-king events list --limit 20
+goblin-king heartbeats list
+```
+
+Watch live event envelopes from Redis:
+
+```bash
+goblin-king events watch --redis-url redis://localhost:6379/0
+```
+
+The API exposes the same event data over `GET /events`, scheduler and worker liveness
+over `GET /heartbeats`, and live run updates over `WS /ws/runs`.
+
 ## Worker Images
 
 Each Docker worker lives in a self-contained folder with its own `Dockerfile`.
@@ -111,7 +129,9 @@ Worker build settings live in `goblin-images.json`:
 ```
 
 Workers receive JSON input/context files, publish a `GoblinResult` envelope to Redis,
-and write the same result to a mounted fallback file.
+write the same result to a mounted fallback file, and publish heartbeat envelopes while
+they run. The Docker runtime records those heartbeats in SQLite and mirrors event
+updates to Redis pub/sub for live subscribers.
 
 ## Documentation
 
@@ -124,8 +144,9 @@ and write the same result to a mounted fallback file.
 ## Current Scope
 
 The current kernel stores durable state in SQLite, schedules due jobs, executes Docker
-workers by default, uses Redis as result transport, and exposes a local/dev API control
-plane. It can also discover goblins from multiple registry files and installed package
-entry points, queue mixed-kind fanout batches, and create retry jobs from terminal jobs.
-Kubernetes, events/WebSockets, Redis durability guarantees, production auth, and
-deployment hardening are planned for later phases.
+workers by default, uses Redis as result and live event transport, and exposes a
+local/dev API control plane. It can also discover goblins from multiple registry files
+and installed package entry points, queue mixed-kind fanout batches, create retry jobs
+from terminal jobs, stream events over WebSockets, and track scheduler/worker
+heartbeats. Kubernetes, Redis durability guarantees, production auth, and deployment
+hardening are planned for later phases.

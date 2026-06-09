@@ -5,7 +5,7 @@ IMAGES ?= goblin-images.json
 INPUT ?= examples/input.json
 REDIS_URL ?= redis://localhost:6379/0
 
-.PHONY: help install test lint local-ci build-workers redis-up redis-down deploy run-once schedule simulate api api-smoke clean docker-clean
+.PHONY: help install test lint local-ci build-workers redis-up redis-down deploy run-once schedule simulate events-smoke api api-smoke clean docker-clean
 
 help:
 	@echo "Targets:"
@@ -20,6 +20,7 @@ help:
 	@echo "  schedule       Add a due example.echo schedule"
 	@echo "  run-once       Run one Docker scheduler pass"
 	@echo "  simulate       Deploy, schedule, run once, and list jobs"
+	@echo "  events-smoke   Print recent events and heartbeats after simulation"
 	@echo "  api            Run the FastAPI control plane"
 	@echo "  api-smoke      Exercise local API health, auth, and queued jobs"
 	@echo "  clean          Remove local Goblin King runtime state"
@@ -55,6 +56,10 @@ run-once:
 
 simulate: deploy schedule run-once
 	$(PYTHON) -m goblin_king.cli jobs list --db $(DB)
+
+events-smoke: simulate
+	$(PYTHON) -m goblin_king.cli events list --db $(DB) --limit 20
+	$(PYTHON) -m goblin_king.cli heartbeats list --db $(DB)
 
 api:
 	$(PYTHON) -m goblin_king.cli api run --settings goblin-king-api.json

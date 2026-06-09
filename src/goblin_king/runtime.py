@@ -15,6 +15,12 @@ from redis import Redis
 from redis.exceptions import RedisError
 
 from goblin_king.contracts import GoblinContext, GoblinDefinition, GoblinResult
+from goblin_king.events import (
+    DEFAULT_HEARTBEAT_CHANNEL,
+    DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+    EventBus,
+    worker_heartbeat_key,
+)
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
 
 
@@ -53,11 +59,15 @@ class DockerRuntime:
         redis_url: str = "redis://localhost:6379/0",
         run_root: str | Path = Path(".goblin-king") / "runs",
         docker_executable: str = "docker",
+        event_bus: EventBus | None = None,
+        heartbeat_interval_seconds: int = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     ) -> None:
         self.workers = workers
         self.redis_url = redis_url
         self.run_root = Path(run_root)
         self.docker_executable = docker_executable
+        self.event_bus = event_bus
+        self.heartbeat_interval_seconds = heartbeat_interval_seconds
 
     def build_image(self, kind: str) -> None:
         """Build one worker image from its configured self-contained worker folder."""
@@ -107,10 +117,13 @@ class DockerRuntime:
 
         run_dir = self._prepare_run_dir(context, input_payload)
         result_path = run_dir / "result.json"
+        worker_id = f"worker-{context.run_id}"
+        self._emit_worker_event("worker.started", context, worker_id, {"kind": definition.kind})
         command = self._docker_run_command(
             image=worker.image,
             run_dir=run_dir,
             context=context,
+            worker_id=worker_id,
             timeout_seconds=timeout_seconds,
         )
         try:
@@ -124,20 +137,41 @@ class DockerRuntime:
                 timeout=timeout_seconds,
             )
         except subprocess.TimeoutExpired:
+            self._record_worker_heartbeats(context)
+            self._emit_worker_event(
+                "worker.timed_out",
+                context,
+                worker_id,
+                {"kind": definition.kind, "timeout_seconds": timeout_seconds},
+            )
             return GoblinResult.failed(
                 error=f"{definition.kind} exceeded timeout_seconds={timeout_seconds}"
             )
 
+        self._record_worker_heartbeats(context)
         result = self._load_result(context.run_id, result_path)
         if result is not None:
+            self._emit_worker_event(
+                "worker.completed",
+                context,
+                worker_id,
+                {"kind": definition.kind, "status": result.status},
+            )
             return result
         if completed.returncode != 0:
+            self._emit_worker_event(
+                "worker.failed",
+                context,
+                worker_id,
+                {"kind": definition.kind, "exit_code": completed.returncode},
+            )
             return GoblinResult.failed(
                 error=(
                     f"{definition.kind} Docker worker exited {completed.returncode}: "
                     f"{completed.stderr.strip() or completed.stdout.strip()}"
                 )
             )
+        self._emit_worker_event("worker.no_result", context, worker_id, {"kind": definition.kind})
         return GoblinResult.failed(error=f"{definition.kind} Docker worker produced no result")
 
     def _prepare_run_dir(self, context: GoblinContext, input_payload: dict[str, Any]) -> Path:
@@ -158,6 +192,7 @@ class DockerRuntime:
         image: str,
         run_dir: Path,
         context: GoblinContext,
+        worker_id: str,
         timeout_seconds: int | None,
     ) -> list[str]:
         """Compose a deterministic docker run command for a worker container."""
@@ -177,6 +212,10 @@ class DockerRuntime:
             "-e",
             f"GOBLIN_RUN_ID={context.run_id}",
             "-e",
+            f"GOBLIN_JOB_ID={context.metadata.get('job_id', '')}",
+            "-e",
+            f"GOBLIN_WORKER_ID={worker_id}",
+            "-e",
             "GOBLIN_INPUT_PATH=/goblin/input.json",
             "-e",
             "GOBLIN_CONTEXT_PATH=/goblin/context.json",
@@ -186,6 +225,14 @@ class DockerRuntime:
             "GOBLIN_ARTIFACT_ROOT=/artifacts",
             "-e",
             f"GOBLIN_REDIS_URL={_container_redis_url(self.redis_url)}",
+            "-e",
+            f"GOBLIN_HEARTBEAT_REDIS_URL={_container_redis_url(self.redis_url)}",
+            "-e",
+            f"GOBLIN_HEARTBEAT_CHANNEL={DEFAULT_HEARTBEAT_CHANNEL}",
+            "-e",
+            f"GOBLIN_HEARTBEAT_KEY={worker_heartbeat_key(context.run_id)}",
+            "-e",
+            f"GOBLIN_HEARTBEAT_INTERVAL_SECONDS={self.heartbeat_interval_seconds}",
             "-v",
             f"{run_dir}:/goblin",
             "-v",
@@ -195,6 +242,44 @@ class DockerRuntime:
             command.extend(["--stop-timeout", str(max(timeout_seconds, 1))])
         command.append(image)
         return command
+
+    def _record_worker_heartbeats(self, context: GoblinContext) -> None:
+        """Read heartbeat payloads left by a worker in Redis and persist them."""
+        if self.event_bus is None:
+            return
+        try:
+            client = Redis.from_url(self.redis_url)
+            key = worker_heartbeat_key(context.run_id)
+            for payload in client.lrange(key, 0, -1):
+                self.event_bus.record_worker_heartbeat_payload(payload)
+            client.expire(key, 3600)
+        except RedisError as error:
+            self.event_bus.emit(
+                "worker.heartbeat_read_failed",
+                source="runtime",
+                run_id=context.run_id,
+                job_id=context.metadata.get("job_id"),
+                payload={"error": str(error)},
+            )
+
+    def _emit_worker_event(
+        self,
+        event_type: str,
+        context: GoblinContext,
+        worker_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """Emit a runtime/worker lifecycle event when an event bus is configured."""
+        if self.event_bus is None:
+            return
+        self.event_bus.emit(
+            event_type,
+            source="runtime",
+            job_id=context.metadata.get("job_id"),
+            run_id=context.run_id,
+            worker_id=worker_id,
+            payload=payload,
+        )
 
     def _load_result(self, run_id: str, result_path: Path) -> GoblinResult | None:
         """Load a worker result from Redis first, then from the fallback result file."""

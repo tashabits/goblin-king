@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -9,7 +10,14 @@ from fastapi.testclient import TestClient
 
 from goblin_king.api import create_app
 from goblin_king.api_settings import ApiSettings
-from goblin_king.contracts import ArtifactRecord, GoblinResult, JobRecord, RunRecord, utc_now
+from goblin_king.contracts import (
+    ArtifactRecord,
+    GoblinResult,
+    HeartbeatRecord,
+    JobRecord,
+    RunRecord,
+    utc_now,
+)
 from goblin_king.store import SQLiteStore
 
 
@@ -103,6 +111,9 @@ def test_jobs_endpoint_queues_without_running(tmp_path: Path) -> None:
     assert loaded.status == "queued"
     assert listed.status_code == 200
     assert listed.json()[0]["id"] == created.json()["id"]
+    events = client.get("/events", params={"job_id": created.json()["id"]})
+    assert events.status_code == 200
+    assert events.json()[0]["event_type"] == "job.queued"
 
 
 def test_fanout_api_creates_and_reads_batch(tmp_path: Path) -> None:
@@ -228,6 +239,66 @@ def test_schedule_create_list_and_patch(tmp_path: Path) -> None:
         headers=auth_headers(),
     )
     assert invalid.status_code == 422
+    schedule_events = client.get("/events", params={"schedule_id": schedule_id})
+    assert [event["event_type"] for event in schedule_events.json()] == [
+        "schedule.created",
+        "schedule.updated",
+    ]
+
+
+def test_heartbeat_endpoints(tmp_path: Path) -> None:
+    """Verify heartbeat read endpoints expose persisted scheduler and worker liveness."""
+    client, store, _ = build_client(tmp_path)
+    heartbeat = HeartbeatRecord(
+        owner_id="worker-1",
+        owner_type="worker",
+        status="running",
+        last_seen_at=utc_now(),
+        job_id="job-1",
+        run_id="run-1",
+    )
+    store.upsert_heartbeat(heartbeat)
+
+    listed = client.get("/heartbeats")
+    fetched = client.get("/heartbeats/worker-1")
+    missing = client.get("/heartbeats/missing")
+
+    assert listed.status_code == 200
+    assert listed.json()[0]["owner_id"] == "worker-1"
+    assert fetched.status_code == 200
+    assert fetched.json()["status"] == "running"
+    assert missing.status_code == 404
+
+
+def test_websocket_streams_pubsub_events(tmp_path: Path, monkeypatch) -> None:
+    """Verify /ws/runs streams Redis pub/sub event envelopes."""
+    event = {"event_type": "job.completed", "job_id": "job-1"}
+
+    class FakePubSub:
+        def __init__(self) -> None:
+            self.sent = False
+
+        def subscribe(self, _channel: str) -> None:
+            return None
+
+        def get_message(self, *_args) -> dict | None:
+            if self.sent:
+                return None
+            self.sent = True
+            return {"type": "message", "data": json.dumps(event).encode("utf-8")}
+
+        def close(self) -> None:
+            return None
+
+    class FakeRedis:
+        def pubsub(self) -> FakePubSub:
+            return FakePubSub()
+
+    monkeypatch.setattr("goblin_king.api.Redis.from_url", lambda _url: FakeRedis())
+    client, _, _ = build_client(tmp_path)
+
+    with client.websocket_connect("/ws/runs") as websocket:
+        assert json.loads(websocket.receive_text()) == event
 
 
 def test_run_and_artifact_endpoints(tmp_path: Path) -> None:

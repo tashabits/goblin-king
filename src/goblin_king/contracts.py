@@ -20,6 +20,8 @@ JobStatus = Literal[
     "cancelled",
 ]
 RunStatus = Literal["running", "completed", "failed", "timed_out"]
+EventSource = Literal["api", "scheduler", "runtime", "worker", "cli"]
+HeartbeatOwnerType = Literal["scheduler", "worker"]
 
 
 def utc_now() -> datetime:
@@ -152,6 +154,34 @@ class FanoutRecord(BaseModel):
     created_by: str = "api"
     correlation_id: str | None = None
     description: str | None = None
+
+
+class EventRecord(BaseModel):
+    """Capture one durable event for API, scheduler, runtime, or worker activity."""
+
+    id: str
+    created_at: datetime
+    event_type: str = Field(min_length=1)
+    source: EventSource
+    job_id: str | None = None
+    run_id: str | None = None
+    fanout_id: str | None = None
+    schedule_id: str | None = None
+    worker_id: str | None = None
+    scheduler_id: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class HeartbeatRecord(BaseModel):
+    """Track the latest known liveness signal for a scheduler or worker."""
+
+    owner_id: str
+    owner_type: HeartbeatOwnerType
+    status: str = Field(min_length=1)
+    last_seen_at: datetime
+    job_id: str | None = None
+    run_id: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
 
 
 class RunRecord(BaseModel):

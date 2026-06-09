@@ -431,11 +431,21 @@ Integration tests:
 - Derive fanout status from child jobs and runs.
 - Keep fanout and retry queue-only; scheduler execution remains separate.
 
+### Phase 7: Events, Streaming, And Heartbeats
+
+- Add durable SQLite event history for API, scheduler, runtime, and worker activity.
+- Publish event envelopes through Redis pub/sub for live subscribers.
+- Add WebSocket run event streaming with `WS /ws/runs`.
+- Add scheduler and worker heartbeat persistence and read APIs.
+- Extend Docker worker contracts so workers publish heartbeat envelopes while running.
+- Keep production auth, pagination hardening, and OpenAPI customization deferred to Phase 8.
+
 ### Final Optional Phase: Kubernetes Deployment
 
 - Keep Docker and Compose as the default local/development path.
 - Add Kubernetes as an optional runtime/deployment path only for projects that require it.
 - Add Helm chart support for API, scheduler, Redis configuration, worker image settings, volumes, secrets, and service exposure.
+- Add a web admin interface for Kubernetes deployments that reads the current goblin list, lets operators spawn goblins, captures inbound and outbound traffic plus messaging, and proves deployed goblins work.
 - Add documentation for when to choose Kubernetes and how to keep local Docker workflows unchanged.
 - Add local chart validation and, where practical, kind/minikube smoke tests with explicit PR proof.
 

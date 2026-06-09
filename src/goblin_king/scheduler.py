@@ -18,6 +18,7 @@ from goblin_king.contracts import (
     ScheduleRecord,
     utc_now,
 )
+from goblin_king.events import EventBus
 from goblin_king.registry import GoblinRegistry
 from goblin_king.runtime import DockerRuntime, InProcessRuntime, new_run_context
 from goblin_king.store import SQLiteStore
@@ -43,6 +44,7 @@ class Scheduler:
         runtime_mode: RuntimeMode = "docker",
         workers: WorkerImageMap | None = None,
         redis_url: str = "redis://localhost:6379/0",
+        event_bus: EventBus | None = None,
     ) -> None:
         self.registry = registry
         self.store = store
@@ -52,8 +54,9 @@ class Scheduler:
         self.runtime_mode = runtime_mode
         if runtime_mode == "docker" and workers is None:
             raise ValueError("workers image map is required when runtime_mode='docker'")
+        self.event_bus = event_bus or EventBus(store=store, redis_url=redis_url)
         self.runtime = (
-            DockerRuntime(workers=workers, redis_url=redis_url)
+            DockerRuntime(workers=workers, redis_url=redis_url, event_bus=self.event_bus)
             if runtime_mode == "docker"
             else InProcessRuntime()
         )
@@ -82,24 +85,52 @@ class Scheduler:
                 last_materialized_at=current,
                 next_run_at=next_run_after(schedule, current),
             )
+            self.event_bus.emit(
+                "schedule.materialized",
+                source="scheduler",
+                job_id=job.id,
+                schedule_id=schedule.id,
+                scheduler_id=self.worker_id,
+                payload={"kind": schedule.kind, "due_at": current.isoformat()},
+            )
             materialized.append(job)
         return materialized
 
     def claim_due_jobs(self, now: datetime | None = None) -> list[JobRecord]:
         """Lease due queued or retrying jobs for this scheduler worker."""
         current = _ensure_utc(now or utc_now())
-        return self.store.claim_due_jobs(
+        jobs = self.store.claim_due_jobs(
             worker_id=self.worker_id,
             now=current,
             lease_until=current + timedelta(seconds=self.lease_seconds),
             limit=self.claim_limit,
         )
+        for job in jobs:
+            self.event_bus.emit(
+                "job.leased",
+                source="scheduler",
+                job_id=job.id,
+                schedule_id=job.schedule_id,
+                fanout_id=job.fanout_id,
+                scheduler_id=self.worker_id,
+                payload={"kind": job.kind, "leased_until": job.leased_until.isoformat()},
+            )
+        return jobs
 
     def run_claimed_job(self, job: JobRecord, now: datetime | None = None) -> RunRecord:
         """Execute one leased job and persist both run and final job status."""
         started_at = _ensure_utc(now or utc_now())
         attempt = job.attempt_count + 1
         self.store.mark_job_running(job.id, attempt_count=attempt)
+        self.event_bus.emit(
+            "job.running",
+            source="scheduler",
+            job_id=job.id,
+            schedule_id=job.schedule_id,
+            fanout_id=job.fanout_id,
+            scheduler_id=self.worker_id,
+            payload={"kind": job.kind, "attempt": attempt},
+        )
 
         if self.runtime_mode == "docker":
             definition = self.registry.get(job.kind)
@@ -147,13 +178,39 @@ class Scheduler:
                 last_error=error,
                 due_at=started_at,
             )
+            self.event_bus.emit(
+                "job.retrying",
+                source="scheduler",
+                job_id=job.id,
+                run_id=run.id,
+                schedule_id=job.schedule_id,
+                fanout_id=job.fanout_id,
+                scheduler_id=self.worker_id,
+                payload={"kind": job.kind, "attempt": attempt, "error": error},
+            )
         else:
             self.store.finish_job(job.id, status=status, last_error=error)
+            self.event_bus.emit(
+                f"job.{status}",
+                source="scheduler",
+                job_id=job.id,
+                run_id=run.id,
+                schedule_id=job.schedule_id,
+                fanout_id=job.fanout_id,
+                scheduler_id=self.worker_id,
+                payload={"kind": job.kind, "attempt": attempt, "error": error},
+            )
         return run
 
     def run_once(self, now: datetime | None = None) -> list[RunRecord]:
         """Perform one deterministic scheduler pass for tests and CLI use."""
         current = _ensure_utc(now or utc_now())
+        self.event_bus.heartbeat(
+            owner_id=self.worker_id,
+            owner_type="scheduler",
+            status="running",
+            payload={"runtime": self.runtime_mode},
+        )
         self.materialize_due_schedules(current)
         runs: list[RunRecord] = []
         for job in self.claim_due_jobs(current):

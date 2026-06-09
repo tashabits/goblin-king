@@ -50,6 +50,11 @@ When a phase includes fanout or retry behavior, PR evidence must include both AP
 proof. Record fanout creation, fanout readback, scheduler execution, retry creation from
 a terminal job, and retry completion.
 
+When a phase includes event streaming or heartbeat behavior, PR evidence must include
+durable event proof, Redis pub/sub proof, WebSocket proof, scheduler heartbeat proof,
+and worker heartbeat proof. Record the command output or HTTP/WebSocket payloads that
+show the same work moving through durable history and live streaming paths.
+
 ## Commenting Standards
 
 - New public modules should start with a concise file-level comment describing purpose and ownership.
@@ -68,3 +73,6 @@ Reusable package phases must include tests for project settings, registry mergin
 point discovery, template generation, and CLI discovery.
 Fanout/retry phases must include tests for batch persistence, derived fanout status, API
 auth, CLI commands, retry lineage, rejected live-job retries, and scheduler execution.
+Event/heartbeat phases must include tests for event persistence, API event reads,
+WebSocket streaming, Redis pub/sub handling, scheduler event emission, worker heartbeat
+ingestion, malformed heartbeat handling, and CLI inspection commands.
