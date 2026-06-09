@@ -27,9 +27,11 @@ from sqlalchemy.engine import Engine
 
 from goblin_king.contracts import (
     ArtifactRecord,
+    EventRecord,
     FanoutRecord,
     GoblinResult,
     HandoffRecord,
+    HeartbeatRecord,
     JobRecord,
     RunRecord,
     ScheduleRecord,
@@ -126,6 +128,34 @@ handoffs_table = Table(
     Column("payload_json", Text, nullable=False),
 )
 
+events_table = Table(
+    "events",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("event_type", String, nullable=False),
+    Column("source", String, nullable=False),
+    Column("job_id", String, nullable=True),
+    Column("run_id", String, nullable=True),
+    Column("fanout_id", String, nullable=True),
+    Column("schedule_id", String, nullable=True),
+    Column("worker_id", String, nullable=True),
+    Column("scheduler_id", String, nullable=True),
+    Column("payload_json", Text, nullable=False, default="{}"),
+)
+
+heartbeats_table = Table(
+    "heartbeats",
+    metadata,
+    Column("owner_id", String, primary_key=True),
+    Column("owner_type", String, nullable=False),
+    Column("status", String, nullable=False),
+    Column("last_seen_at", DateTime(timezone=True), nullable=False),
+    Column("job_id", String, nullable=True),
+    Column("run_id", String, nullable=True),
+    Column("payload_json", Text, nullable=False, default="{}"),
+)
+
 
 class SQLiteStore:
     """Persist Phase 1 jobs, runs, artifacts, and handoffs in a local SQLite database."""
@@ -162,6 +192,115 @@ class SQLiteStore:
                     last_error=job.last_error,
                 )
             )
+
+    def save_event(self, event: EventRecord) -> None:
+        """Insert one durable event record."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                events_table.insert().values(
+                    id=event.id,
+                    created_at=event.created_at,
+                    event_type=event.event_type,
+                    source=event.source,
+                    job_id=event.job_id,
+                    run_id=event.run_id,
+                    fanout_id=event.fanout_id,
+                    schedule_id=event.schedule_id,
+                    worker_id=event.worker_id,
+                    scheduler_id=event.scheduler_id,
+                    payload_json=json.dumps(event.payload),
+                )
+            )
+
+    def list_events(
+        self,
+        *,
+        limit: int = 100,
+        event_type: str | None = None,
+        after_id: str | None = None,
+        job_id: str | None = None,
+        run_id: str | None = None,
+        fanout_id: str | None = None,
+        schedule_id: str | None = None,
+        worker_id: str | None = None,
+        scheduler_id: str | None = None,
+    ) -> list[EventRecord]:
+        """Return durable events with simple bounded filtering."""
+        bounded_limit = max(1, min(limit, 500))
+        with self.engine.connect() as connection:
+            query = select(events_table).order_by(events_table.c.created_at, events_table.c.id)
+            if event_type is not None:
+                query = query.where(events_table.c.event_type == event_type)
+            if after_id is not None:
+                cursor = connection.execute(
+                    select(events_table.c.created_at).where(events_table.c.id == after_id)
+                ).scalar_one_or_none()
+                if cursor is not None:
+                    query = query.where(events_table.c.created_at > cursor)
+            for column_name, value in {
+                "job_id": job_id,
+                "run_id": run_id,
+                "fanout_id": fanout_id,
+                "schedule_id": schedule_id,
+                "worker_id": worker_id,
+                "scheduler_id": scheduler_id,
+            }.items():
+                if value is not None:
+                    query = query.where(getattr(events_table.c, column_name) == value)
+            rows = connection.execute(query.limit(bounded_limit)).mappings().all()
+        return [_row_to_event(dict(row)) for row in rows]
+
+    def upsert_heartbeat(self, heartbeat: HeartbeatRecord) -> None:
+        """Insert or replace the latest heartbeat for one scheduler or worker owner."""
+        with self.engine.begin() as connection:
+            existing = connection.execute(
+                select(heartbeats_table.c.owner_id).where(
+                    heartbeats_table.c.owner_id == heartbeat.owner_id
+                )
+            ).scalar_one_or_none()
+            values = {
+                "owner_id": heartbeat.owner_id,
+                "owner_type": heartbeat.owner_type,
+                "status": heartbeat.status,
+                "last_seen_at": heartbeat.last_seen_at,
+                "job_id": heartbeat.job_id,
+                "run_id": heartbeat.run_id,
+                "payload_json": json.dumps(heartbeat.payload),
+            }
+            if existing is None:
+                connection.execute(heartbeats_table.insert().values(**values))
+            else:
+                connection.execute(
+                    update(heartbeats_table)
+                    .where(heartbeats_table.c.owner_id == heartbeat.owner_id)
+                    .values(**values)
+                )
+
+    def list_heartbeats(self) -> list[HeartbeatRecord]:
+        """Return all scheduler and worker heartbeats ordered by last seen time."""
+        with self.engine.connect() as connection:
+            rows = (
+                connection.execute(
+                    select(heartbeats_table).order_by(heartbeats_table.c.last_seen_at)
+                )
+                .mappings()
+                .all()
+            )
+        return [_row_to_heartbeat(dict(row)) for row in rows]
+
+    def get_heartbeat(self, owner_id: str) -> HeartbeatRecord | None:
+        """Load one heartbeat by owner ID."""
+        with self.engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(heartbeats_table).where(heartbeats_table.c.owner_id == owner_id)
+                )
+                .mappings()
+                .one_or_none()
+            )
+        if row is None:
+            return None
+        return _row_to_heartbeat(dict(row))
 
     def save_fanout(self, fanout: FanoutRecord) -> None:
         """Insert one durable fanout batch record."""
@@ -626,6 +765,36 @@ def _row_to_schedule(payload: dict[str, Any]) -> ScheduleRecord:
     )
 
 
+def _row_to_event(payload: dict[str, Any]) -> EventRecord:
+    """Convert a SQLAlchemy row mapping into the public EventRecord contract."""
+    return EventRecord(
+        id=payload["id"],
+        created_at=_coerce_datetime(payload["created_at"]),
+        event_type=payload["event_type"],
+        source=payload["source"],
+        job_id=payload.get("job_id"),
+        run_id=payload.get("run_id"),
+        fanout_id=payload.get("fanout_id"),
+        schedule_id=payload.get("schedule_id"),
+        worker_id=payload.get("worker_id"),
+        scheduler_id=payload.get("scheduler_id"),
+        payload=json.loads(payload.get("payload_json") or "{}"),
+    )
+
+
+def _row_to_heartbeat(payload: dict[str, Any]) -> HeartbeatRecord:
+    """Convert a SQLAlchemy row mapping into the public HeartbeatRecord contract."""
+    return HeartbeatRecord(
+        owner_id=payload["owner_id"],
+        owner_type=payload["owner_type"],
+        status=payload["status"],
+        last_seen_at=_coerce_datetime(payload["last_seen_at"]),
+        job_id=payload.get("job_id"),
+        run_id=payload.get("run_id"),
+        payload=json.loads(payload.get("payload_json") or "{}"),
+    )
+
+
 def _coerce_datetime(value: datetime | str) -> datetime:
     """Normalize SQLite-returned timestamp values for Pydantic models."""
     if isinstance(value, datetime):
@@ -640,7 +809,9 @@ def _coerce_datetime(value: datetime | str) -> datetime:
 __all__ = [
     "ArtifactRecord",
     "DEFAULT_DB_PATH",
+    "EventRecord",
     "FanoutRecord",
+    "HeartbeatRecord",
     "HandoffRecord",
     "SQLiteStore",
 ]

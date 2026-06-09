@@ -4,8 +4,10 @@ from datetime import timedelta
 from pathlib import Path
 
 from goblin_king.contracts import (
+    EventRecord,
     FanoutRecord,
     GoblinResult,
+    HeartbeatRecord,
     JobRecord,
     RunRecord,
     ScheduleRecord,
@@ -182,3 +184,64 @@ def test_store_persists_fanout_and_job_metadata(tmp_path: Path) -> None:
     jobs = store.list_fanout_jobs("fanout-1")
     assert jobs[0].fanout_id == "fanout-1"
     assert jobs[0].metadata["fanout_item_index"] == 0
+
+
+def test_store_persists_events_and_filters(tmp_path: Path) -> None:
+    """Verify durable events persist and can be filtered by event fields."""
+    now = utc_now()
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    first = EventRecord(
+        id="event-1",
+        created_at=now,
+        event_type="job.queued",
+        source="api",
+        job_id="job-1",
+        payload={"kind": "example.echo"},
+    )
+    second = EventRecord(
+        id="event-2",
+        created_at=now + timedelta(seconds=1),
+        event_type="job.completed",
+        source="scheduler",
+        job_id="job-1",
+        run_id="run-1",
+        scheduler_id="scheduler-1",
+    )
+
+    store.save_event(first)
+    store.save_event(second)
+
+    assert [event.id for event in store.list_events()] == ["event-1", "event-2"]
+    assert [event.id for event in store.list_events(event_type="job.completed")] == ["event-2"]
+    assert [event.id for event in store.list_events(after_id="event-1")] == ["event-2"]
+    assert [event.id for event in store.list_events(job_id="job-1")] == ["event-1", "event-2"]
+
+
+def test_store_upserts_heartbeats(tmp_path: Path) -> None:
+    """Verify heartbeat owners update in place instead of duplicating rows."""
+    now = utc_now()
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    store.upsert_heartbeat(
+        HeartbeatRecord(
+            owner_id="scheduler-1",
+            owner_type="scheduler",
+            status="starting",
+            last_seen_at=now,
+        )
+    )
+    store.upsert_heartbeat(
+        HeartbeatRecord(
+            owner_id="scheduler-1",
+            owner_type="scheduler",
+            status="running",
+            last_seen_at=now + timedelta(seconds=1),
+            payload={"runtime": "docker"},
+        )
+    )
+
+    heartbeats = store.list_heartbeats()
+
+    assert len(heartbeats) == 1
+    assert heartbeats[0].status == "running"
+    assert heartbeats[0].payload == {"runtime": "docker"}
+    assert store.get_heartbeat("scheduler-1") == heartbeats[0]
