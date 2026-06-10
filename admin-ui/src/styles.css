@@ -83,6 +83,17 @@ textarea {
   width: 100%;
 }
 
+select option {
+  background: #111827;
+  color: #f8fafc;
+}
+
+select option:checked,
+select option:hover {
+  background: #d1fae5;
+  color: #0f172a;
+}
+
 textarea {
   min-height: 10rem;
   resize: vertical;
