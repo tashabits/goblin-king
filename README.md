@@ -5,16 +5,10 @@ containers called goblins. Goblins run as self-contained Docker/OCI workers, whi
 each worker use the language and runtime that fits its job while the King keeps
 scheduling, status, and result contracts consistent.
 
-The current implementation covers the Phase 1-24 roadmap: a SQLite-backed scheduler,
-Docker worker execution, FastAPI control plane, reusable project/plugin discovery,
-fanout and retry workflows, durable events, Redis pub/sub and Redis Streams delivery,
-WebSocket run updates, scheduler and worker heartbeats, local bearer-token auth,
-optional OIDC/JWT bearer auth, volume/PVC-backed artifact management, scoped runtime
-termination, project scoping, audit/rate-limit proof, a Docker/Helm admin UI,
-deploy-time discovery reload, host-project adoption examples, internal release/upgrade
-checks, cloud-neutral Helm hardening, image promotion/deployment proof records,
-repo-wide cleanup, and the formal Goblin Container Contract. Docker and Compose remain
-the default local path; Kubernetes is optional through the Helm chart.
+Use Goblin King when you want a project to define small jobs, run them in isolated
+containers, inspect what happened, and keep a durable audit trail. Docker and Compose
+are the default local path. Kubernetes is optional through the Helm chart when a project
+needs a cluster deployment.
 
 ## Table Of Contents
 
@@ -24,8 +18,8 @@ the default local path; Kubernetes is optional through the Helm chart.
 - [Goblin Container Contract](#goblin-container-contract)
 - [Worker Images](#worker-images)
 - [Image Promotion And Deployment Proof](#image-promotion-and-deployment-proof)
+- [Capabilities](#capabilities)
 - [Documentation](#documentation)
-- [Current Scope](#current-scope)
 - Deeper manuals:
   - [User Guide](docs/USER_GUIDE.md)
   - [Admin Guide](docs/ADMIN_GUIDE.md)
@@ -67,8 +61,8 @@ make deploy
 Create and run a due schedule through Docker:
 
 ```bash
-goblin-king schedules add example.echo --cron "* * * * *" --input examples/input.json --registry examples/goblins.json --due-now
-goblin-king scheduler run-once --registry examples/goblins.json --images goblin-images.json --redis-url redis://localhost:6379/0
+goblin-king schedules add example.echo --cron "* * * * *" --input examples/input.json --registry demo-goblins.json --due-now
+goblin-king scheduler run-once --registry demo-goblins.json --images demo-images.json --redis-url redis://localhost:6379/0
 goblin-king jobs list
 ```
 
@@ -175,8 +169,7 @@ cancellation, security expectations, and the container-wrapped WASI/WebAssembly 
 
 Minimal contract-only hello goblins live under `examples/goblins/hello-*` for Go,
 Rust, Node.js, Java, .NET/C#, Ruby, PHP, shell, and Python. These are standalone
-container examples first; the Goblin King registry/runtime proof for them lands in
-the later cross-language runtime phase.
+container examples and are included in the default admin/API demo registry.
 
 Container-wrapped WASI examples live under `examples/goblins/wasi-*`. They still
 build and run as normal containers: the container entrypoint invokes Wasmtime and
@@ -190,7 +183,9 @@ make run-cross-language-proof
 ```
 
 That target builds the example images from `examples/cross-language-images.json`
-and submits every kind in `examples/cross-language-goblins.json`.
+and submits every kind in `examples/cross-language-goblins.json`. The same
+language-specific kinds are included in root `demo-goblins.json` and `demo-images.json`
+so the React admin can show each runtime explicitly in Goblin Lab.
 
 Contract behavior examples live under `examples/goblins/behavior-*` and are wired
 through `examples/behavior-goblins.json` plus `examples/behavior-images.json`.
@@ -231,7 +226,7 @@ For the project-ready release and upgrade story, start with the
 Queue a fanout batch and inspect it:
 
 ```bash
-goblin-king jobs fanout --input fanout.json --registry examples/goblins.json
+goblin-king jobs fanout --input fanout.json --registry demo-goblins.json
 goblin-king fanouts list
 goblin-king fanouts show <fanout-id>
 ```
@@ -288,6 +283,29 @@ captured events, worker heartbeats, and stopped or unprobed long-service rows wh
 leaving schedules, auth/project data, active jobs, running services, and scheduler
 heartbeat intact.
 
+### Launch Language Goblins In Admin
+
+The default demo registry exposes every bundled language worker. Build the demo worker
+images, start the admin, then open **Goblin Lab**:
+
+```bash
+python -m goblin_king.cli workers build --images demo-images.json
+make admin-up
+```
+
+Search or scroll the **Goblin kind** dropdown for the runtime you want to prove, such as
+`example.hello-go`, `example.hello-rust`, `example.hello-node`, `example.hello-java`,
+`example.hello-dotnet`, `example.hello-php`, `example.hello-ruby`,
+`example.hello-shell`, `example.hello-python`, `example.wasi-c-hello`, or
+`example.wasi-rust-hello`. Press **Submit job** to queue the selected container worker.
+
+![Goblin Lab with Go selected](docs/images/admin/admin-language-launch-go.png)
+
+The registered goblin table shows the same language-specific workers and confirms each
+one has a mapped OCI worker image.
+
+![Language goblins in the registered worker list](docs/images/admin/admin-language-goblin-rows.png)
+
 The Runs & Artifacts panel reports the configured artifact volume/PVC root, file count,
 total bytes, metadata rows, and writable status. Admins can preview and execute artifact
 cleanup without moving bytes to object storage; Docker uses the `goblin-king-data`
@@ -317,7 +335,7 @@ Render the optional Kubernetes chart:
 
 ```bash
 docker build -t goblin-king:local .
-python -m goblin_king.cli workers build --images goblin-images.json
+python -m goblin_king.cli workers build --images demo-images.json
 docker build -t goblin-king-admin-ui:local admin-ui
 docker build -t goblin-king-example-long-hello:local workers/example.long-hello
 make helm-template
@@ -408,7 +426,8 @@ changes between probes.
 ## Worker Images
 
 Each goblin worker lives in a self-contained folder with its own `Dockerfile`.
-Worker build settings live in `goblin-images.json`:
+Worker build settings live in `demo-images.json` for the bundled demo set. A project can
+also keep its own narrower image map, such as `goblin-images.json`:
 
 ```json
 {
@@ -429,17 +448,17 @@ while they run. The worker can be written in any language that obeys the
 
 ## Image Promotion And Deployment Proof
 
-Phase 21 adds generic promotion and deployment proof records. These records do not tie
-Goblin King to one cloud registry or deployment platform. They capture the image, target
-tag, planned build/push commands, Helm render command, discovery reload result, audit
-logs, and events that prove an operator action happened.
+Goblin King can record generic image-promotion and deployment proof without tying the
+project to one cloud registry or deployment platform. Records capture the image, target
+tag, build/push commands, Helm render command, discovery reload result, audit logs, and
+events that prove an operator action happened.
 
 Plan and mark a worker image promotion from the CLI:
 
 ```bash
 goblin-king deploy promotions plan example.hello \
   --target-image registry.example/goblin-king-example-hello:prod \
-  --images goblin-images.json --build --push
+  --images demo-images.json --build --push
 goblin-king deploy promotions list
 goblin-king deploy promotions mark <promotion-id> --status promoted --digest sha256:...
 ```
@@ -456,11 +475,36 @@ plans dry-run image promotion, records Helm render intent, reloads discovery aft
 deployment, and displays the deployment proof trail. The King loves ambition, but he
 requires receipts.
 
+## Capabilities
+
+Goblin King provides:
+
+- SQLite-backed jobs, runs, schedules, fanouts, retries, events, heartbeats, audit logs,
+  rate limits, artifact metadata, and deployment proof records.
+- Docker worker execution by default, with in-process execution available for trusted
+  local debugging.
+- A FastAPI control plane for submitting jobs, managing schedules, reading runs,
+  inspecting artifacts, streaming events, and operating admin workflows.
+- A React admin lab bench served in Docker Compose and Helm for spawning goblins,
+  watching tasks, probing long-running services, reading events, cleaning old rows, and
+  proving worker behavior.
+- Local bearer-token auth, project scoping, admin tokens, and optional OIDC/JWT bearer
+  validation.
+- Redis pub/sub for live event delivery and Redis Streams for replayable operator proof;
+  SQLite remains the durable source of truth.
+- Volume/PVC-backed artifact storage with status and cleanup controls.
+- Scoped runtime termination for Docker containers and Kubernetes Jobs created and
+  labeled by Goblin King.
+- Deploy-time discovery reload so newly deployed project goblins appear in the API and
+  admin without rebuilding the React UI.
+- A default demo registry, `demo-goblins.json`, that exposes core samples,
+  cross-language hello workers, WASI wrappers, and behavior examples.
+
 ## Documentation
 
 | Document | Purpose |
 | --- | --- |
-| [Goblin King Scheduler Plan](docs/goblin-king-plan.md) | Architecture, phases, contracts, runtime direction, testing plan, and implementation roadmap. |
+| [Goblin King Scheduler Plan](docs/goblin-king-plan.md) | Architecture notes and roadmap history for maintainers. |
 | [User Guide](docs/USER_GUIDE.md) | End-to-end operator and developer guide for Docker, admin UI, sample goblins, API, scheduler, and optional Helm deployment. |
 | [Admin Guide](docs/ADMIN_GUIDE.md) | Screenshot walkthrough for logging in, spawning goblins, watching tasks, probing long services, reading events, and cleaning old rows. |
 | [Goblin Container Contract](docs/goblin-container-contract.md) | Canonical language-agnostic worker container contract. |
@@ -478,32 +522,11 @@ requires receipts.
 | [Adopting Projects](docs/ADOPTING_PROJECTS.md) | How another project installs Goblin King, defines goblin plugins, builds workers, and proves the integration. |
 | [First Hour Guide](docs/FIRST_HOUR.md) | Fast path from internal install to first project goblin run. |
 | [Release Checklist](docs/RELEASE_CHECKLIST.md) | Internal wheel, Docker image, local CI, Docker adoption, and Helm proof checklist. |
-| [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md) | Phase 16-21 closeout audit, current proof surfaces, and explicit deferred items. |
-| [Code Cleanup Notes](docs/CODE_CLEANUP.md) | Phase 23 before/after cleanup summary and helper-module rules. |
+| [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md) | Maintainer closeout audit and proof surfaces. |
+| [Code Cleanup Notes](docs/CODE_CLEANUP.md) | Refactor notes and helper-module rules. |
 | [Compatibility Matrix](docs/COMPATIBILITY.md) | Contract and schema compatibility versions for project-ready adoption. |
 | [Upgrade Guide](docs/UPGRADING.md) | Host-project upgrade procedure and compatibility fixture policy. |
 | [Migration Guide](docs/MIGRATION_GUIDE.md) | How to move existing scripts and workers into goblin plugins. |
 | [Contributing](docs/CONTRIBUTING.md) | Branch, PR, local CI, commenting, goblin documentation, and test expectations. |
-| [API Roadmap](docs/api-roadmap.md) | API endpoints deferred beyond Phase 4 and their intended target phases. |
+| [API Roadmap](docs/api-roadmap.md) | Covered API surfaces and maintainer notes. |
 | [Project Adoption](docs/project-adoption.md) | Notes for adapting existing queue, worker, heartbeat, and operator proof flows. |
-
-## Current Scope
-
-The current kernel stores durable state in SQLite, schedules due jobs, executes Docker
-workers by default, uses Redis as result and live event transport, and exposes a
-project-scoped API control plane with local bearer-token auth. It can also discover
-goblins from multiple registry files and installed package entry points, queue
-mixed-kind fanout batches, create retry jobs from terminal jobs, stream events over
-WebSockets, track scheduler/worker heartbeats, audit API activity, and expose
-client-oriented OpenAPI metadata. It now documents a stable internal package boundary
-for adopting projects and internal wheel reuse, with a plugin SDK path for short-running
-and long-running goblin workers. Redis Streams provide replayable delivery proof for
-event consumers, and the optional Helm chart includes cloud-neutral production
-hardening controls. Artifact bytes stay on Docker volumes and Kubernetes PVCs with
-status and cleanup APIs. Scoped hard runtime termination is available for
-Goblin-labeled Docker and Kubernetes runtime objects. Image promotion and deployment
-orchestration records give operators a cloud-neutral proof trail for builds, registry
-promotion, Helm render intent, and discovery reloads. Remaining follow-up work is
-tracked in [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md) and limited to
-runtime-level resource-policy enforcement, public packaging, and explicitly deferred
-cloud-specific recipes.

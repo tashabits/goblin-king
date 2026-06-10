@@ -1,0 +1,196 @@
+{
+  "goblins": [
+    {
+      "kind": "example.artifact",
+      "display_name": "Example Artifact",
+      "module": "examples.goblins.artifact",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.behavior-go-transform",
+      "display_name": "Example Behavior Go Transform",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.behavior-node-artifact",
+      "display_name": "Example Behavior Node Artifact",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.behavior-python-progress",
+      "display_name": "Example Behavior Python Progress",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.behavior-python-slow-cancellable",
+      "display_name": "Example Behavior Python Slow Cancellable",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.behavior-shell-failure",
+      "display_name": "Example Behavior Shell Failure",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.behavior-wasi-c-context",
+      "display_name": "Example Behavior WASI C Context",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.controlled-failure",
+      "display_name": "Example Controlled Failure",
+      "module": "examples.goblins.controlled_failure",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.echo",
+      "display_name": "Example Echo",
+      "module": "examples.goblins.echo",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.environment",
+      "display_name": "Example Environment",
+      "module": "examples.goblins.environment",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello",
+      "display_name": "Example Hello",
+      "module": "examples.goblins.hello",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello-dotnet",
+      "display_name": "Example Hello .NET",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello-go",
+      "display_name": "Example Hello Go",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello-java",
+      "display_name": "Example Hello Java",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello-node",
+      "display_name": "Example Hello Node.js",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello-php",
+      "display_name": "Example Hello PHP",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello-python",
+      "display_name": "Example Hello Python",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello-ruby",
+      "display_name": "Example Hello Ruby",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello-rust",
+      "display_name": "Example Hello Rust",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello-shell",
+      "display_name": "Example Hello Shell",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.long-hello",
+      "display_name": "Example Long Hello",
+      "module": "examples.goblins.long_hello",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.progress",
+      "display_name": "Example Progress",
+      "module": "examples.goblins.progress",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.wasi-c-hello",
+      "display_name": "Example WASI C Hello",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.wasi-rust-hello",
+      "display_name": "Example WASI Rust Hello",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    }
+  ]
+}

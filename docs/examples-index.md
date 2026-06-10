@@ -3,6 +3,11 @@
 This index gathers the sample goblins by purpose. Every worker is a
 contract-compliant container, even when the registry uses Python metadata helpers.
 
+The root `demo-goblins.json` and `demo-images.json` files combine the core examples,
+cross-language hello workers, WASI wrappers, and behavior samples. The React admin uses
+that combined demo set by default so each language goblin can be selected explicitly in
+Goblin Lab.
+
 ## Hello Containers
 
 | Kind | Folder | Runtime | Proof |

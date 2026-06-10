@@ -741,6 +741,24 @@ language-specific protocols.
   run, expose it in API, CLI, and admin surfaces, add audit/event records for validation
   failures, and prove explicit Docker and Helm/Kubernetes mappings.
 
+## Outstanding Items
+
+The README is the user manual. This roadmap file is where unfinished or future work is
+tracked.
+
+- Runtime-level enforcement for per-goblin CPU, memory, process, network, filesystem,
+  log, artifact byte, concurrency, and secret ceilings.
+- Persisting the effective resource policy used for each run.
+- API, CLI, and admin display of effective per-run resource policy.
+- Audit/event records for resource-policy validation failures and enforcement outcomes.
+- Public PyPI/package-publication hardening.
+- Cloud-provider-specific managed service recipes.
+- Object storage providers beyond Docker volumes and Kubernetes PVCs.
+- Native Kubernetes WASI scheduling and host-level Wasm runtime support.
+- Official language SDKs beyond the current language-agnostic container contract and
+  examples.
+- Deep goblin conformance certification beyond the practical local validation command.
+
 ## Key Decisions To Make Before Coding
 
 1. Database default: SQLite-only MVP, or Postgres in Compose from day one.

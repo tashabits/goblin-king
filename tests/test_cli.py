@@ -76,8 +76,9 @@ def test_project_goblins_list_and_validate() -> None:
     assert listed.exit_code == 0
     assert "example.echo" in listed.stdout
     assert validated.exit_code == 0
-    assert "goblins\t7" in validated.stdout
-    assert "worker_coverage\t7/7" in validated.stdout
+    assert "goblins\t24" in validated.stdout
+    assert "workers\t24" in validated.stdout
+    assert "worker_coverage\t24/24" in validated.stdout
     assert "dockerfiles\tok" in validated.stdout
 
 

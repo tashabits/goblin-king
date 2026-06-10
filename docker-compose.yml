@@ -24,9 +24,9 @@ services:
       - scheduler
       - run
       - --registry
-      - examples/goblins.json
+      - demo-goblins.json
       - --images
-      - goblin-images.json
+      - demo-images.json
       - --db
       - .goblin-king/goblin-king.sqlite3
       - --redis-url
@@ -52,9 +52,9 @@ services:
       - scheduler
       - run-once
       - --registry
-      - examples/goblins.json
+      - demo-goblins.json
       - --images
-      - goblin-images.json
+      - demo-images.json
       - --db
       - .goblin-king/goblin-king.sqlite3
       - --redis-url

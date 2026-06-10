@@ -1,7 +1,7 @@
 PYTHON ?= python
 DB ?= .goblin-king/goblin-king.sqlite3
-REGISTRY ?= examples/goblins.json
-IMAGES ?= goblin-images.json
+REGISTRY ?= demo-goblins.json
+IMAGES ?= demo-images.json
 INPUT ?= examples/input.json
 CROSS_LANGUAGE_REGISTRY ?= examples/cross-language-goblins.json
 CROSS_LANGUAGE_IMAGES ?= examples/cross-language-images.json
@@ -26,7 +26,7 @@ help:
 	@echo "  test           Run pytest locally"
 	@echo "  lint           Run ruff locally"
 	@echo "  local-ci       Run local CI checks"
-	@echo "  build-workers  Build configured Docker worker images"
+	@echo "  build-workers  Build configured demo Docker worker images"
 	@echo "  build-cross-language-workers Build cross-language example worker images"
 	@echo "  run-cross-language-proof Run every cross-language example through Docker runtime"
 	@echo "  validate-cross-language-workers Validate cross-language workers against contract"
