@@ -3,28 +3,11 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import (
-    Column,
-    DateTime,
-    ForeignKey,
-    Integer,
-    MetaData,
-    String,
-    Table,
-    Text,
-    create_engine,
-    delete,
-    func,
-    inspect,
-    or_,
-    select,
-    text,
-    update,
-)
+from sqlalchemy import create_engine, delete, func, or_, select, update
 from sqlalchemy.engine import Engine
 
 from goblin_king.contracts import (
@@ -34,7 +17,6 @@ from goblin_king.contracts import (
     DeploymentRecord,
     EventRecord,
     FanoutRecord,
-    GoblinResult,
     HandoffRecord,
     HeartbeatRecord,
     ImagePromotionRecord,
@@ -48,249 +30,46 @@ from goblin_king.contracts import (
     TeamRecord,
     UserRecord,
 )
+from goblin_king.store_migrations import ensure_schema_columns
+from goblin_king.store_rows import (
+    _coerce_datetime,
+    _row_to_api_token,
+    _row_to_audit_log,
+    _row_to_deployment_record,
+    _row_to_event,
+    _row_to_fanout,
+    _row_to_heartbeat,
+    _row_to_image_promotion,
+    _row_to_job,
+    _row_to_long_service,
+    _row_to_project,
+    _row_to_run,
+    _row_to_schedule,
+    _row_to_user,
+)
+from goblin_king.store_schema import (
+    api_tokens_table,
+    artifacts_table,
+    audit_logs_table,
+    deployment_records_table,
+    events_table,
+    fanouts_table,
+    handoffs_table,
+    heartbeats_table,
+    image_promotions_table,
+    jobs_table,
+    long_services_table,
+    memberships_table,
+    metadata,
+    projects_table,
+    rate_limits_table,
+    runs_table,
+    schedules_table,
+    teams_table,
+    users_table,
+)
 
 DEFAULT_DB_PATH = Path(".goblin-king") / "goblin-king.sqlite3"
-
-metadata = MetaData()
-
-jobs_table = Table(
-    "jobs",
-    metadata,
-    # Column definitions are intentionally explicit so the Phase 1 schema is easy to inspect.
-    Column("id", String, primary_key=True),
-    Column("kind", String, nullable=False),
-    Column("input_json", Text, nullable=False),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-    Column("created_by", String, nullable=False),
-    Column("correlation_id", String, nullable=True),
-    Column("project_id", String, nullable=True),
-    Column("fanout_id", String, nullable=True),
-    Column("metadata_json", Text, nullable=False, default="{}"),
-    Column("status", String, nullable=False, default="queued"),
-    Column("priority", Integer, nullable=False, default=100),
-    Column("schedule_id", String, nullable=True),
-    Column("due_at", DateTime(timezone=True), nullable=True),
-    Column("lease_owner", String, nullable=True),
-    Column("leased_until", DateTime(timezone=True), nullable=True),
-    Column("attempt_count", Integer, nullable=False, default=0),
-    Column("max_retries", Integer, nullable=False, default=0),
-    Column("timeout_seconds", Integer, nullable=True),
-    Column("last_error", Text, nullable=True),
-)
-
-fanouts_table = Table(
-    "fanouts",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-    Column("created_by", String, nullable=False),
-    Column("project_id", String, nullable=True),
-    Column("correlation_id", String, nullable=True),
-    Column("description", Text, nullable=True),
-)
-
-schedules_table = Table(
-    "schedules",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("kind", String, nullable=False),
-    Column("project_id", String, nullable=True),
-    Column("input_json", Text, nullable=False),
-    Column("cron", String, nullable=False),
-    Column("timezone", String, nullable=False),
-    Column("enabled", Integer, nullable=False, default=1),
-    Column("priority", Integer, nullable=False, default=100),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-    Column("next_run_at", DateTime(timezone=True), nullable=False),
-    Column("last_materialized_at", DateTime(timezone=True), nullable=True),
-    Column("max_retries", Integer, nullable=False, default=0),
-    Column("timeout_seconds", Integer, nullable=True),
-)
-
-runs_table = Table(
-    "runs",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("job_id", String, ForeignKey("jobs.id"), nullable=False),
-    Column("kind", String, nullable=False),
-    Column("project_id", String, nullable=True),
-    Column("attempt", Integer, nullable=False),
-    Column("status", String, nullable=False),
-    Column("started_at", DateTime(timezone=True), nullable=False),
-    Column("finished_at", DateTime(timezone=True), nullable=True),
-    Column("result_json", Text, nullable=True),
-    Column("error", Text, nullable=True),
-    Column("timeout_seconds", Integer, nullable=True),
-    Column("max_retries", Integer, nullable=False, default=0),
-    Column("leased_until", DateTime(timezone=True), nullable=True),
-    Column("resource_policy_json", Text, nullable=True),
-)
-
-artifacts_table = Table(
-    "artifacts",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("run_id", String, ForeignKey("runs.id"), nullable=False),
-    Column("name", String, nullable=False),
-    Column("uri", Text, nullable=False),
-    Column("media_type", String, nullable=True),
-)
-
-handoffs_table = Table(
-    "handoffs",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("run_id", String, ForeignKey("runs.id"), nullable=False),
-    Column("kind", String, nullable=False),
-    Column("payload_json", Text, nullable=False),
-)
-
-events_table = Table(
-    "events",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-    Column("event_type", String, nullable=False),
-    Column("source", String, nullable=False),
-    Column("project_id", String, nullable=True),
-    Column("job_id", String, nullable=True),
-    Column("run_id", String, nullable=True),
-    Column("fanout_id", String, nullable=True),
-    Column("schedule_id", String, nullable=True),
-    Column("worker_id", String, nullable=True),
-    Column("scheduler_id", String, nullable=True),
-    Column("payload_json", Text, nullable=False, default="{}"),
-)
-
-users_table = Table(
-    "users",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("email", String, nullable=False),
-    Column("display_name", String, nullable=False),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-    Column("disabled", Integer, nullable=False, default=0),
-)
-
-teams_table = Table(
-    "teams",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("name", String, nullable=False),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-)
-
-projects_table = Table(
-    "projects",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("name", String, nullable=False),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-)
-
-memberships_table = Table(
-    "memberships",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("project_id", String, nullable=False),
-    Column("role", String, nullable=False),
-    Column("user_id", String, nullable=True),
-    Column("team_id", String, nullable=True),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-)
-
-api_tokens_table = Table(
-    "api_tokens",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("name", String, nullable=False),
-    Column("token_hash", String, nullable=False),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-    Column("user_id", String, nullable=False),
-    Column("project_id", String, nullable=True),
-    Column("role", String, nullable=False),
-    Column("revoked_at", DateTime(timezone=True), nullable=True),
-)
-
-audit_logs_table = Table(
-    "audit_logs",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-    Column("action", String, nullable=False),
-    Column("outcome", String, nullable=False),
-    Column("user_id", String, nullable=True),
-    Column("token_id", String, nullable=True),
-    Column("project_id", String, nullable=True),
-    Column("resource_type", String, nullable=True),
-    Column("resource_id", String, nullable=True),
-    Column("detail_json", Text, nullable=False, default="{}"),
-)
-
-rate_limits_table = Table(
-    "rate_limits",
-    metadata,
-    Column("key", String, primary_key=True),
-    Column("window_started_at", DateTime(timezone=True), nullable=False),
-    Column("count", Integer, nullable=False, default=0),
-)
-
-heartbeats_table = Table(
-    "heartbeats",
-    metadata,
-    Column("owner_id", String, primary_key=True),
-    Column("owner_type", String, nullable=False),
-    Column("status", String, nullable=False),
-    Column("last_seen_at", DateTime(timezone=True), nullable=False),
-    Column("job_id", String, nullable=True),
-    Column("run_id", String, nullable=True),
-    Column("payload_json", Text, nullable=False, default="{}"),
-)
-
-long_services_table = Table(
-    "long_services",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("kind", String, nullable=False),
-    Column("project_id", String, nullable=True),
-    Column("image", String, nullable=True),
-    Column("base_url", Text, nullable=False),
-    Column("status", String, nullable=False),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-    Column("created_by", String, nullable=False),
-    Column("last_probe_at", DateTime(timezone=True), nullable=True),
-    Column("last_probe_json", Text, nullable=True),
-)
-
-image_promotions_table = Table(
-    "image_promotions",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("kind", String, nullable=False),
-    Column("source_image", Text, nullable=False),
-    Column("target_image", Text, nullable=False),
-    Column("status", String, nullable=False),
-    Column("actor", String, nullable=False),
-    Column("digest", Text, nullable=True),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-    Column("updated_at", DateTime(timezone=True), nullable=False),
-    Column("detail_json", Text, nullable=False, default="{}"),
-)
-
-deployment_records_table = Table(
-    "deployment_records",
-    metadata,
-    Column("id", String, primary_key=True),
-    Column("name", String, nullable=False),
-    Column("action", String, nullable=False),
-    Column("status", String, nullable=False),
-    Column("actor", String, nullable=False),
-    Column("command_json", Text, nullable=False, default="[]"),
-    Column("output", Text, nullable=True),
-    Column("created_at", DateTime(timezone=True), nullable=False),
-    Column("updated_at", DateTime(timezone=True), nullable=False),
-    Column("detail_json", Text, nullable=False, default="{}"),
-)
 
 
 class SQLiteStore:
@@ -301,7 +80,7 @@ class SQLiteStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.engine: Engine = create_engine(f"sqlite:///{self.db_path}")
         metadata.create_all(self.engine)
-        self._ensure_phase2_columns()
+        ensure_schema_columns(self.engine)
 
     def save_job(self, job: JobRecord) -> None:
         """Insert one submitted job record."""
@@ -1428,287 +1207,6 @@ class SQLiteStore:
             for row in rows
         ]
 
-    def _ensure_phase2_columns(self) -> None:
-        """Add Phase 2 job columns to existing Phase 1 SQLite databases."""
-        job_columns = {column["name"] for column in inspect(self.engine).get_columns("jobs")}
-        job_additions = {
-            "fanout_id": "TEXT",
-            "project_id": "TEXT",
-            "metadata_json": "TEXT NOT NULL DEFAULT '{}'",
-            "status": "TEXT NOT NULL DEFAULT 'queued'",
-            "priority": "INTEGER NOT NULL DEFAULT 100",
-            "schedule_id": "TEXT",
-            "due_at": "DATETIME",
-            "lease_owner": "TEXT",
-            "leased_until": "DATETIME",
-            "attempt_count": "INTEGER NOT NULL DEFAULT 0",
-            "max_retries": "INTEGER NOT NULL DEFAULT 0",
-            "timeout_seconds": "INTEGER",
-            "last_error": "TEXT",
-        }
-        run_columns = {column["name"] for column in inspect(self.engine).get_columns("runs")}
-        run_additions = {
-            "project_id": "TEXT",
-            "timeout_seconds": "INTEGER",
-            "max_retries": "INTEGER NOT NULL DEFAULT 0",
-            "leased_until": "DATETIME",
-            "resource_policy_json": "TEXT",
-        }
-        fanout_columns = {column["name"] for column in inspect(self.engine).get_columns("fanouts")}
-        schedule_columns = {
-            column["name"] for column in inspect(self.engine).get_columns("schedules")
-        }
-        event_columns = {column["name"] for column in inspect(self.engine).get_columns("events")}
-        with self.engine.begin() as connection:
-            for column_name, ddl in job_additions.items():
-                if column_name not in job_columns:
-                    connection.execute(text(f"ALTER TABLE jobs ADD COLUMN {column_name} {ddl}"))
-            for column_name, ddl in run_additions.items():
-                if column_name not in run_columns:
-                    connection.execute(text(f"ALTER TABLE runs ADD COLUMN {column_name} {ddl}"))
-            if "project_id" not in fanout_columns:
-                connection.execute(text("ALTER TABLE fanouts ADD COLUMN project_id TEXT"))
-            if "project_id" not in schedule_columns:
-                connection.execute(text("ALTER TABLE schedules ADD COLUMN project_id TEXT"))
-            if "project_id" not in event_columns:
-                connection.execute(text("ALTER TABLE events ADD COLUMN project_id TEXT"))
-
-
-def _row_to_run(payload: dict[str, Any]) -> RunRecord:
-    """Convert a SQLAlchemy row mapping into the public RunRecord contract."""
-    result = (
-        GoblinResult.model_validate_json(payload["result_json"])
-        if payload["result_json"]
-        else None
-    )
-    return RunRecord(
-        id=payload["id"],
-        job_id=payload["job_id"],
-        kind=payload["kind"],
-        project_id=payload.get("project_id"),
-        attempt=payload["attempt"],
-        status=payload["status"],
-        started_at=_coerce_datetime(payload["started_at"]),
-        finished_at=_coerce_datetime(payload["finished_at"]) if payload["finished_at"] else None,
-        result=result,
-        error=payload["error"],
-        timeout_seconds=payload.get("timeout_seconds"),
-        max_retries=payload.get("max_retries") or 0,
-        leased_until=(
-            _coerce_datetime(payload["leased_until"]) if payload.get("leased_until") else None
-        ),
-        resource_policy=(
-            json.loads(payload["resource_policy_json"])
-            if payload.get("resource_policy_json")
-            else None
-        ),
-    )
-
-
-def _row_to_job(payload: dict[str, Any]) -> JobRecord:
-    """Convert a SQLAlchemy row mapping into the public JobRecord contract."""
-    return JobRecord(
-        id=payload["id"],
-        kind=payload["kind"],
-        input=json.loads(payload["input_json"]),
-        created_at=_coerce_datetime(payload["created_at"]),
-        created_by=payload["created_by"],
-        correlation_id=payload["correlation_id"],
-        project_id=payload.get("project_id"),
-        fanout_id=payload.get("fanout_id"),
-        metadata=json.loads(payload.get("metadata_json") or "{}"),
-        status=payload.get("status") or "queued",
-        priority=payload.get("priority") or 100,
-        schedule_id=payload.get("schedule_id"),
-        due_at=_coerce_datetime(payload["due_at"]) if payload.get("due_at") else None,
-        lease_owner=payload.get("lease_owner"),
-        leased_until=(
-            _coerce_datetime(payload["leased_until"]) if payload.get("leased_until") else None
-        ),
-        attempt_count=payload.get("attempt_count") or 0,
-        max_retries=payload.get("max_retries") or 0,
-        timeout_seconds=payload.get("timeout_seconds"),
-        last_error=payload.get("last_error"),
-    )
-
-
-def _row_to_fanout(payload: dict[str, Any]) -> FanoutRecord:
-    """Convert a SQLAlchemy row mapping into the public FanoutRecord contract."""
-    return FanoutRecord(
-        id=payload["id"],
-        created_at=_coerce_datetime(payload["created_at"]),
-        created_by=payload["created_by"],
-        project_id=payload.get("project_id"),
-        correlation_id=payload.get("correlation_id"),
-        description=payload.get("description"),
-    )
-
-
-def _row_to_schedule(payload: dict[str, Any]) -> ScheduleRecord:
-    """Convert a SQLAlchemy row mapping into the public ScheduleRecord contract."""
-    return ScheduleRecord(
-        id=payload["id"],
-        kind=payload["kind"],
-        project_id=payload.get("project_id"),
-        input=json.loads(payload["input_json"]),
-        cron=payload["cron"],
-        timezone=payload["timezone"],
-        enabled=bool(payload["enabled"]),
-        priority=payload["priority"],
-        created_at=_coerce_datetime(payload["created_at"]),
-        next_run_at=_coerce_datetime(payload["next_run_at"]),
-        last_materialized_at=(
-            _coerce_datetime(payload["last_materialized_at"])
-            if payload.get("last_materialized_at")
-            else None
-        ),
-        max_retries=payload["max_retries"],
-        timeout_seconds=payload.get("timeout_seconds"),
-    )
-
-
-def _row_to_event(payload: dict[str, Any]) -> EventRecord:
-    """Convert a SQLAlchemy row mapping into the public EventRecord contract."""
-    return EventRecord(
-        id=payload["id"],
-        created_at=_coerce_datetime(payload["created_at"]),
-        event_type=payload["event_type"],
-        source=payload["source"],
-        project_id=payload.get("project_id"),
-        job_id=payload.get("job_id"),
-        run_id=payload.get("run_id"),
-        fanout_id=payload.get("fanout_id"),
-        schedule_id=payload.get("schedule_id"),
-        worker_id=payload.get("worker_id"),
-        scheduler_id=payload.get("scheduler_id"),
-        payload=json.loads(payload.get("payload_json") or "{}"),
-    )
-
-
-def _row_to_user(payload: dict[str, Any]) -> UserRecord:
-    """Convert a SQLAlchemy row mapping into a UserRecord."""
-    return UserRecord(
-        id=payload["id"],
-        email=payload["email"],
-        display_name=payload["display_name"],
-        created_at=_coerce_datetime(payload["created_at"]),
-        disabled=bool(payload["disabled"]),
-    )
-
-
-def _row_to_project(payload: dict[str, Any]) -> ProjectRecord:
-    """Convert a SQLAlchemy row mapping into a ProjectRecord."""
-    return ProjectRecord(
-        id=payload["id"],
-        name=payload["name"],
-        created_at=_coerce_datetime(payload["created_at"]),
-    )
-
-
-def _row_to_api_token(payload: dict[str, Any]) -> ApiTokenRecord:
-    """Convert a SQLAlchemy row mapping into an ApiTokenRecord."""
-    return ApiTokenRecord(
-        id=payload["id"],
-        name=payload["name"],
-        token_hash=payload["token_hash"],
-        created_at=_coerce_datetime(payload["created_at"]),
-        user_id=payload["user_id"],
-        project_id=payload.get("project_id"),
-        role=payload["role"],
-        revoked_at=_coerce_datetime(payload["revoked_at"]) if payload.get("revoked_at") else None,
-    )
-
-
-def _row_to_audit_log(payload: dict[str, Any]) -> AuditLogRecord:
-    """Convert a SQLAlchemy row mapping into an AuditLogRecord."""
-    return AuditLogRecord(
-        id=payload["id"],
-        created_at=_coerce_datetime(payload["created_at"]),
-        action=payload["action"],
-        outcome=payload["outcome"],
-        user_id=payload.get("user_id"),
-        token_id=payload.get("token_id"),
-        project_id=payload.get("project_id"),
-        resource_type=payload.get("resource_type"),
-        resource_id=payload.get("resource_id"),
-        detail=json.loads(payload.get("detail_json") or "{}"),
-    )
-
-
-def _row_to_heartbeat(payload: dict[str, Any]) -> HeartbeatRecord:
-    """Convert a SQLAlchemy row mapping into the public HeartbeatRecord contract."""
-    return HeartbeatRecord(
-        owner_id=payload["owner_id"],
-        owner_type=payload["owner_type"],
-        status=payload["status"],
-        last_seen_at=_coerce_datetime(payload["last_seen_at"]),
-        job_id=payload.get("job_id"),
-        run_id=payload.get("run_id"),
-        payload=json.loads(payload.get("payload_json") or "{}"),
-    )
-
-
-def _row_to_long_service(payload: dict[str, Any]) -> LongServiceRecord:
-    """Convert a SQLAlchemy row mapping into a LongServiceRecord."""
-    return LongServiceRecord(
-        id=payload["id"],
-        kind=payload["kind"],
-        project_id=payload.get("project_id"),
-        image=payload.get("image"),
-        base_url=payload["base_url"],
-        status=payload["status"],
-        created_at=_coerce_datetime(payload["created_at"]),
-        created_by=payload["created_by"],
-        last_probe_at=(
-            _coerce_datetime(payload["last_probe_at"]) if payload.get("last_probe_at") else None
-        ),
-        last_probe_json=(
-            json.loads(payload["last_probe_json"]) if payload.get("last_probe_json") else None
-        ),
-    )
-
-
-def _row_to_image_promotion(payload: dict[str, Any]) -> ImagePromotionRecord:
-    """Convert a SQLAlchemy row mapping into an ImagePromotionRecord."""
-    return ImagePromotionRecord(
-        id=payload["id"],
-        kind=payload["kind"],
-        source_image=payload["source_image"],
-        target_image=payload["target_image"],
-        status=payload["status"],
-        actor=payload["actor"],
-        digest=payload.get("digest"),
-        created_at=_coerce_datetime(payload["created_at"]),
-        updated_at=_coerce_datetime(payload["updated_at"]),
-        detail=json.loads(payload.get("detail_json") or "{}"),
-    )
-
-
-def _row_to_deployment_record(payload: dict[str, Any]) -> DeploymentRecord:
-    """Convert a SQLAlchemy row mapping into a DeploymentRecord."""
-    return DeploymentRecord(
-        id=payload["id"],
-        name=payload["name"],
-        action=payload["action"],
-        status=payload["status"],
-        actor=payload["actor"],
-        command=json.loads(payload.get("command_json") or "[]"),
-        output=payload.get("output"),
-        created_at=_coerce_datetime(payload["created_at"]),
-        updated_at=_coerce_datetime(payload["updated_at"]),
-        detail=json.loads(payload.get("detail_json") or "{}"),
-    )
-
-
-def _coerce_datetime(value: datetime | str) -> datetime:
-    """Normalize SQLite-returned timestamp values for Pydantic models."""
-    if isinstance(value, datetime):
-        parsed = value
-    else:
-        parsed = datetime.fromisoformat(value)
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
-    return parsed
 
 
 __all__ = [
