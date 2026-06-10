@@ -161,6 +161,46 @@ def test_scheduler_reload_discovery_swaps_active_registry(tmp_path: Path) -> Non
     assert scheduler.registry.get("project.reloaded").display_name == "Project Reloaded"
 
 
+def test_scheduler_materializes_project_definition_metadata(tmp_path: Path) -> None:
+    """Verify project-defined scheduled jobs preserve source definition metadata."""
+    now = datetime(2026, 6, 9, 12, 0, tzinfo=UTC)
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    registry = GoblinRegistry.from_definitions(
+        [
+            GoblinDefinition(
+                kind="project.scheduled",
+                display_name="Project Scheduled",
+                module="examples.goblins.echo",
+                metadata={"source": "project-config", "labels": {"demo": "true"}},
+            )
+        ]
+    )
+    scheduler = Scheduler(
+        registry=registry,
+        store=store,
+        worker_id="test-worker",
+        runtime_mode="in-process",
+    )
+    store.save_schedule(
+        ScheduleRecord(
+            id="project-schedule",
+            kind="project.scheduled",
+            input={"message": "hello"},
+            cron="* * * * *",
+            created_at=now,
+            next_run_at=now,
+        )
+    )
+
+    runs = scheduler.run_once(now)
+    job = store.list_jobs()[0]
+
+    assert runs[0].status == "completed"
+    assert job.metadata["goblin_source"] == "project-config"
+    assert job.metadata["goblin_definition"]["kind"] == "project.scheduled"
+    assert job.metadata["goblin_definition"]["metadata"]["labels"]["demo"] == "true"
+
+
 def test_scheduler_persists_effective_resource_policy(tmp_path: Path) -> None:
     """Verify scheduled jobs and runs preserve the resolved resource policy."""
     now = datetime(2026, 6, 9, 12, 0, tzinfo=UTC)

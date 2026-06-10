@@ -400,6 +400,33 @@ def test_jobs_endpoint_queues_without_running(tmp_path: Path) -> None:
     assert events.json()["items"][0]["event_type"] == "job.queued"
 
 
+def test_jobs_endpoint_preserves_project_config_source_metadata(tmp_path: Path) -> None:
+    """Verify API-created project goblin jobs preserve source definition metadata."""
+    settings = ApiSettings(
+        registry=Path("examples/goblins.json").resolve(),
+        images=Path("goblin-images.json").resolve(),
+        project=Path("examples/adopting-project/goblin-king-project.json").resolve(),
+        db=tmp_path / "api.sqlite3",
+        redis_url="redis://localhost:6379/0",
+        artifact_root=tmp_path / "artifacts",
+        auth_token="test-token",
+    )
+    store = SQLiteStore(settings.db)
+    client = TestClient(create_app(settings))
+
+    created = client.post(
+        "/jobs",
+        json={"kind": "project.inline.hello", "input": {"name": "API"}},
+        headers=auth_headers(),
+    )
+    loaded = store.get_job(created.json()["id"])
+
+    assert created.status_code == 200
+    assert loaded is not None
+    assert loaded.metadata["goblin_source"] == "project-config"
+    assert loaded.metadata["goblin_definition"]["kind"] == "project.inline.hello"
+
+
 def test_jobs_endpoint_rejects_resource_policy_above_ceiling(tmp_path: Path) -> None:
     """Verify resource policy ceilings reject work before a job is persisted."""
     policy_path = tmp_path / "policies.json"
