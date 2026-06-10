@@ -13,6 +13,7 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 
 from goblin_king.contracts import GoblinDefinition
+from goblin_king.jsonio import read_json_file
 
 ENTRY_POINT_GROUP = "goblin_king.goblins"
 
@@ -163,7 +164,7 @@ def _read_registry_file(path: str | Path) -> tuple[list[GoblinDefinition], Path]
     """Read and validate one registry file, returning definitions and import root."""
     registry_path = Path(path)
     try:
-        payload = json.loads(registry_path.read_text(encoding="utf-8"))
+        payload = read_json_file(registry_path)
     except FileNotFoundError as error:
         raise RegistryError(f"registry not found: {registry_path}") from error
     except json.JSONDecodeError as error:

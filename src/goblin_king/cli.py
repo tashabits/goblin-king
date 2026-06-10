@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Literal
 from uuid import uuid4
 
 import typer
@@ -37,6 +37,8 @@ from goblin_king.fanout import (
     list_fanout_details,
     retry_job,
 )
+from goblin_king.jsonio import pretty_json, read_json_file
+from goblin_king.metadata import goblin_job_metadata
 from goblin_king.project import ProjectSettings, ProjectSettingsError
 from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.resource_policies import ResourcePolicyError, ResourcePolicySet
@@ -129,7 +131,7 @@ def create_auth_token(
         project_id=project_id,
         role=role,
     )
-    typer.echo(json.dumps({"token": token.model_dump(mode="json"), "raw_token": raw}, indent=2))
+    typer.echo(pretty_json({"token": token.model_dump(mode="json"), "raw_token": raw}))
 
 
 @api_app.command("run")
@@ -374,7 +376,7 @@ def submit_job(
         created_at=utc_now(),
         timeout_seconds=policy.timeout_seconds if policy else definition.timeout_seconds,
         max_retries=(policy.max_retries or 0) if policy else (definition.max_retries or 0),
-        metadata=_job_metadata(definition, policy),
+        metadata=goblin_job_metadata(definition, policy),
     )
     store.save_job(job)
     context = new_run_context(job.id, definition.kind)
@@ -583,7 +585,7 @@ def event_stream_status(
     ] = DEFAULT_EVENT_STREAM,
 ) -> None:
     """Print Redis Stream health and consumer lag metadata."""
-    typer.echo(json.dumps(stream_status(redis_url, stream=stream), indent=2))
+    typer.echo(pretty_json(stream_status(redis_url, stream=stream)))
 
 
 @events_app.command("stream-read")
@@ -793,7 +795,7 @@ def scheduler_run_once(
         resource_policies=_load_resource_policies(resource_policies),
     )
     runs = scheduler.run_once()
-    typer.echo(json.dumps([run.model_dump(mode="json") for run in runs], indent=2))
+    typer.echo(pretty_json([run.model_dump(mode="json") for run in runs]))
 
 
 @scheduler_app.command("run")
@@ -896,7 +898,7 @@ def plan_image_promotion(
         },
     )
     SQLiteStore(db).save_image_promotion(promotion)
-    typer.echo(json.dumps(promotion.model_dump(mode="json"), indent=2))
+    typer.echo(pretty_json(promotion.model_dump(mode="json")))
 
 
 @deploy_promotions_app.command("list")
@@ -933,7 +935,7 @@ def mark_image_promotion(
     if promotion is None:
         typer.echo("image promotion not found", err=True)
         raise typer.Exit(1)
-    typer.echo(json.dumps(promotion.model_dump(mode="json"), indent=2))
+    typer.echo(pretty_json(promotion.model_dump(mode="json")))
 
 
 @deploy_app.command("helm-template")
@@ -988,7 +990,7 @@ def record_helm_template(
         detail=detail,
     )
     SQLiteStore(db).save_deployment_record(record)
-    typer.echo(json.dumps(record.model_dump(mode="json"), indent=2))
+    typer.echo(pretty_json(record.model_dump(mode="json")))
 
 
 @deploy_app.command("records")
@@ -1162,7 +1164,7 @@ def _print_validation_results(
     """Print validation results and exit nonzero when any contract check fails."""
     if json_output:
         typer.echo(
-            json.dumps([result.model_dump(mode="json") for result in results], indent=2)
+            pretty_json([result.model_dump(mode="json") for result in results])
         )
     else:
         for result in results:
@@ -1263,7 +1265,7 @@ def _load_project_workers(settings: ProjectSettings) -> WorkerImageMap:
 def _load_input(path: Path) -> dict:
     """Load one JSON object from disk for a goblin invocation."""
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = read_json_file(path)
     except FileNotFoundError as error:
         typer.echo(f"input not found: {path}", err=True)
         raise typer.Exit(1) from error
@@ -1274,17 +1276,6 @@ def _load_input(path: Path) -> dict:
         typer.echo("input JSON must be an object", err=True)
         raise typer.Exit(1)
     return payload
-
-
-def _job_metadata(definition: GoblinDefinition, policy: Any | None = None) -> dict:
-    """Return metadata that explains the effective goblin used for one job."""
-    metadata = {
-        "goblin_source": definition.metadata.get("source", "registry"),
-        "goblin_definition": definition.model_dump(mode="json"),
-    }
-    if policy is not None:
-        metadata["resource_policy"] = policy.compact()
-    return metadata
 
 
 if __name__ == "__main__":

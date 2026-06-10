@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from goblin_king.contracts import GoblinDefinition
+from goblin_king.jsonio import read_json_file
 from goblin_king.versions import PROJECT_CONFIG_API_VERSION, PROJECT_CONFIG_KIND
 from goblin_king.workers import WorkerImageDefinition
 
@@ -86,7 +87,7 @@ class ProjectSettings(BaseModel):
         """Load project settings from JSON and resolve paths relative to that file."""
         settings_path = Path(path)
         try:
-            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            payload = read_json_file(settings_path)
         except FileNotFoundError as error:
             raise ProjectSettingsError(
                 f"project settings file not found: {settings_path}"

@@ -12,7 +12,6 @@ from zoneinfo import ZoneInfo
 from croniter import croniter
 
 from goblin_king.contracts import (
-    GoblinDefinition,
     GoblinResult,
     JobRecord,
     RunRecord,
@@ -20,6 +19,7 @@ from goblin_king.contracts import (
     utc_now,
 )
 from goblin_king.events import EventBus
+from goblin_king.metadata import goblin_job_metadata
 from goblin_king.registry import GoblinRegistry
 from goblin_king.resource_policies import ResourcePolicySet, policy_from_job_metadata
 from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRuntime, new_run_context
@@ -117,7 +117,7 @@ class Scheduler:
                 due_at=current,
                 max_retries=schedule.max_retries,
                 timeout_seconds=schedule.timeout_seconds,
-                metadata=_job_metadata(definition),
+                    metadata=goblin_job_metadata(definition),
             )
             if self.resource_policies is not None:
                 try:
@@ -376,15 +376,6 @@ def _ensure_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
-
-
-def _job_metadata(definition: GoblinDefinition) -> dict:
-    """Return source metadata for scheduler-materialized jobs."""
-    metadata = getattr(definition, "metadata", {}) or {}
-    return {
-        "goblin_source": metadata.get("source", "registry"),
-        "goblin_definition": definition.model_dump(mode="json"),
-    }
 
 
 def sleep_forever() -> None:  # pragma: no cover - manual helper

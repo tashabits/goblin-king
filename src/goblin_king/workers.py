@@ -7,6 +7,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from goblin_king.jsonio import read_json_file
+
 
 class WorkerConfigError(ValueError):
     """Raised when Docker worker image configuration is missing or invalid."""
@@ -46,7 +48,7 @@ class WorkerImageMap:
         """Read and validate a worker image map from disk."""
         image_path = Path(path)
         try:
-            payload = json.loads(image_path.read_text(encoding="utf-8"))
+            payload = read_json_file(image_path)
         except FileNotFoundError as error:
             raise WorkerConfigError(f"worker image map not found: {image_path}") from error
         except json.JSONDecodeError as error:

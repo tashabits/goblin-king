@@ -68,7 +68,6 @@ from goblin_king.auth import (
 from goblin_king.contracts import (
     ArtifactRecord,
     DeploymentRecord,
-    GoblinDefinition,
     HeartbeatRecord,
     ImagePromotionRecord,
     JobRecord,
@@ -89,6 +88,7 @@ from goblin_king.fanout import (
     list_fanout_details,
     retry_job,
 )
+from goblin_king.metadata import goblin_job_metadata
 from goblin_king.project import ProjectSettings, ProjectSettingsError
 from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.resource_policies import ResourcePolicyError, ResourcePolicySet
@@ -1090,7 +1090,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             due_at=utc_now(),
             max_retries=(policy.max_retries or 0) if policy else request.max_retries,
             timeout_seconds=policy.timeout_seconds if policy else request.timeout_seconds,
-            metadata=_job_metadata(definition, policy),
+            metadata=goblin_job_metadata(definition, policy),
         )
         state.store.save_job(job)
         state.event_bus.emit(
@@ -1776,17 +1776,6 @@ def _record_policy_rejection(
         resource_type="resource_policy",
         detail={"kind": kind, "error": error},
     )
-
-
-def _job_metadata(definition: GoblinDefinition, policy: Any | None = None) -> dict[str, Any]:
-    """Return source metadata for jobs created through the API."""
-    metadata: dict[str, Any] = {
-        "goblin_source": definition.metadata.get("source", "registry"),
-        "goblin_definition": definition.model_dump(mode="json"),
-    }
-    if policy is not None:
-        metadata["resource_policy"] = policy.compact()
-    return metadata
 
 
 def _validate_cron(value: str) -> None:

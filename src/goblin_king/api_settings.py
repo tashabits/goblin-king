@@ -8,6 +8,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError
 
+from goblin_king.jsonio import read_json_file
+
 
 class ApiSettingsError(ValueError):
     """Raised when API settings cannot be loaded or validated."""
@@ -54,7 +56,7 @@ class ApiSettings(BaseModel):
         """Load API settings from JSON and resolve relative paths from that file."""
         settings_path = Path(path)
         try:
-            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            payload = read_json_file(settings_path)
         except FileNotFoundError as error:
             raise ApiSettingsError(f"API settings file not found: {settings_path}") from error
         except json.JSONDecodeError as error:
