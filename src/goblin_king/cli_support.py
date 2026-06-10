@@ -66,6 +66,19 @@ def load_project_settings(path: Path) -> ProjectSettings:
         raise typer.Exit(1) from error
 
 
+def load_project_default_resources(path: Path) -> dict:
+    """Return raw project defaults.resources for visibility-only CLI output."""
+    try:
+        payload = read_json_file(path)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+    defaults = payload.get("defaults") if isinstance(payload, dict) else None
+    if not isinstance(defaults, dict):
+        return {}
+    resources = defaults.get("resources")
+    return resources if isinstance(resources, dict) else {}
+
+
 def load_project_registry(path: Path) -> GoblinRegistry:
     """Load all goblins described by project settings."""
     settings = load_project_settings(path)
@@ -97,17 +110,23 @@ def load_scheduler_discovery(
     return registry, workers
 
 
-def load_resource_policies(path: Path | None) -> ResourcePolicySet | None:
+def load_resource_policies(
+    path: Path | None,
+    *,
+    project: Path | None = None,
+) -> ResourcePolicySet | None:
     """Load optional resource policies; missing default files mean enforcement is off."""
+    project_settings = load_project_settings(project) if project is not None else None
     if path is None:
-        return None
+        return project_settings.resource_policy_set(None) if project_settings else None
     if not path.exists() and path == DEFAULT_RESOURCE_POLICIES_PATH:
-        return None
+        return project_settings.resource_policy_set(None) if project_settings else None
     try:
-        return ResourcePolicySet.from_path(path)
+        policies = ResourcePolicySet.from_path(path)
     except ResourcePolicyError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
+    return project_settings.resource_policy_set(policies) if project_settings else policies
 
 
 def load_project_workers(settings: ProjectSettings) -> WorkerImageMap:
