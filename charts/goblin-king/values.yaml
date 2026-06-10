@@ -9,11 +9,7 @@ fullnameOverride: ""
 
 podSecurityContext: {}
 
-securityContext:
-  allowPrivilegeEscalation: false
-  capabilities:
-    drop:
-      - ALL
+securityContext: {}
 
 api:
   replicas: 1
