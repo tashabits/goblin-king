@@ -42,5 +42,6 @@ hardening into the cleanup and container-first worker roadmap.
 - Phase 23: repo-wide code cleanup and module/component splitting.
 - Phase 24: formal Goblin Container Contract.
 - Phase 25-32: language-agnostic docs, examples, WASI wrappers, runtime proof,
-  validation, UI/docs updates, and closeout.
+  validation, UI/docs updates, and closeout recorded in
+  `docs/language-agnostic-closeout.md`.
 - Phase 33: per-goblin resource policies in `docs/goblin-resource-policies.md`.
