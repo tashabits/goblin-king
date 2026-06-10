@@ -233,6 +233,89 @@ def test_jobs_endpoint_applies_project_default_resources(tmp_path: Path) -> None
     payload = response.json()
     assert payload["timeout_seconds"] == 45
     assert payload["metadata"]["resource_policy"]["memory"]["limit"] == "512Mi"
+    assert payload["effective_policy"]["memory"]["limit"] == "512Mi"
+
+
+def test_jobs_endpoint_applies_layered_goblin_resource_overrides(tmp_path: Path) -> None:
+    """Verify API job queueing applies per-goblin policy over project defaults."""
+    project_path = tmp_path / "goblin-king-project.json"
+    registry_path = tmp_path / "goblins.json"
+    images_path = tmp_path / "images.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "goblins": [
+                    {
+                        "kind": "project.heavy",
+                        "display_name": "Project Heavy",
+                        "module": "examples.goblins.echo",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    images_path.write_text('{"workers":{}}', encoding="utf-8")
+    project_path.write_text(
+        json.dumps(
+            {
+                "registries": ["goblins.json"],
+                "entry_points": False,
+                "images": "images.json",
+                "api_settings": "api.json",
+                "defaults": {
+                    "resources": {
+                        "timeout_seconds": 45,
+                        "memory": {"limit": "512Mi"},
+                        "filesystem": {"artifact_max_files": 2},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    policies_path = tmp_path / "goblin-resource-policies.json"
+    policies_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "goblins": {
+                    "project.heavy": {
+                        "timeout_seconds": 90,
+                        "memory": {"limit": "1Gi"},
+                    }
+                },
+                "ceilings": {
+                    "timeout_seconds": 120,
+                    "memory": {"limit": "2Gi"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = ApiSettings(
+        registry=Path("examples/goblins.json").resolve(),
+        images=images_path,
+        db=tmp_path / "api.sqlite3",
+        artifact_root=tmp_path / "artifacts",
+        auth_token="test-token",
+        project=project_path,
+        resource_policies=policies_path,
+    )
+    client = TestClient(create_app(settings))
+
+    response = client.post(
+        "/jobs",
+        headers=auth_headers(),
+        json={"kind": "project.heavy", "input": {"message": "hello"}},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["timeout_seconds"] == 90
+    assert payload["metadata"]["resource_policy"]["timeout_seconds"] == 90
+    assert payload["metadata"]["resource_policy"]["memory"]["limit"] == "1Gi"
+    assert payload["effective_policy"]["filesystem"]["artifact_max_files"] == 2
 
 
 def test_discovery_reload_adds_project_goblin_without_restart(tmp_path: Path) -> None:
@@ -617,6 +700,7 @@ def test_get_job_and_cancel_job(tmp_path: Path) -> None:
         input={},
         created_at=datetime(2026, 6, 9, tzinfo=UTC),
         status="queued",
+        metadata={"resource_policy": {"timeout_seconds": 30}},
     )
     store.save_job(job)
 
@@ -625,6 +709,7 @@ def test_get_job_and_cancel_job(tmp_path: Path) -> None:
 
     assert fetched.status_code == 200
     assert fetched.json()["id"] == "job-1"
+    assert fetched.json()["effective_policy"] == {"timeout_seconds": 30}
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == "cancelled"
     assert client.post("/jobs/job-1/cancel", headers=auth_headers()).status_code == 409
@@ -779,6 +864,7 @@ def test_run_and_artifact_endpoints(tmp_path: Path) -> None:
                     ArtifactRecord(name="report.txt", uri="report.txt", media_type="text/plain")
                 ]
             ),
+            resource_policy={"timeout_seconds": 30, "memory": {"limit": "512Mi"}},
         )
     )
 
@@ -789,8 +875,10 @@ def test_run_and_artifact_endpoints(tmp_path: Path) -> None:
 
     assert run.status_code == 200
     assert run.json()["id"] == "run-1"
+    assert run.json()["effective_policy"]["memory"]["limit"] == "512Mi"
     assert runs.status_code == 200
     assert runs.json()["items"][0]["id"] == "run-1"
+    assert runs.json()["items"][0]["effective_policy"]["timeout_seconds"] == 30
     assert artifacts.status_code == 200
     assert artifacts.json()[0]["download_url"] == "/runs/run-1/artifacts/report.txt"
     assert download.status_code == 200

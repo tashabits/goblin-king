@@ -312,9 +312,98 @@ def test_jobs_submit_applies_project_default_resources(tmp_path: Path) -> None:
     )
 
     assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["effective_policy"]["memory"]["limit"] == "512Mi"
     job = SQLiteStore(db_path).list_jobs()[0]
     assert job.timeout_seconds == 45
     assert job.metadata["resource_policy"]["memory"]["limit"] == "512Mi"
+
+
+def test_jobs_submit_applies_layered_goblin_resource_overrides(tmp_path: Path) -> None:
+    """Verify per-goblin policy overrides project defaults in persisted policy."""
+    registry_path = tmp_path / "registry.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "goblins": [
+                    {
+                        "kind": "project.heavy",
+                        "display_name": "Project Heavy",
+                        "module": "examples.goblins.echo",
+                        "entrypoint": "run",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    project_path = tmp_path / "goblin-king-project.json"
+    project_path.write_text(
+        json.dumps(
+            {
+                "registries": ["registry.json"],
+                "entry_points": False,
+                "defaults": {
+                    "resources": {
+                        "timeout_seconds": 45,
+                        "memory": {"limit": "512Mi"},
+                        "filesystem": {"artifact_max_files": 2},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    policies_path = tmp_path / "goblin-resource-policies.json"
+    policies_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "goblins": {
+                    "project.heavy": {
+                        "timeout_seconds": 90,
+                        "memory": {"limit": "1Gi"},
+                    }
+                },
+                "ceilings": {
+                    "timeout_seconds": 120,
+                    "memory": {"limit": "2Gi"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    input_path = tmp_path / "input.json"
+    input_path.write_text('{"message":"hello"}', encoding="utf-8")
+    db_path = tmp_path / "goblin.sqlite3"
+
+    result = runner.invoke(
+        app,
+        [
+            "jobs",
+            "submit",
+            "project.heavy",
+            "--project",
+            str(project_path),
+            "--input",
+            str(input_path),
+            "--runtime",
+            "in-process",
+            "--db",
+            str(db_path),
+            "--resource-policies",
+            str(policies_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["effective_policy"]["timeout_seconds"] == 90
+    assert payload["effective_policy"]["memory"]["limit"] == "1Gi"
+    assert payload["effective_policy"]["filesystem"]["artifact_max_files"] == 2
+    job = SQLiteStore(db_path).list_jobs()[0]
+    assert job.timeout_seconds == 90
+    assert job.metadata["resource_policy"]["memory"]["limit"] == "1Gi"
 
 
 def test_auth_setup_commands_create_user_project_and_token(tmp_path: Path) -> None:

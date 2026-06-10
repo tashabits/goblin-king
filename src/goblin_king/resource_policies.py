@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from goblin_king.jsonio import read_json_file
 
@@ -19,12 +19,16 @@ class ResourcePolicyError(ValueError):
 class CpuPolicy(BaseModel):
     """CPU request/limit fields shared by Docker and Kubernetes mappings."""
 
+    model_config = ConfigDict(extra="forbid")
+
     request: str | None = None
     limit: str | None = None
 
 
 class MemoryPolicy(BaseModel):
     """Memory request/limit fields shared by Docker and Kubernetes mappings."""
+
+    model_config = ConfigDict(extra="forbid")
 
     request: str | None = None
     limit: str | None = None
@@ -33,17 +37,23 @@ class MemoryPolicy(BaseModel):
 class ProcessPolicy(BaseModel):
     """Process limits supported by Docker where available."""
 
+    model_config = ConfigDict(extra="forbid")
+
     pids_limit: int | None = Field(default=None, gt=0)
 
 
 class NetworkPolicy(BaseModel):
     """Network mode for a worker container."""
 
+    model_config = ConfigDict(extra="forbid")
+
     mode: str | None = None
 
 
 class FilesystemPolicy(BaseModel):
     """Filesystem and artifact limits for worker execution."""
+
+    model_config = ConfigDict(extra="forbid")
 
     read_only_root: bool | None = None
     tmpfs: list[str] = Field(default_factory=list)
@@ -54,17 +64,23 @@ class FilesystemPolicy(BaseModel):
 class LogsPolicy(BaseModel):
     """Log byte preservation ceiling for captured runtime output."""
 
+    model_config = ConfigDict(extra="forbid")
+
     max_bytes: int | None = Field(default=None, ge=0)
 
 
 class ConcurrencyPolicy(BaseModel):
     """Per-kind concurrency limit metadata."""
 
+    model_config = ConfigDict(extra="forbid")
+
     max_running: int | None = Field(default=None, gt=0)
 
 
 class ResourcePolicy(BaseModel):
     """Effective policy values attached to jobs and runs."""
+
+    model_config = ConfigDict(extra="forbid")
 
     timeout_seconds: int | None = Field(default=None, gt=0)
     max_retries: int | None = Field(default=None, ge=0)
@@ -83,6 +99,8 @@ class ResourcePolicy(BaseModel):
 
 class ResourcePolicySet(BaseModel):
     """A complete resource policy file with defaults, goblin overrides, and ceilings."""
+
+    model_config = ConfigDict(extra="forbid")
 
     version: int = 1
     defaults: ResourcePolicy = Field(default_factory=ResourcePolicy)

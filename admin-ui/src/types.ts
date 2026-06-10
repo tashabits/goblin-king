@@ -27,6 +27,7 @@ export type Job = {
   created_at: string;
   due_at?: string | null;
   last_error?: string | null;
+  metadata?: Record<string, unknown>;
 };
 
 export type Run = {

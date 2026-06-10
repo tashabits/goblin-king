@@ -186,22 +186,33 @@ class ProjectSettings(BaseModel):
         self,
         operator_policies: ResourcePolicySet | None = None,
     ) -> ResourcePolicySet | None:
-        """Return operator policies with project defaults layered into defaults."""
+        """Return operator policies layered with project defaults and goblin resources."""
         project_defaults = self.defaults.resources
-        if not project_defaults and operator_policies is None:
+        project_goblins = {
+            kind: spec.resources for kind, spec in self.goblins.items() if spec.resources
+        }
+        if not project_defaults and not project_goblins and operator_policies is None:
             return None
 
         base = operator_policies or ResourcePolicySet()
         defaults = ResourcePolicy.model_validate(
             _deep_merge(base.defaults.compact(), project_defaults)
         )
+        goblins = dict(base.goblins)
+        for kind, resources in project_goblins.items():
+            base_resources = goblins.get(kind, ResourcePolicy()).compact()
+            goblins[kind] = ResourcePolicy.model_validate(
+                _deep_merge(base_resources, resources)
+            )
         merged = ResourcePolicySet(
             version=base.version,
             defaults=defaults,
-            goblins=base.goblins,
+            goblins=goblins,
             ceilings=base.ceilings,
         )
         merged.validate_within_ceilings("<project defaults>", defaults)
+        for kind in project_goblins:
+            merged.validate_within_ceilings(kind, merged.effective_for(kind))
         return merged
 
 

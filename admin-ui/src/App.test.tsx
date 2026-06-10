@@ -55,11 +55,36 @@ const fixtures = {
         status: "queued",
         input: {},
         created_at: "2026-06-09T00:00:00Z",
+        metadata: {
+          resource_policy: {
+            timeout_seconds: 30,
+            memory: { limit: "512Mi" },
+            filesystem: { artifact_max_files: 5 },
+          },
+        },
       },
     ],
     meta: { limit: 100, offset: 0, count: 1 },
   },
-  runs: { items: [], meta: { limit: 100, offset: 0, count: 0 } },
+  runs: {
+    items: [
+      {
+        id: "run-1",
+        job_id: "job-1",
+        kind: "example.hello",
+        status: "completed",
+        result: { status: "success", data: { message: "hi" } },
+        error: null,
+        started_at: "2026-06-09T00:01:00Z",
+        resource_policy: {
+          timeout_seconds: 30,
+          memory: { limit: "512Mi" },
+          filesystem: { artifact_max_files: 5 },
+        },
+      },
+    ],
+    meta: { limit: 100, offset: 0, count: 1 },
+  },
   events: { items: [], meta: { limit: 50, offset: 0, count: 0 } },
   eventStream: {
     stream: "goblin-king:events:stream",
@@ -282,6 +307,9 @@ describe("App", () => {
     expect(screen.getAllByText("Task Board").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Schedules").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Runs & Results").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Effective policy").length).toBeGreaterThan(1);
+    expect(screen.getAllByText(/512Mi/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/artifact_max_files/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Artifact Volume").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Fanout & Retry").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Long Services").length).toBeGreaterThan(0);

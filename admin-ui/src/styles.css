@@ -327,7 +327,8 @@ main {
 }
 
 .task pre,
-.traffic {
+.traffic,
+.effective-policy pre {
   background: rgba(0, 0, 0, 0.25);
   border-radius: 8px;
   color: #dbeafe;
@@ -335,6 +336,22 @@ main {
   overflow: auto;
   padding: 0.8rem;
   white-space: pre-wrap;
+}
+
+.effective-policy {
+  margin-top: 0.75rem;
+}
+
+.effective-policy h4 {
+  color: #aab6c7;
+  font-size: 0.82rem;
+  margin: 0 0 0.35rem;
+  text-transform: uppercase;
+}
+
+.effective-policy pre {
+  margin: 0;
+  max-height: 14rem;
 }
 
 .table-wrap {

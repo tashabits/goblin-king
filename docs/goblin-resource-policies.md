@@ -122,10 +122,16 @@ Adopter project configs can also carry a lighter project-owned default profile:
 `defaults.resources` uses the same field names as a resource policy. During project
 loading it is deep-merged into each inline goblin's `resources`; the goblin override wins
 for fields it names. When a project is supplied to API, CLI, or scheduler flows, the
-project defaults are also layered over the operator policy defaults so queued jobs/runs
-receive the inherited effective policy. If `goblin-resource-policies.json` is present
-beside the project config or supplied to the runtime command, the project defaults are
-validated against those ceilings.
+effective runtime policy is resolved as:
+
+```text
+effective policy = merge(operator defaults, project defaults, goblin override)
+```
+
+The final effective policy is persisted on the job and run, shown through API/CLI/admin
+surfaces, and validated against configured ceilings. If `goblin-resource-policies.json`
+is present beside the project config or supplied to the runtime command, the project
+defaults and per-goblin overrides are validated against those ceilings.
 
 ## Policy Fields
 
@@ -139,15 +145,15 @@ validated against those ceilings.
 | `memory.limit` | Maximum memory before the platform may terminate the container. |
 | `process.pids_limit` | Maximum process count where Docker or the platform supports it. |
 | `network.mode` | `none`, `default`, or a named project network profile. |
-| `network.egress` | Optional allow-list notes for APIs, hosts, or ports a goblin may call. |
 | `filesystem.read_only_root` | Whether the worker image should run with a read-only root filesystem. |
 | `filesystem.tmpfs` | Writable temporary paths that may be mounted by the platform. |
 | `filesystem.artifact_max_bytes` | Maximum artifact bytes a run should produce. |
 | `filesystem.artifact_max_files` | Maximum artifact count a run should produce. |
 | `logs.max_bytes` | Maximum captured log bytes to preserve for proof/debugging. |
-| `secrets.allowed` | Deployment secret names the goblin may receive. |
 | `concurrency.max_running` | Maximum active jobs of this kind at one time. |
-| `priority.default` | Default queue priority for this goblin kind. |
+
+Unknown fields are rejected. That makes typos visible before a project accidentally runs
+with a policy the operator did not actually enforce.
 
 ## Defaults And Ceilings
 
@@ -167,6 +173,11 @@ For project-defined goblins, `defaults.resources` is an adopter-facing source of
 resource fields. It does not replace ceilings: ceilings remain the guardrail from the
 resource policy file. Treat project defaults as the team's desired baseline and ceilings
 as the operator's maximum allowed envelope.
+
+Per-goblin overrides belong in the goblin's `resources` block or in the operator policy
+file's `goblins.<kind>` entry. They should be used only for real exceptions, such as a
+report renderer that needs more memory or an introspection goblin that should run with a
+shorter timeout.
 
 ## Docker Mapping
 
@@ -218,7 +229,8 @@ The current implementation enforces or records these controls:
 - Loading `goblin-resource-policies.json` for API, CLI, scheduler, Docker, and Helm.
 - Loading `defaults.resources` from project config for inline project goblin discovery
   and validation visibility.
-- Effective policy resolution from global defaults plus per-goblin overrides.
+- Effective policy resolution from operator defaults plus project defaults plus
+  per-goblin overrides.
 - Ceiling validation before API queueing, fanout, retry, schedule creation, and scheduler
   materialization.
 - Job `timeout_seconds` and scheduler/runtime timeout outcomes.
