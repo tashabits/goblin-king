@@ -600,7 +600,7 @@ Primary direction:
 
 ### Phase 22: Production Roadmap Closeout
 
-- Status: planned.
+- Status: implemented.
 - Update docs, screenshots, and roadmap audit after Phases 16-21.
 - Leave only explicit deferred items such as public PyPI, cloud-specific recipes,
   object storage providers beyond volume/PVC, and identity providers beyond OIDC/JWT.
@@ -718,6 +718,8 @@ language-specific protocols.
   proof.
 - Leave explicit deferred items such as official language SDKs, deep certification,
   object storage examples, cloud-provider recipes, and native Kubernetes WASI scheduling.
+- Added `docs/language-agnostic-closeout.md` and linked it from README and roadmap
+  closeout docs.
 
 ### Phase 33: Per-Goblin Resource Policies
 
