@@ -28,3 +28,14 @@ def test_adopter_guide_is_linked_from_readme() -> None:
 
     assert Path("docs/adopter-guide.md").exists()
     assert "docs/adopter-guide.md" in readme
+
+
+def test_mandatory_validation_gate_is_documented() -> None:
+    """Verify the scheduler validation gate has one canonical user-facing design doc."""
+    readme = Path("README.md").read_text(encoding="utf-8")
+    validation_doc = Path("docs/goblin-contract-validation.md").read_text(encoding="utf-8")
+
+    assert "docs/goblin-contract-validation.md" in readme
+    assert "Goblin King does not schedule arbitrary unvalidated container images" in validation_doc
+    assert "validate first, then schedule" in validation_doc.lower()
+    assert "| Condition | Scheduler behavior | Operator fix |" in validation_doc

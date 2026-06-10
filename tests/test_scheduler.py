@@ -5,11 +5,19 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from goblin_king.contracts import GoblinDefinition, JobRecord, ScheduleRecord
+from goblin_king.contracts import (
+    GoblinDefinition,
+    JobRecord,
+    ScheduleRecord,
+    WorkerValidationRecord,
+    utc_now,
+)
 from goblin_king.registry import GoblinRegistry
 from goblin_king.resource_policies import ResourcePolicySet
 from goblin_king.scheduler import Scheduler
 from goblin_king.store import SQLiteStore
+from goblin_king.validation import WorkerValidationResult
+from goblin_king.workers import WorkerImageDefinition, WorkerImageMap
 
 
 def build_scheduler(tmp_path: Path) -> tuple[Scheduler, SQLiteStore]:
@@ -20,6 +28,37 @@ def build_scheduler(tmp_path: Path) -> tuple[Scheduler, SQLiteStore]:
         store=store,
         worker_id="test-worker",
         runtime_mode="in-process",
+    )
+    return scheduler, store
+
+
+def build_docker_scheduler(tmp_path: Path) -> tuple[Scheduler, SQLiteStore]:
+    """Create a Docker-mode scheduler with a fake worker image map for gate tests."""
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    registry = GoblinRegistry.from_definitions(
+        [
+            GoblinDefinition(
+                kind="example.validation",
+                display_name="Example Validation",
+                module="container.only",
+            )
+        ]
+    )
+    workers = WorkerImageMap.from_definitions(
+        {
+            "example.validation": WorkerImageDefinition(
+                context=tmp_path,
+                image="example-validation:local",
+            )
+        },
+        root=tmp_path,
+    )
+    scheduler = Scheduler(
+        registry=registry,
+        store=store,
+        worker_id="test-worker",
+        runtime_mode="docker",
+        workers=workers,
     )
     return scheduler, store
 
@@ -52,6 +91,134 @@ def test_run_once_materializes_due_schedule_and_executes_echo(tmp_path: Path) ->
     assert "job.running" in event_types
     assert "job.completed" in event_types
     assert store.get_heartbeat("test-worker") is not None
+
+
+def test_validation_gate_reuses_passing_proof(tmp_path: Path, monkeypatch) -> None:
+    """Verify cached proof for the current digest avoids re-running validation."""
+    scheduler, store = build_docker_scheduler(tmp_path)
+    store.save_worker_validation(
+        WorkerValidationRecord(
+            id="validation-current",
+            kind="example.validation",
+            image="example-validation:local",
+            image_digest="sha256:current",
+            contract_version="goblin-king/v1alpha1",
+            validator_version="goblin-king-validator/v1",
+            validated_at=utc_now(),
+            status="passed",
+        )
+    )
+    monkeypatch.setattr(
+        "goblin_king.scheduler.inspect_image_identity",
+        lambda _docker, _image: ("sha256:current", None),
+    )
+
+    def fail_if_called(**_kwargs):
+        raise AssertionError("validation should not rerun for current passing proof")
+
+    monkeypatch.setattr("goblin_king.scheduler.validate_workers", fail_if_called)
+
+    error = scheduler._validate_before_container_run(
+        JobRecord(
+            id="job-1",
+            kind="example.validation",
+            input={},
+            created_at=utc_now(),
+        ),
+        "example.validation",
+        resource_policy={},
+    )
+
+    assert error is None
+
+
+def test_validation_gate_blocks_failed_jit_validation(tmp_path: Path, monkeypatch) -> None:
+    """Verify missing proof cannot execute when just-in-time validation fails."""
+    scheduler, _ = build_docker_scheduler(tmp_path)
+    monkeypatch.setattr(
+        "goblin_king.scheduler.inspect_image_identity",
+        lambda _docker, _image: ("sha256:current", None),
+    )
+    monkeypatch.setattr(
+        "goblin_king.scheduler.validate_workers",
+        lambda **_kwargs: [
+            WorkerValidationResult(
+                kind="example.validation",
+                ok=False,
+                image="example-validation:local",
+                image_digest="sha256:current",
+                error="worker did not write result.json",
+            )
+        ],
+    )
+
+    error = scheduler._validate_before_container_run(
+        JobRecord(
+            id="job-1",
+            kind="example.validation",
+            input={},
+            created_at=utc_now(),
+        ),
+        "example.validation",
+        resource_policy={},
+    )
+
+    assert error is not None
+    assert "Goblin image failed contract validation" in error
+    assert "Validate first, then schedule." in error
+    assert "worker did not write result.json" in error
+    assert "goblin-king workers validate --kind example.validation" in error
+
+
+def test_validation_gate_reports_stale_digest_when_revalidation_fails(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Verify old digest proof is named when a changed image fails revalidation."""
+    scheduler, store = build_docker_scheduler(tmp_path)
+    store.save_worker_validation(
+        WorkerValidationRecord(
+            id="validation-old",
+            kind="example.validation",
+            image="example-validation:local",
+            image_digest="sha256:old",
+            contract_version="goblin-king/v1alpha1",
+            validator_version="goblin-king-validator/v1",
+            validated_at=utc_now(),
+            status="passed",
+        )
+    )
+    monkeypatch.setattr(
+        "goblin_king.scheduler.inspect_image_identity",
+        lambda _docker, _image: ("sha256:new", None),
+    )
+    monkeypatch.setattr(
+        "goblin_king.scheduler.validate_workers",
+        lambda **_kwargs: [
+            WorkerValidationResult(
+                kind="example.validation",
+                ok=False,
+                image="example-validation:local",
+                image_digest="sha256:new",
+                error="result envelope invalid: bad json",
+            )
+        ],
+    )
+
+    error = scheduler._validate_before_container_run(
+        JobRecord(
+            id="job-1",
+            kind="example.validation",
+            input={},
+            created_at=utc_now(),
+        ),
+        "example.validation",
+        resource_policy={},
+    )
+
+    assert error is not None
+    assert "Image digest: sha256:new" in error
+    assert "Previous validation digest: sha256:old" in error
+    assert "result envelope invalid" in error
 
 
 def test_disabled_and_future_schedules_do_not_materialize(tmp_path: Path) -> None:

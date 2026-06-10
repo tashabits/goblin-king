@@ -355,6 +355,36 @@ td {
   vertical-align: top;
 }
 
+.status-badge {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.35rem 0.5rem;
+  text-transform: uppercase;
+}
+
+.validation-validated {
+  background: rgba(74, 222, 128, 0.18);
+  color: #86efac;
+}
+
+.validation-failed {
+  background: rgba(251, 113, 133, 0.18);
+  color: #fda4af;
+}
+
+.validation-stale {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fde68a;
+}
+
+.validation-unknown {
+  background: rgba(147, 197, 253, 0.14);
+  color: #bfdbfe;
+}
+
 .error {
   background: rgba(251, 113, 133, 0.15);
   border: 1px solid rgba(251, 113, 133, 0.5);

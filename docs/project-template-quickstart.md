@@ -48,6 +48,9 @@ python -m goblin_king.cli workers validation-status --kind myproject.artifact
 Re-run the worker validation commands whenever an image digest changes. Goblin King will
 not schedule an unvalidated project image by default.
 
+For the complete proof lifecycle and failure table, see
+[Goblin Contract Validation](goblin-contract-validation.md).
+
 ## Adopt
 
 Mount or bake the generated `goblin-king-project.json` into the API and scheduler

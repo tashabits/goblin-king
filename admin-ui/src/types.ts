@@ -7,6 +7,16 @@ export type Goblin = {
   worker_image?: string | null;
   worker_mapped: boolean;
   source?: string;
+  validation_status?: {
+    state: "validated" | "failed" | "stale" | "unknown";
+    message: string;
+    image?: string | null;
+    image_digest?: string | null;
+    contract_version?: string | null;
+    validator_version?: string | null;
+    validated_at?: string | null;
+    failure_reasons?: string[];
+  };
 };
 
 export type Job = {

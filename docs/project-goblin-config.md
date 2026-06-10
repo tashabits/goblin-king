@@ -83,6 +83,12 @@ images.
 
 The API and React admin mark these goblins with source `project-config`.
 
+Project-defined goblins use the same mandatory validation gate as built-in examples:
+the scheduler does not execute a container image by default unless its resolved image
+identity has passing proof for the declared contract and validator version. See
+[Goblin Contract Validation](goblin-contract-validation.md) for the canonical proof
+lifecycle and failure mapping.
+
 ## Validate
 
 ```bash

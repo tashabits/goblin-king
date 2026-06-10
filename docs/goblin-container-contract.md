@@ -17,6 +17,11 @@ can obey this contract.
 Python helpers and package entry points are optional conveniences for definitions,
 tests, and local debugging. They are not the worker model.
 
+Container images must also pass the mandatory scheduler gate described in
+[Goblin Contract Validation](goblin-contract-validation.md). Goblin King does not run a
+container-backed goblin by default unless the resolved image identity has passing proof
+for this contract version and the active validator version.
+
 ## Contract Layers
 
 Goblin King keeps four concepts separate:

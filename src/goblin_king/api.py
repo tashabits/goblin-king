@@ -106,6 +106,7 @@ from goblin_king.registry import RegistryError
 from goblin_king.resource_policies import ResourcePolicyError
 from goblin_king.scheduler import next_run_after
 from goblin_king.termination import terminate_runtime
+from goblin_king.validation import validation_status_payload
 from goblin_king.workers import WorkerConfigError
 
 TERMINAL_JOB_STATUSES = {"completed", "failed", "timed_out", "cancelled"}
@@ -957,6 +958,10 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                     "worker_image": worker.image if worker else None,
                     "worker_mapped": worker is not None,
                     "validation": validation.model_dump(mode="json") if validation else None,
+                    "validation_status": validation_status_payload(
+                        worker_image=worker.image if worker else None,
+                        validation=validation,
+                    ),
                     "source": "project-config"
                     if definition.kind in state._project_defined_kinds
                     else "registry",
