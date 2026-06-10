@@ -7,6 +7,15 @@ from pathlib import Path
 
 from goblin_king.project import ProjectSettings
 from goblin_king.registry import GoblinRegistry
+from goblin_king.versions import (
+    API_SETTINGS_SCHEMA_VERSION,
+    GOBLIN_CONTAINER_CONTRACT_VERSION,
+    PROJECT_CONFIG_API_VERSION,
+    REGISTRY_SCHEMA_VERSION,
+    WORKER_HEARTBEAT_CONTRACT_VERSION,
+    WORKER_IMAGE_MAP_SCHEMA_VERSION,
+    WORKER_RESULT_CONTRACT_VERSION,
+)
 from goblin_king.workers import WorkerImageMap
 
 
@@ -15,10 +24,13 @@ def test_compatibility_matrix_matches_project_ready_baseline() -> None:
     matrix = json.loads(Path("compatibility/goblin-king-compatibility.json").read_text())
 
     assert matrix["goblin_king_version"] == "0.1.0"
-    assert matrix["goblin_contract_version"] == "1"
-    assert matrix["registry_schema_version"] == "1"
-    assert matrix["worker_image_map_schema_version"] == "1"
-    assert matrix["project_settings_schema_version"] == "1"
+    assert matrix["goblin_contract_version"] == GOBLIN_CONTAINER_CONTRACT_VERSION
+    assert matrix["registry_schema_version"] == REGISTRY_SCHEMA_VERSION
+    assert matrix["worker_image_map_schema_version"] == WORKER_IMAGE_MAP_SCHEMA_VERSION
+    assert matrix["worker_result_contract_version"] == WORKER_RESULT_CONTRACT_VERSION
+    assert matrix["worker_heartbeat_contract_version"] == WORKER_HEARTBEAT_CONTRACT_VERSION
+    assert matrix["api_settings_schema_version"] == API_SETTINGS_SCHEMA_VERSION
+    assert matrix["project_settings_schema_version"] == PROJECT_CONFIG_API_VERSION
 
 
 def test_project_ready_compatibility_fixture_discovers_and_maps_workers() -> None:

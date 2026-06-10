@@ -9,6 +9,7 @@ import pytest
 
 from goblin_king.project import ProjectSettings, ProjectSettingsError
 from goblin_king.registry import GoblinRegistry
+from goblin_king.versions import PROJECT_CONFIG_API_VERSION, PROJECT_CONFIG_KIND
 from goblin_king.workers import WorkerImageMap
 
 
@@ -43,8 +44,8 @@ def test_project_settings_load_inline_goblin_config(tmp_path: Path) -> None:
     project_path.write_text(
         json.dumps(
             {
-                "apiVersion": "goblin-king/v1alpha1",
-                "kind": "GoblinProject",
+                "apiVersion": PROJECT_CONFIG_API_VERSION,
+                "kind": PROJECT_CONFIG_KIND,
                 "registries": [],
                 "entry_points": False,
                 "images": "images.json",
@@ -103,8 +104,8 @@ def test_project_settings_reject_invalid_version_and_secret_values(tmp_path: Pat
     project_path.write_text(
         json.dumps(
             {
-                "apiVersion": "goblin-king/v1alpha1",
-                "kind": "GoblinProject",
+                "apiVersion": PROJECT_CONFIG_API_VERSION,
+                "kind": PROJECT_CONFIG_KIND,
                 "goblins": {
                     "project.bad": {
                         "image": "bad:local",

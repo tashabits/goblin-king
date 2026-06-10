@@ -4,6 +4,7 @@ from goblin_king.contracts import GoblinContext
 from goblin_king.registry import GoblinRegistry
 from goblin_king.resource_policies import ResourcePolicy
 from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRuntime
+from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
 from goblin_king.workers import WorkerImageDefinition, WorkerImageMap
 
 
@@ -74,6 +75,11 @@ def test_kubernetes_job_includes_result_forwarder() -> None:
     containers = manifest["spec"]["template"]["spec"]["containers"]
     names = {container["name"] for container in containers}
     assert names == {"worker", "result-forwarder"}
+    worker = next(container for container in containers if container["name"] == "worker")
+    assert {
+        "name": "GOBLIN_CONTRACT_VERSION",
+        "value": GOBLIN_CONTAINER_CONTRACT_VERSION,
+    } in worker["env"]
 
     forwarder = next(
         container for container in containers if container["name"] == "result-forwarder"
@@ -120,6 +126,9 @@ def test_docker_command_includes_resource_policy_flags(tmp_path) -> None:
         resource_policy=policy,
     )
 
+    assert (
+        f"GOBLIN_CONTRACT_VERSION={GOBLIN_CONTAINER_CONTRACT_VERSION}" in command
+    )
     assert ["--cpus", "0.5"] == command[command.index("--cpus") : command.index("--cpus") + 2]
     assert ["--memory", "256m"] == command[
         command.index("--memory") : command.index("--memory") + 2
