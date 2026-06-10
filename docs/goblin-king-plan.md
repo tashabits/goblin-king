@@ -690,11 +690,13 @@ language-specific protocols.
 
 ### Phase 30: Add Goblin Contract Validation
 
-- Status: planned.
+- Status: implemented.
 - Branch: `phase-30-goblin-contract-validation`.
 - Add practical validation commands for container images and example directories.
 - Validate that images run with temporary contract mounts, read input/context, write
   valid result JSON, handle artifacts/logs/exit codes, and report clear errors.
+- Added `goblin-king workers validate`, `docs/goblin-contract-validation.md`, and
+  Makefile validation targets.
 
 ### Phase 31: Update Admin UI And Docs For Container-First Workers
 
