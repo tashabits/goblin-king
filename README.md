@@ -30,6 +30,11 @@ the default local path; Kubernetes is optional through the Helm chart.
   - [User Guide](docs/USER_GUIDE.md)
   - [Admin Guide](docs/ADMIN_GUIDE.md)
   - [Goblin Container Contract](docs/goblin-container-contract.md)
+  - [What Is A Goblin?](docs/what-is-a-goblin.md)
+  - [Writing Goblins](docs/writing-goblins.md)
+  - [Goblin Dockerfiles](docs/goblin-dockerfiles.md)
+  - [Language-Agnostic Workers](docs/language-agnostic-workers.md)
+  - [Security Model](docs/security-model.md)
   - [API Roadmap](docs/api-roadmap.md)
   - [Scheduler Plan](docs/goblin-king-plan.md)
   - [Adopting Projects](docs/ADOPTING_PROJECTS.md)
@@ -422,6 +427,11 @@ requires receipts.
 | [User Guide](docs/USER_GUIDE.md) | End-to-end operator and developer guide for Docker, admin UI, sample goblins, API, scheduler, and optional Helm deployment. |
 | [Admin Guide](docs/ADMIN_GUIDE.md) | Screenshot walkthrough for logging in, spawning goblins, watching tasks, probing long services, reading events, and cleaning old rows. |
 | [Goblin Container Contract](docs/goblin-container-contract.md) | Canonical language-agnostic worker container contract. |
+| [What Is A Goblin?](docs/what-is-a-goblin.md) | Plain-language model of goblins as short-lived container tasks. |
+| [Writing Goblins](docs/writing-goblins.md) | Practical steps for building a contract-compliant goblin. |
+| [Goblin Dockerfiles](docs/goblin-dockerfiles.md) | Minimal, multi-stage, non-root, read-only, and WASI wrapper Dockerfile patterns. |
+| [Language-Agnostic Workers](docs/language-agnostic-workers.md) | Guidance for writing goblins in any container-packaged runtime. |
+| [Security Model](docs/security-model.md) | Honest container security expectations and runtime hardening guidance. |
 | [Public API Boundary](docs/PUBLIC_API.md) | Stable root imports, semi-public commands, internal modules, and internal wheel compatibility policy. |
 | [Adopting Projects](docs/ADOPTING_PROJECTS.md) | How another project installs Goblin King, defines goblin plugins, builds workers, and proves the integration. |
 | [First Hour Guide](docs/FIRST_HOUR.md) | Fast path from internal install to first project goblin run. |
