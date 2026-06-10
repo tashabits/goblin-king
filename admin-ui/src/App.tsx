@@ -3,22 +3,24 @@ import {
   Ban,
   Boxes,
   ClipboardList,
-  Crown,
-  FlaskConical,
-  HeartPulse,
-  KeyRound,
   Play,
   Radio,
   RefreshCw,
   Rocket,
   ScrollText,
   Shield,
-  Sparkles,
   Square,
   Wand2,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
+import {
+  AdminShell,
+  DashboardPanel,
+  GoblinLabPanel,
+  LoginScreen,
+  TaskBoardPanel,
+} from "./adminPanels";
 import {
   compactTrafficPayload,
   latestFirst,
@@ -26,7 +28,7 @@ import {
   readJson,
   usefulServicesFirst,
 } from "./adminData";
-import { Stat, Table } from "./components";
+import { Table } from "./components";
 import type {
   AdminConfig,
   ArtifactCleanupResponse,
@@ -460,103 +462,38 @@ export function App() {
 
   if (!token) {
     return (
-      <main className="login-shell">
-        <section className="login-card">
-          <Crown className="login-crown" aria-hidden />
-          <p className="eyebrow">Goblin King Admin Lab</p>
-          <h1>Tester console login</h1>
-          <p className="quote">"{quoteFor(0)}"</p>
-          <form onSubmit={login}>
-            <label htmlFor="token">API token</label>
-            <input id="token" value={draftToken} onChange={(event) => setDraftToken(event.target.value)} />
-            <button type="submit"><KeyRound size={18} /> Enter the lab</button>
-          </form>
-        </section>
-      </main>
+      <LoginScreen
+        draftToken={draftToken}
+        onDraftTokenChange={setDraftToken}
+        onLogin={login}
+      />
     );
   }
 
   return (
-    <div className="app-shell">
-      <aside>
-        <Crown className="brand-mark" aria-hidden />
-        <h1>Goblin King</h1>
-        <p>Admin Lab Bench</p>
-        <nav>
-          {["Dashboard", "Goblin Lab", "Task Board", "Schedules", "Runs", "Fanout", "Services", "Events", "Discovery", "Deploy", "Admin"].map((item) => (
-            <a href={`#${item.toLowerCase().replaceAll(" ", "-")}`} key={item}>{item}</a>
-          ))}
-        </nav>
-        <button className="ghost" onClick={logout}>Logout</button>
-      </aside>
-      <main>
-        <header className="hero">
-          <div>
-            <p className="eyebrow">Live tester interface</p>
-            <h2>Every path gets a button, a table, or a witness.</h2>
-            <p className="quote">"{quoteFor(events.length + liveEvents.length)}"</p>
-          </div>
-          <button onClick={refreshAll}><RefreshCw size={18} /> Refresh all</button>
-        </header>
+    <AdminShell
+      error={error}
+      eventCount={events.length}
+      liveEventCount={liveEvents.length}
+      onLogout={logout}
+      onRefresh={refreshAll}
+    >
+        <DashboardPanel counts={counts} />
 
-        {error && <div className="error" role="alert">{error}</div>}
+        <GoblinLabPanel
+          goblins={goblins}
+          selectedKind={selectedKind}
+          jobInput={jobInput}
+          onKindChange={setSelectedKind}
+          onJobInputChange={setJobInput}
+          onSubmitJob={(kind, inputOverride) => void submitJob(kind, inputOverride)}
+        />
 
-        <section id="dashboard" className="grid four">
-          <Stat icon={<Activity />} label="Active tasks" value={counts.active} />
-          <Stat icon={<Ban />} label="Failed/cancelled" value={counts.failed} />
-          <Stat icon={<ClipboardList />} label="Completed" value={counts.completed} />
-          <Stat icon={<HeartPulse />} label="Running services" value={counts.services} />
-        </section>
-
-        <section id="goblin-lab" className="panel two-column">
-          <div>
-            <h3><FlaskConical /> Goblin Lab</h3>
-            <p className="muted">
-              Spawn one-shot OCI worker containers from the active registry and image map. The King-side kill button cancels work in the queue, not a runtime hard-kill.
-            </p>
-            <label>Goblin kind</label>
-            <select value={selectedKind} onChange={(event) => setSelectedKind(event.target.value)}>
-              {goblins.map((goblin) => <option key={goblin.kind} value={goblin.kind}>{goblin.kind}</option>)}
-            </select>
-            <label>Input JSON</label>
-            <textarea value={jobInput} onChange={(event) => setJobInput(event.target.value)} />
-            <div className="button-row">
-              <button onClick={() => void submitJob()}><Play size={16} /> Submit job</button>
-              <button onClick={() => void submitJob("example.hello", '{"name":"World"}')}><Sparkles size={16} /> Hello proof</button>
-              <button onClick={() => void submitJob("example.controlled-failure", '{"reason":"admin lab failure proof"}')}><Ban size={16} /> Failure proof</button>
-            </div>
-          </div>
-          <Table
-            title="Registered Container Goblins"
-            rows={goblins.map((goblin) => [
-              goblin.kind,
-              goblin.display_name,
-              goblin.source || "registry",
-              goblin.worker_mapped ? "OCI worker image mapped" : "missing worker image",
-              goblin.worker_image || "none",
-            ])}
-          />
-        </section>
-
-        <section id="task-board" className="panel">
-          <h3><Boxes /> Task Board</h3>
-          <div className="cards">
-            {jobs.map((job) => (
-              <article className={`task ${job.status}`} key={job.id}>
-                <span>{job.status}</span>
-                <h4>{job.kind}</h4>
-                <code>{job.id}</code>
-                <p>{job.last_error || quoteFor(job.id.length)}</p>
-                {!["completed", "failed", "timed_out", "cancelled"].includes(job.status) && (
-                  <div className="button-row">
-                    <button className="danger" onClick={() => void cancelJob(job.id)}><Ban size={16} /> Kill / cancel</button>
-                    <button className="danger" onClick={() => void hardKillJob(job.id)}><Square size={16} /> Hard kill runtime</button>
-                  </div>
-                )}
-              </article>
-            ))}
-          </div>
-        </section>
+        <TaskBoardPanel
+          jobs={jobs}
+          onCancelJob={(jobId) => void cancelJob(jobId)}
+          onHardKillJob={(jobId) => void hardKillJob(jobId)}
+        />
 
         <section id="schedules" className="panel two-column">
           <div>
@@ -814,7 +751,6 @@ export function App() {
           <h3><Activity /> Captured Traffic</h3>
           <pre className="traffic">{JSON.stringify(traffic, null, 2)}</pre>
         </section>
-      </main>
-    </div>
+      </AdminShell>
   );
 }
