@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "defaults": {
+    "timeout_seconds": 30,
+    "max_retries": 0,
+    "cpu": {
+      "request": "100m",
+      "limit": "500m"
+    },
+    "memory": {
+      "request": "64Mi",
+      "limit": "256Mi"
+    },
+    "process": {
+      "pids_limit": 64
+    },
+    "network": {
+      "mode": "none"
+    },
+    "filesystem": {
+      "read_only_root": true,
+      "tmpfs": [
+        "/tmp:size=16m"
+      ],
+      "artifact_max_bytes": 1048576,
+      "artifact_max_files": 5
+    },
+    "logs": {
+      "max_bytes": 2048
+    },
+    "concurrency": {
+      "max_running": 1
+    }
+  },
+  "ceilings": {
+    "timeout_seconds": 60,
+    "max_retries": 1,
+    "cpu": {
+      "limit": "1"
+    },
+    "memory": {
+      "limit": "512Mi"
+    },
+    "process": {
+      "pids_limit": 128
+    },
+    "filesystem": {
+      "artifact_max_bytes": 2097152,
+      "artifact_max_files": 10
+    },
+    "logs": {
+      "max_bytes": 4096
+    },
+    "concurrency": {
+      "max_running": 2
+    }
+  }
+}

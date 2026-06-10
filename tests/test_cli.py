@@ -146,6 +146,38 @@ def test_workers_validation_status_lists_persisted_records(tmp_path: Path) -> No
     assert "example.hello\tpassed\tsha256:abc" in result.stdout
 
 
+def test_resource_policies_inspect_prints_runtime_mappings() -> None:
+    """Verify operators can inspect effective policy proof for both runtimes."""
+    result = runner.invoke(
+        app,
+        [
+            "resource-policies",
+            "inspect",
+            "example.hello",
+            "--policies",
+            "examples/resource-policy-proof.json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["kind"] == "example.hello"
+    assert payload["effective_policy"]["timeout_seconds"] == 30
+    assert "--cpus" in payload["docker_args"]
+    assert "--memory" in payload["docker_args"]
+    assert "--pids-limit" in payload["docker_args"]
+    assert ["--network", "none"] == payload["docker_args"][
+        payload["docker_args"].index("--network") : payload["docker_args"].index("--network")
+        + 2
+    ]
+    assert "--read-only" in payload["docker_args"]
+    assert "--tmpfs" in payload["docker_args"]
+    assert "--log-opt" in payload["docker_args"]
+    assert payload["kubernetes_fields"]["resources"]["limits"]["cpu"] == "500m"
+    assert payload["artifact_policy"] == {"max_bytes": 1048576, "max_files": 5}
+    assert payload["log_policy"] == {"max_bytes": 2048}
+
+
 def test_project_goblins_list_and_validate() -> None:
     """Verify project commands load merged project settings."""
     listed = runner.invoke(

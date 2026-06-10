@@ -780,7 +780,7 @@ Phase sequence:
 - Phase 43: slim package root public API. Implemented.
 - Phase 44: behavior-preserving module cleanup pass. Implemented.
 - Phase 45: mandatory goblin validation gate. Implemented.
-- Phase 46: Docker resource policy proof. Planned.
+- Phase 46: Docker resource policy proof. Implemented.
 - Phase 47: project config hero path. Planned.
 - Phase 48: adoption hardening closeout. Planned.
 

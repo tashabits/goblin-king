@@ -74,8 +74,9 @@ from goblin_king.fanout import (
 from goblin_king.jsonio import pretty_json
 from goblin_king.metadata import goblin_job_metadata
 from goblin_king.registry import GoblinRegistry, RegistryError
-from goblin_king.resource_policies import ResourcePolicyError
+from goblin_king.resource_policies import ResourcePolicyError, ResourcePolicySet
 from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRuntime, new_run_context
+from goblin_king.runtime_helpers import docker_policy_args, kubernetes_policy_fields
 from goblin_king.scheduler import DEFAULT_INTERVAL_SECONDS, Scheduler, next_run_after
 from goblin_king.smoke import run_adopter_project_smoke
 from goblin_king.store import DEFAULT_DB_PATH, SQLiteStore
@@ -100,6 +101,7 @@ schedules_app = typer.Typer(help="Create and inspect schedules.")
 scheduler_app = typer.Typer(help="Run scheduler passes.")
 smoke_app = typer.Typer(help="Run local end-to-end smoke proofs.")
 workers_app = typer.Typer(help="Build Docker worker images.")
+resource_policies_app = typer.Typer(help="Inspect runtime resource policy mappings.")
 app.add_typer(api_app, name="api")
 app.add_typer(auth_app, name="auth")
 app.add_typer(goblins_app, name="goblins")
@@ -116,6 +118,7 @@ app.add_typer(schedules_app, name="schedules")
 app.add_typer(scheduler_app, name="scheduler")
 app.add_typer(smoke_app, name="smoke")
 app.add_typer(workers_app, name="workers")
+app.add_typer(resource_policies_app, name="resource-policies")
 
 @auth_app.command("create-user")
 def create_auth_user(
@@ -1213,6 +1216,47 @@ def worker_validation_status(
             f"{record.kind}\t{record.status}\t{record.image_digest}\t"
             f"{record.contract_version}\t{record.validator_version}\t{failures}"
         )
+
+
+@resource_policies_app.command("inspect")
+def inspect_resource_policy(
+    kind: Annotated[str, typer.Argument(help="Goblin kind whose effective policy is shown.")],
+    policies: Annotated[
+        Path,
+        typer.Option("--policies", help="Resource policy JSON path."),
+    ] = DEFAULT_RESOURCE_POLICIES_PATH,
+    timeout_seconds: Annotated[
+        int | None,
+        typer.Option("--timeout-seconds", help="Optional job timeout override."),
+    ] = None,
+    max_retries: Annotated[
+        int | None,
+        typer.Option("--max-retries", help="Optional job retry override."),
+    ] = None,
+) -> None:
+    """Print effective policy and runtime mappings used for local proof."""
+    try:
+        policy_set = ResourcePolicySet.from_path(policies)
+        policy = policy_set.effective_for(
+            kind,
+            timeout_seconds=timeout_seconds,
+            max_retries=max_retries,
+        )
+    except ResourcePolicyError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+    payload = {
+        "kind": kind,
+        "effective_policy": policy.compact(),
+        "docker_args": docker_policy_args(policy),
+        "kubernetes_fields": kubernetes_policy_fields(policy),
+        "artifact_policy": {
+            "max_bytes": policy.filesystem.artifact_max_bytes,
+            "max_files": policy.filesystem.artifact_max_files,
+        },
+        "log_policy": {"max_bytes": policy.logs.max_bytes},
+    }
+    typer.echo(pretty_json(payload))
 
 
 if __name__ == "__main__":
