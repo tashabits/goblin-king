@@ -42,6 +42,7 @@ from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRunti
 from goblin_king.scheduler import DEFAULT_INTERVAL_SECONDS, Scheduler, next_run_after
 from goblin_king.store import DEFAULT_DB_PATH, SQLiteStore
 from goblin_king.templates import TemplateError, init_package
+from goblin_king.validation import validate_workers
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
 
 app = typer.Typer(help="Run and inspect Goblin King jobs.")
@@ -867,6 +868,59 @@ def build_workers(
     for worker_kind, worker in targets:
         runtime.build_image(worker_kind)
         typer.echo(f"built {worker_kind}\t{worker.image}")
+
+
+@workers_app.command("validate")
+def validate_worker_contracts(
+    input_path: Annotated[Path, typer.Option("--input", help="JSON input payload path.")],
+    registry: Annotated[
+        Path,
+        typer.Option("--registry", help="Registry JSON path."),
+    ] = Path("goblins.json"),
+    images: Annotated[
+        Path,
+        typer.Option("--images", help="Worker image map path."),
+    ] = DEFAULT_IMAGES_PATH,
+    kind: Annotated[
+        list[str] | None,
+        typer.Option("--kind", help="Validate only this goblin kind; repeatable."),
+    ] = None,
+    build: Annotated[
+        bool,
+        typer.Option("--build", help="Build worker images before running validation."),
+    ] = False,
+    require_success: Annotated[
+        bool,
+        typer.Option("--require-success", help="Treat failed result envelopes as invalid."),
+    ] = False,
+    redis_url: Annotated[
+        str,
+        typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
+    ] = DEFAULT_REDIS_URL,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Print machine-readable validation results."),
+    ] = False,
+) -> None:
+    """Run Docker workers with temp contract mounts and validate result envelopes."""
+    results = validate_workers(
+        registry=_load_registry(registry),
+        workers=_load_workers(images),
+        input_payload=_load_input(input_path),
+        kinds=kind,
+        build=build,
+        require_success=require_success,
+        redis_url=redis_url,
+    )
+    if json_output:
+        typer.echo(json.dumps([result.model_dump(mode="json") for result in results], indent=2))
+    else:
+        for result in results:
+            status = "ok" if result.ok else "failed"
+            detail = result.error or ",".join(result.checks)
+            typer.echo(f"{result.kind}\t{status}\t{result.result_status or '-'}\t{detail}")
+    if any(not result.ok for result in results):
+        raise typer.Exit(1)
 
 
 def _load_registry(path: Path) -> GoblinRegistry:

@@ -42,6 +42,29 @@ def test_goblins_list_prints_example_echo() -> None:
     assert "example.echo" in result.stdout
 
 
+def test_workers_validate_reports_unknown_kind() -> None:
+    """Verify contract validation reports unknown requested kinds clearly."""
+    result = runner.invoke(
+        app,
+        [
+            "workers",
+            "validate",
+            "--registry",
+            "examples/cross-language-goblins.json",
+            "--images",
+            "examples/cross-language-images.json",
+            "--input",
+            "examples/cross-language-input.json",
+            "--kind",
+            "example.missing",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "unknown goblin kind: example.missing" in result.stdout
+
+
 def test_project_goblins_list_and_validate() -> None:
     """Verify project commands load merged project settings."""
     listed = runner.invoke(

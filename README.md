@@ -198,6 +198,18 @@ They cover artifact metadata, progress/logging, controlled failure, input
 transform/context reading, timeout-ish cancellation-friendly work, and a WASI
 context sample.
 
+Use [Goblin Contract Validation](docs/goblin-contract-validation.md) to build and
+run worker images with temporary contract mounts:
+
+```bash
+python -m goblin_king.cli workers validate \
+  --registry examples/cross-language-goblins.json \
+  --images examples/cross-language-images.json \
+  --input examples/cross-language-input.json \
+  --build \
+  --require-success
+```
+
 For host-project deployment integration, see
 `examples/adopting-project/`. It includes:
 
