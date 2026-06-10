@@ -26,6 +26,10 @@ Generated goblin packages should normally need only:
 from goblin_king import GoblinContext, GoblinDefinition, GoblinResult
 ```
 
+These imports are stable helper APIs for Python package definitions and tests. They do
+not replace the [Goblin Container Contract](goblin-container-contract.md): deployed
+goblins are still OCI/Docker containers.
+
 Host-project integration scripts may also use:
 
 ```python

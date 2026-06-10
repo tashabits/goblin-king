@@ -4,6 +4,10 @@
 
 The scheduler should start clean and stay reusable. It should provide a small, stable core for scheduling work, dispatching isolated goblin runs, tracking status, and collecting structured results without binding itself to any one application.
 
+Current worker model: a goblin is a contract-compliant OCI/Docker container. Python
+helpers and in-process execution remain optional local conveniences, but the canonical
+worker interface is `docs/goblin-container-contract.md`.
+
 The core Goblin King shape:
 
 - A long-running King process blocks on a Redis queue.
@@ -621,7 +625,7 @@ language-specific protocols.
 
 ### Phase 24: Formalize The Goblin Container Contract
 
-- Status: planned.
+- Status: implemented in Phase 24.
 - Branch: `phase-24-goblin-container-contract`.
 - Create `docs/goblin-container-contract.md` as the canonical worker interface.
 - Document required environment variables, mounted paths, input/context/result JSON,
