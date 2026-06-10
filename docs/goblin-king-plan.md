@@ -679,11 +679,14 @@ language-specific protocols.
 
 ### Phase 29: Add Artifact, Progress, And Failure Goblins Across Languages
 
-- Status: planned.
+- Status: implemented.
 - Branch: `phase-29-cross-language-contract-behaviors`.
 - Add small behavior samples across several runtimes: artifacts, progress/events,
   failure, timeout-ish behavior, context reading, logging, input transform,
   cancellation friendliness, and a WASI behavior sample if practical.
+- Added behavior examples for Node artifacts, Python progress/logging, Python
+  slow/cancellable work, Go input transforms, shell controlled failure, and
+  C/WASI context reading.
 
 ### Phase 30: Add Goblin Contract Validation
 

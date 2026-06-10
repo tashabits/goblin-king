@@ -192,6 +192,12 @@ make run-cross-language-proof
 That target builds the example images from `examples/cross-language-images.json`
 and submits every kind in `examples/cross-language-goblins.json`.
 
+Contract behavior examples live under `examples/goblins/behavior-*` and are wired
+through `examples/behavior-goblins.json` plus `examples/behavior-images.json`.
+They cover artifact metadata, progress/logging, controlled failure, input
+transform/context reading, timeout-ish cancellation-friendly work, and a WASI
+context sample.
+
 For host-project deployment integration, see
 `examples/adopting-project/`. It includes:
 

@@ -1,0 +1,34 @@
+{
+  "workers": {
+    "example.behavior-go-transform": {
+      "context": "goblins/behavior-go-transform",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-example-behavior-go-transform:local"
+    },
+    "example.behavior-node-artifact": {
+      "context": "goblins/behavior-node-artifact",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-example-behavior-node-artifact:local"
+    },
+    "example.behavior-python-progress": {
+      "context": "goblins/behavior-python-progress",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-example-behavior-python-progress:local"
+    },
+    "example.behavior-python-slow-cancellable": {
+      "context": "goblins/behavior-python-slow-cancellable",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-example-behavior-python-slow-cancellable:local"
+    },
+    "example.behavior-shell-failure": {
+      "context": "goblins/behavior-shell-failure",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-example-behavior-shell-failure:local"
+    },
+    "example.behavior-wasi-c-context": {
+      "context": "goblins/behavior-wasi-c-context",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-example-behavior-wasi-c-context:local"
+    }
+  }
+}

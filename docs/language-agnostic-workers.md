@@ -42,6 +42,11 @@ Phase 28 adds `examples/cross-language-goblins.json`,
 `examples/cross-language-images.json`, and `make run-cross-language-proof` so these
 examples can be built and submitted through Goblin King's Docker runtime.
 
+Behavior examples under `examples/goblins/behavior-*` show practical contract
+patterns across languages: artifacts, progress/logging, controlled failure,
+transforms, timeout-ish cancellation-friendly loops, context reads, and a WASI
+context read.
+
 ## Optional Python Helpers
 
 Python helpers are useful for:
