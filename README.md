@@ -10,11 +10,11 @@ containers, inspect what happened, and keep a durable audit trail. Docker and Co
 are the default local path. Kubernetes is optional through the Helm chart when a project
 needs a cluster deployment.
 
-**Status: Project-adoptable alpha.** Goblin King is suitable for local
-development, internal prototypes, and trusted early-adopter projects that want
-to define and schedule their own contract-compliant container goblins. It is not
-yet recommended for untrusted multi-tenant workloads without additional
-hardening.
+**Status: Open-source alpha / project-adoptable alpha.** Goblin King is ready
+for trusted self-hosted projects that want to define, validate, schedule, and
+inspect their own contract-compliant Docker task containers. It is not intended
+for untrusted third-party container execution, public multi-tenant workloads, or
+production deployments without additional hardening.
 
 Goblin King can be used by trusted self-hosted projects as a local/project
 scheduler for contract-compliant Docker task containers. Adopters can run the
@@ -45,6 +45,7 @@ intended for untrusted third-party container execution.
   - [Writing Goblins](docs/writing-goblins.md)
   - [Goblin Dockerfiles](docs/goblin-dockerfiles.md)
   - [Language-Agnostic Workers](docs/language-agnostic-workers.md)
+  - [Security Policy](SECURITY.md)
   - [Security Model](docs/security-model.md)
   - [API Roadmap](docs/api-roadmap.md)
   - [Scheduler Plan](docs/goblin-king-plan.md)
@@ -54,6 +55,7 @@ intended for untrusted third-party container execution.
   - [Release Checklist](docs/RELEASE_CHECKLIST.md)
   - [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md)
   - [Code Cleanup Notes](docs/CODE_CLEANUP.md)
+  - [Contributing](CONTRIBUTING.md)
 
 ## Quick Start
 
@@ -782,9 +784,10 @@ Goblin King provides:
 | [Project Goblin Config](docs/project-goblin-config.md) | Versioned `GoblinProject` config for defining container goblins without editing Goblin King source. |
 | [Project Template Quickstart](docs/project-template-quickstart.md) | Copy-paste path for generating, validating, and proving a standalone adopter project. |
 | [Language-Agnostic Closeout](docs/language-agnostic-closeout.md) | Audit summary for the container-first worker phases and remaining deferrals. |
+| [Security Policy](SECURITY.md) | Supported alpha security posture, reporting path, and Docker socket cautions. |
 | [Security Model](docs/security-model.md) | Honest container security expectations and runtime hardening guidance. |
 | [Public API Boundary](docs/PUBLIC_API.md) | Stable root imports, semi-public commands, internal modules, and internal wheel compatibility policy. |
-| [Adopting Projects](docs/ADOPTING_PROJECTS.md) | How another project installs Goblin King, defines goblin plugins, builds workers, and proves the integration. |
+| [Adopting Projects](docs/ADOPTING_PROJECTS.md) | How another project installs Goblin King, defines project goblins, builds workers, and proves the integration. |
 | [Adopter Guide](docs/adopter-guide.md) | Complete project-owned goblin path from template to Docker, Helm, admin, results, artifacts, and failures. |
 | [First Hour Guide](docs/FIRST_HOUR.md) | Fast path from internal install to first project goblin run. |
 | [Release Checklist](docs/RELEASE_CHECKLIST.md) | Internal wheel, Docker image, local CI, Docker adoption, and Helm proof checklist. |
@@ -792,7 +795,8 @@ Goblin King provides:
 | [Code Cleanup Notes](docs/CODE_CLEANUP.md) | Refactor notes and helper-module rules. |
 | [Compatibility Matrix](docs/COMPATIBILITY.md) | Contract and schema compatibility versions for project-ready adoption. |
 | [Upgrade Guide](docs/UPGRADING.md) | Host-project upgrade procedure and compatibility fixture policy. |
-| [Migration Guide](docs/MIGRATION_GUIDE.md) | How to move existing scripts and workers into goblin plugins. |
-| [Contributing](docs/CONTRIBUTING.md) | Branch, PR, local CI, commenting, goblin documentation, and test expectations. |
+| [Migration Guide](docs/MIGRATION_GUIDE.md) | How to move existing scripts and workers into project goblins. |
+| [Contributing](CONTRIBUTING.md) | Short public contribution entrypoint for local CI, container-first expectations, and PR proof. |
+| [Detailed Contributing Guide](docs/CONTRIBUTING.md) | Branch, PR, local CI, commenting, goblin documentation, and test expectations. |
 | [API Roadmap](docs/api-roadmap.md) | Covered API surfaces and maintainer notes. |
 | [Project Adoption](docs/project-adoption.md) | Notes for adapting existing queue, worker, heartbeat, and operator proof flows. |

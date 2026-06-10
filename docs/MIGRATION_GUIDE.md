@@ -1,4 +1,4 @@
-# Migrating Scripts And Workers Into Goblin Plugins
+# Migrating Scripts And Workers Into Project Goblins
 
 Use this guide when a project already has scripts, queue workers, or maintenance jobs
 and wants to move them behind Goblin King.
