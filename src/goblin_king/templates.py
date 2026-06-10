@@ -88,6 +88,45 @@ def init_package(
     return root
 
 
+def init_project(target_dir: str | Path, *, prefix: str = "project") -> Path:
+    """Create a standalone container-contract adopter project template."""
+    if not re.match(r"^[a-z][a-z0-9-]*$", prefix):
+        raise TemplateError("prefix must use lowercase letters, digits, or dashes")
+    root = Path(target_dir)
+    if root.exists() and any(root.iterdir()):
+        raise TemplateError(f"target directory is not empty: {root}")
+    root.mkdir(parents=True, exist_ok=True)
+
+    hello_kind = f"{prefix}.hello"
+    artifact_kind = f"{prefix}.artifact"
+    for directory in [
+        root / "workers" / hello_kind,
+        root / "workers" / artifact_kind,
+        root / "inputs",
+        root / "schemas",
+    ]:
+        directory.mkdir(parents=True, exist_ok=True)
+
+    _write(root / "goblin-king-project.json", _adopter_project_json(prefix))
+    _write(root / "goblin-images.json", json.dumps({"workers": {}}, indent=2) + "\n")
+    _write(root / "goblin-king-api.json", _api_settings_json())
+    _write(root / "inputs" / "hello.json", json.dumps({"name": "World"}, indent=2) + "\n")
+    _write(
+        root / "inputs" / "artifact.json",
+        json.dumps({"filename": "report.txt", "message": "Artifact proof"}, indent=2) + "\n",
+    )
+    _write(root / "schemas" / "hello.input.schema.json", _hello_schema_json())
+    _write(root / "schemas" / "artifact.input.schema.json", _artifact_schema_json())
+    _write(root / "workers" / hello_kind / "Dockerfile", _adopter_worker_dockerfile())
+    _write(root / "workers" / hello_kind / "worker.py", _adopter_hello_worker())
+    _write(root / "workers" / hello_kind / ".dockerignore", "__pycache__/\n*.pyc\n")
+    _write(root / "workers" / artifact_kind / "Dockerfile", _adopter_worker_dockerfile())
+    _write(root / "workers" / artifact_kind / "worker.py", _adopter_artifact_worker())
+    _write(root / "workers" / artifact_kind / ".dockerignore", "__pycache__/\n*.pyc\n")
+    _write(root / "README.md", _adopter_project_readme(prefix))
+    return root
+
+
 def _write(path: Path, content: str) -> None:
     """Write a generated text file with UTF-8 encoding."""
     path.write_text(content, encoding="utf-8")
@@ -317,6 +356,81 @@ def _api_settings_json() -> str:
     ) + "\n"
 
 
+def _adopter_project_json(prefix: str) -> str:
+    """Return a versioned GoblinProject template with two container goblins."""
+    hello_kind = f"{prefix}.hello"
+    artifact_kind = f"{prefix}.artifact"
+    return json.dumps(
+        {
+            "apiVersion": "goblin-king/v1alpha1",
+            "kind": "GoblinProject",
+            "registries": [],
+            "entry_points": False,
+            "images": "goblin-images.json",
+            "api_settings": "goblin-king-api.json",
+            "goblins": {
+                hello_kind: {
+                    "image": f"{prefix}-hello:local",
+                    "context": f"workers/{hello_kind}",
+                    "dockerfile": "Dockerfile",
+                    "description": "Minimal project-owned hello goblin.",
+                    "inputSchema": "schemas/hello.input.schema.json",
+                    "labels": {"demo": "true", "kind": "hello"},
+                    "tags": ["quickstart", "success"],
+                    "resourcePolicy": {
+                        "timeout_seconds": 30,
+                        "memory": {"limit": "256Mi"},
+                    },
+                },
+                artifact_kind: {
+                    "image": f"{prefix}-artifact:local",
+                    "context": f"workers/{artifact_kind}",
+                    "dockerfile": "Dockerfile",
+                    "description": "Project-owned artifact-producing goblin.",
+                    "inputSchema": "schemas/artifact.input.schema.json",
+                    "artifacts": {"enabled": True},
+                    "labels": {"demo": "true", "kind": "artifact"},
+                    "tags": ["quickstart", "artifact"],
+                    "resourcePolicy": {
+                        "timeout_seconds": 30,
+                        "memory": {"limit": "256Mi"},
+                    },
+                },
+            },
+        },
+        indent=2,
+    ) + "\n"
+
+
+def _hello_schema_json() -> str:
+    """Return the minimal hello input schema for generated projects."""
+    return json.dumps(
+        {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "additionalProperties": True,
+        },
+        indent=2,
+    ) + "\n"
+
+
+def _artifact_schema_json() -> str:
+    """Return the minimal artifact input schema for generated projects."""
+    return json.dumps(
+        {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "filename": {"type": "string"},
+                "message": {"type": "string"},
+            },
+            "additionalProperties": True,
+        },
+        indent=2,
+    ) + "\n"
+
+
 def _worker_dockerfile() -> str:
     """Return a minimal Python Docker worker file."""
     return """FROM python:3.12-slim
@@ -398,6 +512,126 @@ def _heartbeat(
     client = Redis.from_url(redis_url)
     client.rpush(os.environ["GOBLIN_HEARTBEAT_KEY"], encoded)
     client.publish(os.environ["GOBLIN_HEARTBEAT_CHANNEL"], encoded)
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+def _adopter_worker_dockerfile() -> str:
+    """Return a tiny Python worker Dockerfile for project templates."""
+    return """FROM python:3.12-slim
+
+WORKDIR /worker
+COPY worker.py /worker/worker.py
+RUN pip install --no-cache-dir "redis>=5,<7"
+
+ENTRYPOINT ["python", "/worker/worker.py"]
+"""
+
+
+def _adopter_hello_worker() -> str:
+    """Return a contract-compliant hello worker for project templates."""
+    return '''"""Minimal generated project goblin worker."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+from redis import Redis
+
+
+def main() -> None:
+    """Read input/context files and write a successful result envelope."""
+    input_payload = json.loads(Path(os.environ["GOBLIN_INPUT_PATH"]).read_text())
+    context = json.loads(Path(os.environ["GOBLIN_CONTEXT_PATH"]).read_text())
+    name = input_payload.get("name", "World")
+    result = {
+        "status": "success",
+        "data": {
+            "message": f"Hello {name}",
+            "input": input_payload,
+            "run_id": context["run_id"],
+        },
+        "artifacts": [],
+        "metrics": {"template": "hello"},
+        "handoff": [],
+        "error": None,
+    }
+    _write_result(result)
+
+
+def _write_result(result: dict) -> None:
+    """Write the fallback result file and publish the same envelope to Redis."""
+    result_json = json.dumps(result)
+    Path(os.environ["GOBLIN_RESULT_PATH"]).write_text(result_json, encoding="utf-8")
+    Redis.from_url(os.environ["GOBLIN_REDIS_URL"]).set(
+        f"goblin-king:results:{os.environ['GOBLIN_RUN_ID']}",
+        result_json,
+        ex=3600,
+    )
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+def _adopter_artifact_worker() -> str:
+    """Return a contract-compliant artifact worker for project templates."""
+    return '''"""Generated project goblin worker that writes one artifact."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+from redis import Redis
+
+
+def main() -> None:
+    """Create a text artifact and return matching artifact metadata."""
+    input_payload = json.loads(Path(os.environ["GOBLIN_INPUT_PATH"]).read_text())
+    context = json.loads(Path(os.environ["GOBLIN_CONTEXT_PATH"]).read_text())
+    artifact_root = Path(os.environ["GOBLIN_ARTIFACT_ROOT"])
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    artifact_name = input_payload.get("filename", "report.txt")
+    artifact_path = artifact_root / artifact_name
+    artifact_path.write_text(input_payload.get("message", "Artifact proof"), encoding="utf-8")
+    result = {
+        "status": "success",
+        "data": {
+            "message": "artifact written",
+            "run_id": context["run_id"],
+        },
+        "artifacts": [
+            {
+                "name": artifact_name,
+                "uri": f"artifact://{artifact_name}",
+                "content_type": "text/plain",
+                "metadata": {"source": "project-template"},
+            }
+        ],
+        "metrics": {"artifact_count": 1},
+        "handoff": [],
+        "error": None,
+    }
+    _write_result(result)
+
+
+def _write_result(result: dict) -> None:
+    """Write the fallback result file and publish the same envelope to Redis."""
+    result_json = json.dumps(result)
+    Path(os.environ["GOBLIN_RESULT_PATH"]).write_text(result_json, encoding="utf-8")
+    Redis.from_url(os.environ["GOBLIN_REDIS_URL"]).set(
+        f"goblin-king:results:{os.environ['GOBLIN_RUN_ID']}",
+        result_json,
+        ex=3600,
+    )
 
 
 if __name__ == "__main__":
@@ -490,6 +724,53 @@ python -m pytest
 goblin-king project validate --project goblin-king-project.json
 goblin-king workers build --images goblin-images.json
 ```
+"""
+
+
+def _adopter_project_readme(prefix: str) -> str:
+    """Return the golden-path README for generated adopter projects."""
+    hello_kind = f"{prefix}.hello"
+    artifact_kind = f"{prefix}.artifact"
+    return f"""# Goblin King Project Template
+
+This generated project defines contract-compliant container goblins without editing
+Goblin King source code.
+
+## Files
+
+- `goblin-king-project.json`: versioned `GoblinProject` config.
+- `goblin-images.json`: empty base image map; inline goblins provide their own image
+  settings.
+- `workers/{hello_kind}/`: short-running hello worker.
+- `workers/{artifact_kind}/`: artifact-producing worker.
+- `inputs/`: sample JSON inputs.
+- `schemas/`: optional input schemas for humans and tooling.
+
+## Golden Path
+
+```bash
+python -m goblin_king.cli project validate --project goblin-king-project.json
+
+python -m goblin_king.cli workers validate \\
+  --project goblin-king-project.json \\
+  --input inputs/hello.json \\
+  --kind {hello_kind} \\
+  --build \\
+  --require-success
+
+python -m goblin_king.cli workers validate \\
+  --project goblin-king-project.json \\
+  --input inputs/artifact.json \\
+  --kind {artifact_kind} \\
+  --build \\
+  --require-success
+```
+
+To run through the scheduler/API stack, mount or bake this project config into the
+Goblin King services and reload discovery. The admin will show `{hello_kind}` and
+`{artifact_kind}` without a React rebuild.
+
+The King asks for proof, and this template hands him a tidy stack of receipts.
 """
 
 

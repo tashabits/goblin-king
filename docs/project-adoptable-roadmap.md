@@ -154,9 +154,9 @@ Proof:
 
 - Branch: `phase-37-project-template-quickstart`.
 - PR title: `Phase 37 project template and quickstart`.
-- Status: planned.
+- Status: implemented.
 
-Add a small, boring, copy-paste-friendly project template and quickstart that
+Added a small, boring, copy-paste-friendly project template and quickstart that
 show how a real adopting project should structure goblins.
 
 Suggested template:
@@ -182,17 +182,20 @@ goblin-project/
   README.md
 ```
 
-The template should demonstrate a minimal goblin, an artifact-producing goblin,
+The template demonstrates a minimal goblin, an artifact-producing goblin,
 project config, local input files, optional input schema, image build command,
 validation command, run command, and result/artifact inspection command.
 
 Proof:
 
+- `goblin-king project init` creates a standalone adopter project.
 - Template files and quickstart docs are added.
-- Template goblin image builds locally.
-- Template goblin validates and runs successfully.
-- Result and artifact inspection commands work.
-- Full local CI passes.
+- Template goblin images build locally through `workers validate --build`.
+- Template hello and artifact goblins validate successfully.
+- Result and artifact validation commands work.
+- Full local CI, Docker/Helm admin audits, and screenshots are required in the PR body.
+  Phase 37 screenshots live at `docs/screenshots/phase-37-docker-admin.png` and
+  `docs/screenshots/phase-37-helm-admin.png`.
 
 ## Phase 38: External Project Scheduling And Run Inspection
 

@@ -124,7 +124,7 @@ target phase below.
 - API, CLI, admin, audit, and event visibility for effective per-run resource policies.
 - Resource-policy validation failures surfaced before queueing or launching unsafe work.
 
-## Planned In Phases 37-42
+## Planned In Phases 38-42
 
 - CLI/API/admin scheduling and inspection for goblins defined outside Goblin King
   internals.
