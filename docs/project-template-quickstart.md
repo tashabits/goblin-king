@@ -48,6 +48,23 @@ services, then reload discovery from the admin Discovery panel or API. The React
 reads goblin kinds from the API, so `myproject.hello` and `myproject.artifact` appear
 without a frontend rebuild.
 
+After discovery, submit or schedule the project goblins from CLI/API/admin:
+
+```bash
+python -m goblin_king.cli jobs submit myproject.hello \
+  --project goblin-king-project.json \
+  --input inputs/hello.json \
+  --runtime docker
+
+python -m goblin_king.cli schedules add myproject.artifact \
+  --project goblin-king-project.json \
+  --input inputs/artifact.json \
+  --cron "* * * * *" \
+  --due-now
+
+python -m goblin_king.cli runs show <run-id> --with-job
+```
+
 The generated workers implement the container contract directly: input/context files in,
 result JSON and artifact metadata out. The language inside each container remains a
 project choice.

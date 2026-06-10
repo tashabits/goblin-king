@@ -124,10 +124,8 @@ target phase below.
 - API, CLI, admin, audit, and event visibility for effective per-run resource policies.
 - Resource-policy validation failures surfaced before queueing or launching unsafe work.
 
-## Planned In Phases 38-42
+## Planned In Phases 39-42
 
-- CLI/API/admin scheduling and inspection for goblins defined outside Goblin King
-  internals.
 - `v1alpha1` public contract/config boundaries and project-adoptable alpha closeout.
 - Every PR in this range must include the Docker and Helm browser runtime audit from
   `docs/admin-runtime-audit.md`.

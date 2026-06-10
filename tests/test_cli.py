@@ -507,6 +507,43 @@ def test_runs_show_prints_stored_run(tmp_path: Path) -> None:
     assert json.loads(result.stdout)["id"] == run_id
 
 
+def test_jobs_submit_accepts_project_settings_and_persists_source_metadata(
+    tmp_path: Path,
+) -> None:
+    """Verify project-defined goblins can be submitted and inspected from CLI."""
+    db_path = tmp_path / "goblin.sqlite3"
+    submit = runner.invoke(
+        app,
+        [
+            "jobs",
+            "submit",
+            "project.inline.hello",
+            "--input",
+            "examples/input.json",
+            "--project",
+            "examples/adopting-project/goblin-king-project.json",
+            "--db",
+            str(db_path),
+            "--runtime",
+            "in-process",
+        ],
+    )
+
+    assert submit.exit_code == 1
+    payload = json.loads(submit.stdout)
+    job = SQLiteStore(db_path).get_job(payload["job_id"])
+    detail = runner.invoke(
+        app,
+        ["runs", "show", payload["id"], "--db", str(db_path), "--with-job"],
+    )
+
+    assert job is not None
+    assert job.metadata["goblin_source"] == "project-config"
+    assert job.metadata["goblin_definition"]["kind"] == "project.inline.hello"
+    assert detail.exit_code == 0
+    assert json.loads(detail.stdout)["goblin_source"] == "project-config"
+
+
 def test_schedules_add_and_list_persist_schedule(tmp_path: Path) -> None:
     """Verify schedule CLI commands can create and display a recurring schedule."""
     db_path = tmp_path / "goblin.sqlite3"
@@ -534,6 +571,31 @@ def test_schedules_add_and_list_persist_schedule(tmp_path: Path) -> None:
     assert json.loads(add.stdout)["kind"] == "example.echo"
     assert listed.exit_code == 0
     assert "example.echo" in listed.stdout
+
+
+def test_schedules_add_accepts_project_settings(tmp_path: Path) -> None:
+    """Verify schedules can be created for project-defined goblins."""
+    db_path = tmp_path / "goblin.sqlite3"
+    add = runner.invoke(
+        app,
+        [
+            "schedules",
+            "add",
+            "project.inline.hello",
+            "--cron",
+            "* * * * *",
+            "--input",
+            "examples/input.json",
+            "--project",
+            "examples/adopting-project/goblin-king-project.json",
+            "--db",
+            str(db_path),
+            "--due-now",
+        ],
+    )
+
+    assert add.exit_code == 0
+    assert json.loads(add.stdout)["kind"] == "project.inline.hello"
 
 
 def test_scheduler_run_once_executes_due_schedule(tmp_path: Path) -> None:

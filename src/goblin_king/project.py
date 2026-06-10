@@ -166,6 +166,7 @@ def _display_name(kind: str) -> str:
 def _project_metadata(spec: ProjectGoblinSpec) -> dict[str, Any]:
     """Return metadata preserved for project-config documentation and future phases."""
     return {
+        "source": "project-config",
         "description": spec.description,
         "input_schema": str(spec.input_schema) if spec.input_schema else None,
         "resource_policy": spec.resource_policy,
