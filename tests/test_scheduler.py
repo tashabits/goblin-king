@@ -453,6 +453,73 @@ def test_scheduler_defers_claim_when_concurrency_policy_is_full(tmp_path: Path) 
     assert claimed == []
     assert queued is not None
     assert queued.status == "queued"
+    assert queued.last_error == (
+        "deferred by goblin concurrency policy: active=1 max_running=1"
+    )
     assert "resource_policy.concurrency_deferred" in [
         event.event_type for event in store.list_events()
     ]
+    assert store.list_events()[0].payload["scope"] == "goblin"
+
+
+def test_scheduler_defers_claim_when_project_concurrency_policy_is_full(
+    tmp_path: Path,
+) -> None:
+    """Verify project-wide concurrency caps defer extra jobs in the same project."""
+    now = datetime(2026, 6, 9, 12, 0, tzinfo=UTC)
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    scheduler = Scheduler(
+        registry=GoblinRegistry.from_path("examples/goblins.json"),
+        store=store,
+        worker_id="test-worker",
+        runtime_mode="in-process",
+    )
+    store.save_job(
+        JobRecord(
+            id="already-running",
+            kind="example.environment",
+            project_id="project-a",
+            input={},
+            created_at=now,
+            status="running",
+        )
+    )
+    store.save_job(
+        JobRecord(
+            id="other-project",
+            kind="example.echo",
+            project_id="project-b",
+            input={},
+            created_at=now,
+            status="running",
+        )
+    )
+    store.save_job(
+        JobRecord(
+            id="queued",
+            kind="example.echo",
+            project_id="project-a",
+            input={},
+            created_at=now,
+            status="queued",
+            metadata={
+                "resource_policy": {
+                    "concurrency": {"max_project_running": 1},
+                }
+            },
+        )
+    )
+
+    claimed = scheduler.claim_due_jobs(now)
+
+    queued = store.get_job("queued")
+    events = store.list_events()
+    assert claimed == []
+    assert queued is not None
+    assert queued.status == "queued"
+    assert queued.last_error == (
+        "deferred by project concurrency policy: active=1 max_project_running=1"
+    )
+    assert events[0].event_type == "resource_policy.concurrency_deferred"
+    assert events[0].payload["scope"] == "project"
+    assert events[0].payload["max_project_running"] == 1

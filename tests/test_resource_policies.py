@@ -120,6 +120,11 @@ def test_resource_policy_rejects_above_ceiling(tmp_path: Path) -> None:
             {"concurrency": {"max_running": 2}},
             "concurrency.max_running",
         ),
+        (
+            {"concurrency": {"max_project_running": 4}},
+            {"concurrency": {"max_project_running": 2}},
+            "concurrency.max_project_running",
+        ),
     ]
     for index, (defaults, ceilings, expected_field) in enumerate(cases):
         policy_path = write_policy(

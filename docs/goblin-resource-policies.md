@@ -150,7 +150,8 @@ defaults and per-goblin overrides are validated against those ceilings.
 | `filesystem.artifact_max_bytes` | Maximum artifact bytes a run should produce. |
 | `filesystem.artifact_max_files` | Maximum artifact count a run should produce. |
 | `logs.max_bytes` | Maximum captured log bytes to preserve for proof/debugging. |
-| `concurrency.max_running` | Maximum active jobs of this kind at one time. |
+| `concurrency.max_running` | Maximum active leased/running jobs of this goblin kind at one time. |
+| `concurrency.max_project_running` | Maximum active leased/running jobs in the same project scope at one time. |
 
 Unknown fields are rejected. That makes typos visible before a project accidentally runs
 with a policy the operator did not actually enforce.
@@ -244,7 +245,8 @@ The current implementation enforces or records these controls:
   active deadline timeouts.
 - Artifact count and byte ceilings after worker completion when artifact metadata or local
   artifact files are available.
-- Per-kind scheduler concurrency deferral for leased/running jobs.
+- Per-kind and project-wide scheduler concurrency deferral for leased/running jobs. Jobs
+  stay queued and carry a visible deferral reason in `last_error`.
 - Scoped hard termination for Docker and Kubernetes runtime objects created and labeled
   by Goblin King.
 - Safe artifact path serving under the configured artifact root.

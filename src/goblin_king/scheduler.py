@@ -182,11 +182,23 @@ class Scheduler:
         runnable: list[JobRecord] = []
         for job in jobs:
             policy = policy_from_job_metadata(job.metadata)
-            max_running = policy.concurrency.max_running if policy else None
-            if max_running is not None:
-                active_count = self.store.count_active_jobs(job.kind, exclude_job_id=job.id)
-                if active_count >= max_running:
-                    self.store.finish_job(job.id, status="queued", due_at=current)
+            max_project_running = policy.concurrency.max_project_running if policy else None
+            if max_project_running is not None:
+                active_count = self.store.count_active_project_jobs(
+                    job.project_id,
+                    exclude_job_id=job.id,
+                )
+                if active_count >= max_project_running:
+                    message = (
+                        "deferred by project concurrency policy: "
+                        f"active={active_count} max_project_running={max_project_running}"
+                    )
+                    self.store.finish_job(
+                        job.id,
+                        status="queued",
+                        due_at=current,
+                        last_error=message,
+                    )
                     self.event_bus.emit(
                         "resource_policy.concurrency_deferred",
                         source="scheduler",
@@ -197,8 +209,41 @@ class Scheduler:
                         scheduler_id=self.worker_id,
                         payload={
                             "kind": job.kind,
+                            "scope": "project",
+                            "max_project_running": max_project_running,
+                            "active_count": active_count,
+                            "reason": message,
+                        },
+                    )
+                    continue
+            max_running = policy.concurrency.max_running if policy else None
+            if max_running is not None:
+                active_count = self.store.count_active_jobs(job.kind, exclude_job_id=job.id)
+                if active_count >= max_running:
+                    message = (
+                        "deferred by goblin concurrency policy: "
+                        f"active={active_count} max_running={max_running}"
+                    )
+                    self.store.finish_job(
+                        job.id,
+                        status="queued",
+                        due_at=current,
+                        last_error=message,
+                    )
+                    self.event_bus.emit(
+                        "resource_policy.concurrency_deferred",
+                        source="scheduler",
+                        project_id=job.project_id,
+                        job_id=job.id,
+                        schedule_id=job.schedule_id,
+                        fanout_id=job.fanout_id,
+                        scheduler_id=self.worker_id,
+                        payload={
+                            "kind": job.kind,
+                            "scope": "goblin",
                             "max_running": max_running,
                             "active_count": active_count,
+                            "reason": message,
                         },
                     )
                     continue
