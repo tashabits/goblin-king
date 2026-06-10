@@ -471,6 +471,7 @@ requires receipts.
 | [Goblin Examples Index](docs/examples-index.md) | Cross-language, WASI, and behavior sample goblins with proof commands. |
 | [Choose Your Runtime](docs/choose-your-runtime.md) | Runtime comparison guide for picking a worker language. |
 | [Goblin Contract Validation](docs/goblin-contract-validation.md) | Local validation command for image builds, result envelopes, and artifacts. |
+| [Goblin Resource Policies](docs/goblin-resource-policies.md) | Per-goblin resource expectations, defaults, ceilings, and Docker/Kubernetes mapping. |
 | [Language-Agnostic Closeout](docs/language-agnostic-closeout.md) | Audit summary for the container-first worker phases and remaining deferrals. |
 | [Security Model](docs/security-model.md) | Honest container security expectations and runtime hardening guidance. |
 | [Public API Boundary](docs/PUBLIC_API.md) | Stable root imports, semi-public commands, internal modules, and internal wheel compatibility policy. |
@@ -503,6 +504,6 @@ status and cleanup APIs. Scoped hard runtime termination is available for
 Goblin-labeled Docker and Kubernetes runtime objects. Image promotion and deployment
 orchestration records give operators a cloud-neutral proof trail for builds, registry
 promotion, Helm render intent, and discovery reloads. Remaining follow-up work is
-tracked in [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md) and limited to repo
-cleanup, container-first worker contract phases, per-goblin resource policies, public
-packaging, and explicitly deferred cloud-specific recipes.
+tracked in [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md) and limited to
+runtime-level resource-policy enforcement, public packaging, and explicitly deferred
+cloud-specific recipes.

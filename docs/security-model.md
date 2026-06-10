@@ -49,8 +49,13 @@ Goblin King enforces or records:
 - Auth, RBAC, audit, and rate-limit decisions.
 - Durable event and heartbeat history.
 
-Per-goblin resource policy is planned in Phase 33 and will document exact defaults,
-ceilings, Docker mapping, and Kubernetes mapping in `goblin-resource-policies.md`.
+Per-goblin resource policy is documented in
+[`goblin-resource-policies.md`](goblin-resource-policies.md). It defines recommended
+defaults, ceilings, Docker mapping, Kubernetes mapping, and proof expectations. Current
+runtime enforcement covers timeouts, retries, safe artifact paths, scoped hard
+termination, audit, and events; broader CPU, memory, network, filesystem, log, and
+artifact byte ceilings should be enforced by Docker/Compose/Helm deployment policy until
+runtime-level validation is added.
 
 ## Secrets
 
@@ -60,7 +65,7 @@ only the specific secret values they need and should never echo them into proof 
 
 ## Network
 
-Network access should be deliberate. Some goblins need APIs; many do not. Future
-resource policy work will make network mode or egress policy explicit per goblin.
+Network access should be deliberate. Some goblins need APIs; many do not. Resource
+policies should make network mode or egress intent explicit per goblin.
 
 The King can run chaos. He should not hand chaos the master key.

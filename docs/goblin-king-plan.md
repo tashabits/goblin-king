@@ -711,7 +711,7 @@ language-specific protocols.
 
 ### Phase 32: Cross-Language Goblin Roadmap Closeout
 
-- Status: planned.
+- Status: implemented.
 - Branch: `phase-32-language-agnostic-closeout`.
 - Re-audit docs and samples for container-contract consistency, README/Dockerfile/source
   completeness, WASI honesty, optional Python helper wording, screenshots, and command
@@ -723,21 +723,23 @@ language-specific protocols.
 
 ### Phase 33: Per-Goblin Resource Policies
 
-- Status: planned.
+- Status: implemented as documentation baseline.
 - Branch: `phase-33-per-goblin-resource-policies`.
 - Add `docs/goblin-resource-policies.md` and extend the Goblin Container Contract with
-  scheduler-enforced resource controls.
+  resource policy language.
 - Add per-goblin resource policy metadata for CPU, memory, timeout, logs, artifacts,
   concurrency, network behavior, and security options such as non-root and read-only
   root filesystem.
 - Add global resource ceilings so goblins cannot request unsafe limits, plus safe
   defaults for existing goblins.
 - Map policies onto Docker options and Kubernetes Job/Pod specs where supported.
-- Persist the effective resource policy used for each run and expose it in API, CLI,
-  and admin surfaces.
-- Add audit/event records for policy validation failures and enforcement outcomes.
-- Prove explicit Docker policy execution, over-ceiling rejection, timeout behavior,
-  Helm/Kubernetes render mapping, and admin-visible policy details.
+- Document the current enforcement boundary: timeouts, retries, scoped termination,
+  artifact path safety, auth, audit, and events are implemented now; CPU, memory,
+  process, network, filesystem, log, artifact byte, concurrency, and secret ceilings
+  remain deployment-policy or future runtime-validation work.
+- Future runtime enforcement should persist the effective resource policy used for each
+  run, expose it in API, CLI, and admin surfaces, add audit/event records for validation
+  failures, and prove explicit Docker and Helm/Kubernetes mappings.
 
 ## Key Decisions To Make Before Coding
 

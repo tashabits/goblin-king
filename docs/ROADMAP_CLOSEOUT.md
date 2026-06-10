@@ -23,8 +23,8 @@ hardening into the cleanup and container-first worker roadmap.
   board, long services, events, discovery, deployment proof, and cleanup.
 - `docs/api-roadmap.md` marks Phases 5-21 as covered and leaves only explicit deferred
   infrastructure items.
-- `docs/goblin-king-plan.md` contains the completed production roadmap, the planned
-  cleanup phase, and appended Phases 24-33.
+- `docs/goblin-king-plan.md` contains the completed production roadmap, cleanup phase,
+  appended Phases 24-33, and resource-policy follow-up notes.
 
 ## Explicit Deferred Items
 
@@ -44,4 +44,6 @@ hardening into the cleanup and container-first worker roadmap.
 - Phase 25-32: language-agnostic docs, examples, WASI wrappers, runtime proof,
   validation, UI/docs updates, and closeout recorded in
   `docs/language-agnostic-closeout.md`.
-- Phase 33: per-goblin resource policies in `docs/goblin-resource-policies.md`.
+- Phase 33: per-goblin resource policy documentation in
+  `docs/goblin-resource-policies.md`; runtime-level CPU/memory/network/artifact ceiling
+  enforcement remains future hardening work.
