@@ -38,6 +38,15 @@ work less cramped without moving public adoption boundaries.
 | Runtime policy helpers | Docker/Kubernetes resource translation, artifact policy checking, and Kubernetes naming/client helpers lived in `runtime.py`. | `src/goblin_king/runtime_helpers.py` owns runtime helper logic while runtime adapter classes remain in `runtime.py`. |
 | CLI loading helpers | Registry, worker, project, policy, input, and validation-output helpers lived at the bottom of `cli.py`. | `src/goblin_king/cli_support.py` owns CLI support helpers while command functions stay in `cli.py`. |
 
+## Cleanup 04 Admin UI Split
+
+| Area | Before | After |
+| --- | --- | --- |
+| Admin shell | Login, sidebar, hero, and dashboard chrome lived inline in `App.tsx`. | `admin-ui/src/adminPanels.tsx` owns login, shell, dashboard, Goblin Lab, and Task Board panel components. |
+| Goblin Lab | Registry table, kind picker, JSON editor, and proof buttons lived inline in `App.tsx`. | `GoblinLabPanel` receives data/actions as props and renders the same tester workflow. |
+| Task Board | Job cards and cancel/hard-kill controls lived inline in `App.tsx`. | `TaskBoardPanel` renders job cards while `App.tsx` keeps orchestration state and API actions. |
+| Admin behavior | The app file handled both state and all visible panel rendering. | State and API orchestration stay in `App.tsx`; reusable panel rendering moved into focused components. |
+
 ## Stable Boundary
 
 No public imports were changed. Adopting projects should continue using the root
