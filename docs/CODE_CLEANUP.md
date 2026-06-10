@@ -55,6 +55,16 @@ work less cramped without moving public adoption boundaries.
 | Proof table | Phase 23 referred broadly to cleanup work without the staged release/audit details. | `docs/proof_table.md` records the staged cleanup, baseline release, completion release, and audit proof expectations. |
 | Public boundary docs | Internal module guidance named older large modules but not the new helper boundaries. | `docs/PUBLIC_API.md` describes the new helper modules as internal implementation details. |
 
+## Phase 44 Cleanup Pass
+
+| Area | Before | After |
+| --- | --- | --- |
+| API state and discovery | `api.py` owned route handlers plus registry reload, source reporting, and worker map loading. | `src/goblin_king/api_state.py` owns `AppState` and discovery state. |
+| API runtime bookkeeping | `api.py` ended with runtime termination and resource-policy audit helpers. | `src/goblin_king/api_runtime.py` owns termination proof, effective policy lookup, and policy rejection events/audits. |
+
+The split is behavior-preserving. Route names, response models, CLI commands, runtime
+behavior, scheduler behavior, database behavior, and admin UX stay unchanged.
+
 ## Stable Boundary
 
 No public imports were changed. Adopting projects should continue using the root

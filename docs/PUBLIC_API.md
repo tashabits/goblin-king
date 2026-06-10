@@ -80,11 +80,11 @@ validate, deploy, run, or prove goblins.
 Modules such as `goblin_king.runtime`, `goblin_king.store`, `goblin_king.auth`,
 `goblin_king.events`, `goblin_king.fanout`, `goblin_king.api_models`,
 `goblin_king.deployment`, and cleanup helper modules such as
-`goblin_king.api_artifacts`, `goblin_king.cli_support`, `goblin_king.runtime_helpers`,
-and `goblin_king.store_rows` remain importable for Goblin King itself, but their
-non-root symbols are not promised stable for adopting projects. If a project needs one
-of those internals, first promote the needed behavior to the root boundary or the
-CLI/API in a focused compatibility PR.
+`goblin_king.api_artifacts`, `goblin_king.api_runtime`, `goblin_king.api_state`,
+`goblin_king.cli_support`, `goblin_king.runtime_helpers`, and `goblin_king.store_rows`
+remain importable for Goblin King itself, but their non-root symbols are not promised
+stable for adopting projects. If a project needs one of those internals, first promote
+the needed behavior to the root boundary or the CLI/API in a focused compatibility PR.
 
 ## Internal Wheel Versioning
 
