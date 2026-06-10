@@ -42,6 +42,7 @@ from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.resource_policies import ResourcePolicyError, ResourcePolicySet
 from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRuntime, new_run_context
 from goblin_king.scheduler import DEFAULT_INTERVAL_SECONDS, Scheduler, next_run_after
+from goblin_king.smoke import run_adopter_project_smoke
 from goblin_king.store import DEFAULT_DB_PATH, SQLiteStore
 from goblin_king.templates import TemplateError, init_package, init_project
 from goblin_king.validation import WorkerValidationResult, validate_workers
@@ -62,6 +63,7 @@ project_goblins_app = typer.Typer(help="Inspect project-discovered goblins.")
 runs_app = typer.Typer(help="Inspect goblin runs.")
 schedules_app = typer.Typer(help="Create and inspect schedules.")
 scheduler_app = typer.Typer(help="Run scheduler passes.")
+smoke_app = typer.Typer(help="Run local end-to-end smoke proofs.")
 workers_app = typer.Typer(help="Build Docker worker images.")
 app.add_typer(api_app, name="api")
 app.add_typer(auth_app, name="auth")
@@ -77,6 +79,7 @@ app.add_typer(project_app, name="project")
 app.add_typer(runs_app, name="runs")
 app.add_typer(schedules_app, name="schedules")
 app.add_typer(scheduler_app, name="scheduler")
+app.add_typer(smoke_app, name="smoke")
 app.add_typer(workers_app, name="workers")
 
 RuntimeOption = Literal["docker", "kubernetes", "in-process"]
@@ -276,6 +279,37 @@ def init_project_template(
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
     typer.echo(f"created {created}")
+
+
+@smoke_app.command("adopter-project")
+def smoke_adopter_project(
+    work_dir: Annotated[
+        Path | None,
+        typer.Option("--work-dir", help="Optional directory for generated smoke files."),
+    ] = None,
+    prefix: Annotated[
+        str,
+        typer.Option("--prefix", help="Generated goblin kind prefix."),
+    ] = "smoke",
+    redis_url: Annotated[
+        str,
+        typer.Option("--redis-url", help="Redis URL used by Docker runtime."),
+    ] = DEFAULT_REDIS_URL,
+    keep: Annotated[
+        bool,
+        typer.Option("--keep", help="Keep generated smoke project files."),
+    ] = False,
+) -> None:
+    """Run the local adopter-project smoke suite through Docker."""
+    result = run_adopter_project_smoke(
+        work_dir=work_dir,
+        prefix=prefix,
+        redis_url=redis_url,
+        keep=keep,
+    )
+    typer.echo(result.model_dump_json(indent=2))
+    if not result.ok:
+        raise typer.Exit(1)
 
 
 @jobs_app.command("submit")
