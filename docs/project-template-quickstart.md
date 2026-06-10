@@ -21,6 +21,12 @@ The generated project includes:
 - `inputs/`: sample input payloads.
 - `schemas/`: optional input schemas.
 
+Generated projects may keep repeated inline-goblin resource expectations under
+`defaults.resources` in `goblin-king-project.json`. Project validation deep-merges those
+defaults into each goblin's `resources`, so the template can use one default timeout,
+memory cap, filesystem posture, or network mode and only override the few fields that
+are different for `myproject.hello` or `myproject.artifact`.
+
 ## Validate
 
 ```bash
@@ -47,6 +53,10 @@ python -m goblin_king.cli workers validation-status --kind myproject.artifact
 
 Re-run the worker validation commands whenever an image digest changes. Goblin King will
 not schedule an unvalidated project image by default.
+
+If you add or edit `defaults.resources`, run `project validate` before worker validation.
+The command reports the default block and rejects defaults or effective per-goblin
+resources that exceed any ceilings in a sibling `goblin-resource-policies.json`.
 
 For the complete proof lifecycle and failure table, see
 [Goblin Contract Validation](goblin-contract-validation.md).

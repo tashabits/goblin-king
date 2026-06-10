@@ -21,6 +21,14 @@ header and an inline `goblins` map:
   "entry_points": false,
   "images": "goblin-images.json",
   "api_settings": "goblin-king-api.json",
+  "defaults": {
+    "resources": {
+      "timeout_seconds": 60,
+      "memory": {"limit": "256Mi"},
+      "filesystem": {"read_only_root": true},
+      "network": {"mode": "none"}
+    }
+  },
   "goblins": {
     "project.invoice-renderer": {
       "displayName": "Invoice Renderer",
@@ -46,6 +54,26 @@ header and an inline `goblins` map:
 
 All paths resolve relative to the project config file unless they are absolute.
 
+## Project Resource Defaults
+
+Use `defaults.resources` when every inline goblin in a project should inherit the same
+resource posture. This is useful for small adopter projects that want one default
+timeout, memory cap, read-only-root setting, network mode, log limit, or concurrency
+limit without repeating the same block in every goblin definition.
+
+Project loading deep-merges `defaults.resources` into each inline goblin's `resources`.
+The per-goblin value wins for the fields it names, while unspecified nested fields keep
+the project default. For example, a project default of `memory.limit: 256Mi` plus a
+goblin override of `memory.limit: 512Mi` gives that goblin a `512Mi` effective limit;
+a default `filesystem.read_only_root: true` remains in effect unless the goblin changes
+that field.
+
+If a `goblin-resource-policies.json` file is present next to the project config, project
+validation checks both `defaults.resources` and each merged per-goblin policy against
+the file's ceilings. `goblin-king project validate` prints the raw
+`defaults.resources` block when present so operators can see the project-level policy
+source during smoke proof.
+
 ## Fields
 
 | Field | Meaning |
@@ -56,6 +84,8 @@ All paths resolve relative to the project config file unless they are absolute.
 | `entry_points` | Whether to discover installed `goblin_king.goblins` entry points. |
 | `images` | Existing worker image map file. |
 | `api_settings` | API settings file for the project. |
+| `defaults` | Optional project-wide defaults for inline goblin definitions. |
+| `defaults.resources` | Resource policy fields deep-merged into every inline goblin's `resources` before validation and discovery. |
 | `goblins` | Inline project-owned container goblin definitions. |
 | `displayName` | Optional admin/API display name. |
 | `description` | Human-facing description stored in goblin metadata. |
@@ -63,7 +93,7 @@ All paths resolve relative to the project config file unless they are absolute.
 | `context` | Worker build context path. |
 | `dockerfile` | Dockerfile name under the context. |
 | `inputSchema` | Optional JSON schema path for future validation/docs. |
-| `resources` | Inline resource policy metadata for project docs and future enforcement. |
+| `resources` | Per-goblin resource policy override. These fields are merged over `defaults.resources`; nested objects such as `memory`, `filesystem`, `network`, `logs`, and `concurrency` merge key by key. |
 | `artifacts` | Artifact expectations for project docs and future validation. |
 | `labels` / `tags` | Project-owned metadata for grouping and admin display. |
 | `env` | Safe non-secret environment metadata. |

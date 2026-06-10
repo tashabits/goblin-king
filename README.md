@@ -268,6 +268,12 @@ imports, and the React admin reads goblin kinds from the API at runtime after di
 reload. See [Adopter Guide](docs/adopter-guide.md) for the full Docker, Helm,
 validation, result, artifact, and failure inspection path.
 
+Project configs can also set shared resource defaults once under
+`defaults.resources`. Those defaults are merged into each inline goblin's `resources`
+before validation, so teams can keep normal timeout, memory, filesystem, network, and
+concurrency expectations in one project-owned place while leaving per-kind overrides
+small.
+
 To prove the complete adopter path in one local command:
 
 ```bash
@@ -635,6 +641,16 @@ Runtime policy defaults live in `goblin-resource-policies.json`. The API, CLI, s
 Docker runtime, and Helm chart load this file by default. Policies resolve from global
 defaults plus per-goblin overrides, then Goblin King rejects any request above configured
 ceilings before queueing or launching unsafe work.
+
+Adopting projects can additionally declare project-owned defaults in
+`goblin-king-project.json` under `defaults.resources`. Project validation deep-merges
+those defaults into inline goblin `resources`, validates the effective resources against
+the nearest `goblin-resource-policies.json` ceilings when present, and prints
+`defaults.resources` for operator visibility. When a project is supplied to API, CLI, or
+scheduler flows, those defaults are also layered into the effective policy for queued
+jobs/runs. Use the standalone policy file for runtime ceilings and operator-wide
+defaults; use project defaults to keep repeated inline goblin resource expectations out
+of every goblin block.
 
 Supported enforcement includes:
 

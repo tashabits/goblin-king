@@ -50,6 +50,14 @@ Add or edit entries under `goblins`:
 {
   "apiVersion": "goblin-king/v1alpha1",
   "kind": "GoblinProject",
+  "defaults": {
+    "resources": {
+      "timeout_seconds": 60,
+      "memory": {"limit": "256Mi"},
+      "filesystem": {"read_only_root": true},
+      "network": {"mode": "none"}
+    }
+  },
   "goblins": {
     "myproject.hello": {
       "image": "myproject-hello:local",
@@ -57,9 +65,9 @@ Add or edit entries under `goblins`:
       "dockerfile": "Dockerfile",
       "description": "Short hello worker",
       "inputSchema": "schemas/hello.input.schema.json",
-      "resourcePolicy": {
+      "resources": {
         "timeout_seconds": 30,
-        "memory": {"limit": "256Mi"}
+        "logs": {"max_bytes": 1048576}
       },
       "labels": {"team": "local"},
       "tags": ["quickstart"]
@@ -72,6 +80,13 @@ The worker container must read `GOBLIN_INPUT_PATH` and `GOBLIN_CONTEXT_PATH`, wr
 result envelope to `GOBLIN_RESULT_PATH`, and write artifacts only under
 `GOBLIN_ARTIFACT_ROOT`.
 
+`defaults.resources` is the project-wide baseline for inline goblins. Goblin King
+deep-merges it into each goblin's `resources` during project loading, so the example
+above keeps the default memory cap, read-only root, and network-disabled mode while
+overriding the hello timeout and adding a log ceiling. If a sibling
+`goblin-resource-policies.json` defines ceilings, `project validate` checks the default
+and merged per-goblin resources against those ceilings.
+
 ## Validate
 
 Validate config and discovery:
@@ -81,7 +96,9 @@ goblin-king project validate --project goblin-king-project.json
 goblin-king project goblins list --project goblin-king-project.json
 ```
 
-Expected output includes project goblin kinds, such as `myproject.hello`.
+Expected output includes project goblin kinds, such as `myproject.hello`. When
+`defaults.resources` is present, `project validate` also prints that block so the shared
+project resource baseline is visible in local proof output.
 
 Validate a worker image by building and running it against temporary contract mounts:
 
