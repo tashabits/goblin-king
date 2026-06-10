@@ -17,6 +17,11 @@ Host-project goblin packages should import only from the root package boundary:
 from goblin_king import GoblinContext, GoblinDefinition, GoblinResult
 ```
 
+Those Python imports are optional helpers for definitions, tests, and local debugging.
+The deployed goblin worker is still a contract-compliant container. A host project can
+write the worker itself in any language that follows the
+[Goblin Container Contract](goblin-container-contract.md).
+
 ## Install As An Internal Wheel
 
 Build and install a private wheel when the host project is ready to pin a version:
@@ -51,6 +56,10 @@ The generated package includes:
 - A self-contained worker folder with a Dockerfile.
 - A long-running service worker folder with a Dockerfile.
 - Local tests and README.
+
+The generated Python worker is one implementation path, not a requirement. Projects may
+replace the worker folder with Go, Rust, Node.js, shell, container-wrapped WASI, or any
+other OCI image that obeys the same contract.
 
 ## Connect The Host Project
 

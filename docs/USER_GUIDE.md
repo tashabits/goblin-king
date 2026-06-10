@@ -24,6 +24,17 @@ When using Goblin King from another project, start with
 [Using Goblin King From Another Project](ADOPTING_PROJECTS.md) and keep project imports
 inside the [Public API Boundary](PUBLIC_API.md).
 
+## Understand The Worker Contract
+
+Goblin King runs goblins as contract-compliant OCI/Docker containers. It schedules
+containers, not Python functions or language-specific runtimes. The worker code inside
+the container can use any language as long as it follows the
+[Goblin Container Contract](goblin-container-contract.md).
+
+Python helpers and in-process runtime support are useful for local debugging and package
+definitions, but they are optional conveniences. Production worker execution should be
+designed around the container contract.
+
 ## Run A Short Job
 
 Queue and execute the short Hello World sample:

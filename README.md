@@ -5,22 +5,23 @@ containers called goblins. Goblins run as self-contained Docker/OCI workers, whi
 each worker use the language and runtime that fits its job while the King keeps
 scheduling, status, and result contracts consistent.
 
-The current implementation covers the Phase 1-21 roadmap: a SQLite-backed scheduler,
+The current implementation covers the Phase 1-24 roadmap: a SQLite-backed scheduler,
 Docker worker execution, FastAPI control plane, reusable project/plugin discovery,
 fanout and retry workflows, durable events, Redis pub/sub and Redis Streams delivery,
 WebSocket run updates, scheduler and worker heartbeats, local bearer-token auth,
 optional OIDC/JWT bearer auth, volume/PVC-backed artifact management, scoped runtime
 termination, project scoping, audit/rate-limit proof, a Docker/Helm admin UI,
 deploy-time discovery reload, host-project adoption examples, internal release/upgrade
-checks, cloud-neutral Helm hardening, and image promotion/deployment proof records.
-Docker and Compose remain the default local path; Kubernetes is optional through the
-Helm chart.
+checks, cloud-neutral Helm hardening, image promotion/deployment proof records,
+repo-wide cleanup, and the formal Goblin Container Contract. Docker and Compose remain
+the default local path; Kubernetes is optional through the Helm chart.
 
 ## Table Of Contents
 
 - [Goblin King](#goblin-king)
 - [Table Of Contents](#table-of-contents)
 - [Quick Start](#quick-start)
+- [Goblin Container Contract](#goblin-container-contract)
 - [Worker Images](#worker-images)
 - [Image Promotion And Deployment Proof](#image-promotion-and-deployment-proof)
 - [Documentation](#documentation)
@@ -28,6 +29,7 @@ Helm chart.
 - Deeper manuals:
   - [User Guide](docs/USER_GUIDE.md)
   - [Admin Guide](docs/ADMIN_GUIDE.md)
+  - [Goblin Container Contract](docs/goblin-container-contract.md)
   - [API Roadmap](docs/api-roadmap.md)
   - [Scheduler Plan](docs/goblin-king-plan.md)
   - [Adopting Projects](docs/ADOPTING_PROJECTS.md)
@@ -125,7 +127,8 @@ OpenAPI metadata is available at `/openapi.json` with bearer auth schemes, stabl
 operation IDs, response models, and error response shapes for generated clients.
 
 Use `--runtime in-process` on `jobs submit`, `scheduler run-once`, or `scheduler run`
-when debugging trusted local Python goblins without Docker.
+when debugging trusted local Python goblins without Docker. In-process execution is a
+developer convenience; the worker model is the container contract.
 
 Create a reusable goblin package skeleton:
 
@@ -151,6 +154,19 @@ curl -H "Authorization: Bearer local-dev-token" http://127.0.0.1:8000/admin/disc
 Failed reloads leave the previous valid registry active and report validation errors
 for the Discovery panel. New goblin kinds are read from the API at runtime, so the
 React admin does not need a rebuild when project goblins are added.
+
+## Goblin Container Contract
+
+Every goblin is a contract-compliant OCI/Docker container. Goblin King schedules
+containers, not language runtimes. The language inside the container is an
+implementation detail, and Python helpers are optional conveniences rather than a
+requirement.
+
+The canonical worker interface is
+[Goblin Container Contract](docs/goblin-container-contract.md). It defines required
+environment variables, mounted input/context/result/artifact paths, result envelopes,
+stdout/stderr behavior, progress/events, heartbeats, exit codes, timeouts,
+cancellation, security expectations, and the container-wrapped WASI/WebAssembly model.
 
 For host-project deployment integration, see
 `examples/adopting-project/`. It includes:
@@ -349,7 +365,7 @@ changes between probes.
 
 ## Worker Images
 
-Each Docker worker lives in a self-contained folder with its own `Dockerfile`.
+Each goblin worker lives in a self-contained folder with its own `Dockerfile`.
 Worker build settings live in `goblin-images.json`:
 
 ```json
@@ -364,10 +380,10 @@ Worker build settings live in `goblin-images.json`:
 }
 ```
 
-Workers receive JSON input/context files, publish a `GoblinResult` envelope to Redis,
-write the same result to a mounted fallback file, and publish heartbeat envelopes while
-they run. The Docker runtime records those heartbeats in SQLite and mirrors event
-updates to Redis pub/sub for live subscribers.
+Workers receive JSON input/context files, publish a `GoblinResult`-shaped envelope to
+Redis, write the same result to a mounted fallback file, and publish heartbeat envelopes
+while they run. The worker can be written in any language that obeys the
+[Goblin Container Contract](docs/goblin-container-contract.md).
 
 ## Image Promotion And Deployment Proof
 
@@ -405,6 +421,7 @@ requires receipts.
 | [Goblin King Scheduler Plan](docs/goblin-king-plan.md) | Architecture, phases, contracts, runtime direction, testing plan, and implementation roadmap. |
 | [User Guide](docs/USER_GUIDE.md) | End-to-end operator and developer guide for Docker, admin UI, sample goblins, API, scheduler, and optional Helm deployment. |
 | [Admin Guide](docs/ADMIN_GUIDE.md) | Screenshot walkthrough for logging in, spawning goblins, watching tasks, probing long services, reading events, and cleaning old rows. |
+| [Goblin Container Contract](docs/goblin-container-contract.md) | Canonical language-agnostic worker container contract. |
 | [Public API Boundary](docs/PUBLIC_API.md) | Stable root imports, semi-public commands, internal modules, and internal wheel compatibility policy. |
 | [Adopting Projects](docs/ADOPTING_PROJECTS.md) | How another project installs Goblin King, defines goblin plugins, builds workers, and proves the integration. |
 | [First Hour Guide](docs/FIRST_HOUR.md) | Fast path from internal install to first project goblin run. |
