@@ -10,12 +10,19 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from goblin_king.contracts import GoblinDefinition
 from goblin_king.jsonio import read_json_file
+from goblin_king.resource_policies import ResourcePolicy, ResourcePolicyError, ResourcePolicySet
 from goblin_king.versions import PROJECT_CONFIG_API_VERSION, PROJECT_CONFIG_KIND
 from goblin_king.workers import WorkerImageDefinition
 
 
 class ProjectSettingsError(ValueError):
     """Raised when project integration settings cannot be loaded."""
+
+
+class ProjectDefaults(BaseModel):
+    """Project-level defaults applied to inline goblin definitions."""
+
+    resources: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProjectGoblinSpec(BaseModel):
@@ -64,6 +71,7 @@ class ProjectSettings(BaseModel):
     entry_points: bool = True
     images: Path = Path("goblin-images.json")
     api_settings: Path = Path("goblin-king-api.json")
+    defaults: ProjectDefaults = Field(default_factory=ProjectDefaults)
     goblins: dict[str, ProjectGoblinSpec] = Field(default_factory=dict)
 
     @field_validator("api_version")
@@ -100,7 +108,29 @@ class ProjectSettings(BaseModel):
             settings = cls.model_validate(payload)
         except ValidationError as error:
             raise ProjectSettingsError(str(error)) from error
-        return settings.resolve_relative_to(settings_path.resolve().parent)
+        root = settings_path.resolve().parent
+        try:
+            settings = settings.with_effective_resource_defaults(
+                resource_ceilings=_discover_resource_ceilings(root)
+            )
+        except (ResourcePolicyError, ValueError) as error:
+            raise ProjectSettingsError(str(error)) from error
+        return settings.resolve_relative_to(root)
+
+    def with_effective_resource_defaults(
+        self,
+        *,
+        resource_ceilings: ResourcePolicy | None = None,
+    ) -> ProjectSettings:
+        """Merge defaults.resources into goblins and validate the effective policies."""
+        defaults = self.defaults.resources
+        _validate_resource_policy("defaults.resources", defaults, resource_ceilings)
+        goblins = {}
+        for kind, spec in self.goblins.items():
+            resources = _deep_merge(defaults, spec.resources)
+            _validate_resource_policy(kind, resources, resource_ceilings)
+            goblins[kind] = spec.model_copy(update={"resources": resources})
+        return self.model_copy(update={"goblins": goblins})
 
     def resolve_relative_to(self, root: Path) -> ProjectSettings:
         """Resolve path fields relative to the settings file directory."""
@@ -152,6 +182,28 @@ class ProjectSettings(BaseModel):
             for kind, spec in self.goblins.items()
         }
 
+    def resource_policy_set(
+        self,
+        operator_policies: ResourcePolicySet | None = None,
+    ) -> ResourcePolicySet | None:
+        """Return operator policies with project defaults layered into defaults."""
+        project_defaults = self.defaults.resources
+        if not project_defaults and operator_policies is None:
+            return None
+
+        base = operator_policies or ResourcePolicySet()
+        defaults = ResourcePolicy.model_validate(
+            _deep_merge(base.defaults.compact(), project_defaults)
+        )
+        merged = ResourcePolicySet(
+            version=base.version,
+            defaults=defaults,
+            goblins=base.goblins,
+            ceilings=base.ceilings,
+        )
+        merged.validate_within_ceilings("<project defaults>", defaults)
+        return merged
+
 
 def _resolve(root: Path, path: Path) -> Path:
     """Resolve one project path without requiring it to exist."""
@@ -180,3 +232,33 @@ def _project_metadata(spec: ProjectGoblinSpec) -> dict[str, Any]:
         "secret_refs": spec.secret_refs,
         "schedule": spec.schedule,
     }
+
+
+def _validate_resource_policy(
+    kind: str,
+    resources: dict[str, Any],
+    ceilings: ResourcePolicy | None,
+) -> None:
+    """Validate project resource metadata with the runtime resource policy model."""
+    policy = ResourcePolicy.model_validate(resources)
+    if ceilings is not None:
+        ResourcePolicySet(ceilings=ceilings).validate_within_ceilings(kind, policy)
+
+
+def _discover_resource_ceilings(root: Path) -> ResourcePolicy | None:
+    """Load sibling resource-policy ceilings when an adopting project provides them."""
+    policy_path = root / "goblin-resource-policies.json"
+    if not policy_path.exists():
+        return None
+    return ResourcePolicySet.from_path(policy_path).ceilings
+
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Merge nested dictionaries without mutating project defaults or goblin overrides."""
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
