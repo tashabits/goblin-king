@@ -756,7 +756,7 @@ language-specific protocols.
 
 Phase 34 closes the resource-policy enforcement gap from Phase 33. Phase 35 adds
 project-defined goblin configuration. Phase 36 adds bring-your-own-goblin validation.
-Phases 38-42 are planned in
+Phases 38-42 are completed in
 [Project-Adoptable Goblin King Roadmap](project-adoptable-roadmap.md). They
 carry Goblin King from the current container-contract and cross-language demo state into
 a project-adoptable alpha where another codebase can define, validate, schedule, and
@@ -776,18 +776,16 @@ Phase sequence:
 - Phase 39: stable `v1alpha1` contract and public API boundaries. Implemented.
 - Phase 40: adopter documentation pass. Implemented.
 - Phase 41: adopter smoke suite. Implemented.
-- Phase 42: project-adoptable alpha closeout.
+- Phase 42: project-adoptable alpha closeout. Implemented.
 
 All Phase 34-42 proof is local. GitHub Actions are not required and are not sufficient
 as the quality gate.
 
-## Outstanding Items
+## Deferred Items
 
-The README is the user manual. This roadmap file is where unfinished or future work is
+The README is the user manual. This roadmap file is where deferred future work is
 tracked.
 
-- Phase 42 project-adoptable alpha closeout remains outstanding until implemented.
-- Full browser-proven Docker and Helm admin runtime audit for every roadmap PR.
 - Secret allow-lists, provider-specific admission controls, object-storage quota
   enforcement, and deeper policy engines.
 - Public PyPI/package-publication hardening.

@@ -10,6 +10,12 @@ containers, inspect what happened, and keep a durable audit trail. Docker and Co
 are the default local path. Kubernetes is optional through the Helm chart when a project
 needs a cluster deployment.
 
+**Status: Project-adoptable alpha.** Goblin King is suitable for local
+development, internal prototypes, and trusted early-adopter projects that want
+to define and schedule their own contract-compliant container goblins. It is not
+yet recommended for untrusted multi-tenant workloads without additional
+hardening.
+
 ## Table Of Contents
 
 - [Goblin King](#goblin-king)
