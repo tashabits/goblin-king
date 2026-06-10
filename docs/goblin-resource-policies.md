@@ -4,7 +4,8 @@ Resource policies describe the limits and runtime expectations for each goblin k
 They are the bridge between the Goblin Container Contract and the deployment platform
 that actually runs the worker container.
 
-Phase 33 establishes the policy model and the deployment mappings. Current runtime
+Phase 33 establishes the policy model and the deployment mappings. Phase 34 is planned
+to add runtime enforcement and persisted effective-policy proof. Current runtime
 enforcement already covers job timeouts, retry limits, artifact path safety, scoped hard
 termination, audit records, and events. CPU, memory, process, network, filesystem, log,
 and artifact byte ceilings should be treated as deployment policy until they are wired
@@ -244,4 +245,3 @@ This policy guide does not add:
 
 Those can be added later without changing the container contract: a goblin still reads
 input/context, writes result/artifacts, emits optional heartbeats/events, and exits.
-

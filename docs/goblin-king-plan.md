@@ -741,12 +741,13 @@ language-specific protocols.
   run, expose it in API, CLI, and admin surfaces, add audit/event records for validation
   failures, and prove explicit Docker and Helm/Kubernetes mappings.
 
-## Project-Adoptable Alpha Roadmap Extension
+## Runtime Enforcement And Project-Adoptable Alpha Roadmap Extension
 
-Phases 34-41 are planned in [Project-Adoptable Goblin King Roadmap](project-adoptable-roadmap.md).
-They carry Goblin King from the current container-contract and cross-language demo state
-into a project-adoptable alpha where another codebase can define, validate, schedule,
-and inspect its own goblins without modifying Goblin King internals.
+Phase 34 closes the resource-policy enforcement gap from Phase 33. Phases 35-42 are
+planned in [Project-Adoptable Goblin King Roadmap](project-adoptable-roadmap.md). They
+carry Goblin King from the current container-contract and cross-language demo state into
+a project-adoptable alpha where another codebase can define, validate, schedule, and
+inspect its own goblins without modifying Goblin King internals.
 
 The central rule remains: goblins are contract-compliant OCI/Docker containers.
 Goblin King schedules containers, not language runtimes, and Python helpers are optional
@@ -754,16 +755,17 @@ conveniences only.
 
 Planned phases:
 
-- Phase 34: project-adoptable goblin configuration.
-- Phase 35: bring-your-own-goblin validation.
-- Phase 36: project template and golden path quickstart.
-- Phase 37: external project scheduling and run inspection.
-- Phase 38: stable `v1alpha1` contract and public API boundaries.
-- Phase 39: adopter documentation pass.
-- Phase 40: adopter smoke suite.
-- Phase 41: project-adoptable alpha closeout.
+- Phase 34: runtime resource policy enforcement.
+- Phase 35: project-adoptable goblin configuration.
+- Phase 36: bring-your-own-goblin validation.
+- Phase 37: project template and golden path quickstart.
+- Phase 38: external project scheduling and run inspection.
+- Phase 39: stable `v1alpha1` contract and public API boundaries.
+- Phase 40: adopter documentation pass.
+- Phase 41: adopter smoke suite.
+- Phase 42: project-adoptable alpha closeout.
 
-All Phase 34-41 proof is local. GitHub Actions are not required and are not sufficient
+All Phase 34-42 proof is local. GitHub Actions are not required and are not sufficient
 as the quality gate.
 
 ## Outstanding Items
@@ -771,12 +773,14 @@ as the quality gate.
 The README is the user manual. This roadmap file is where unfinished or future work is
 tracked.
 
-- Phases 34-41 remain planned and outstanding until implemented.
+- Phase 34 runtime resource-policy enforcement remains outstanding until implemented.
+- Phases 35-42 project-adoptable alpha work remains outstanding until implemented.
 - Runtime-level enforcement for per-goblin CPU, memory, process, network, filesystem,
   log, artifact byte, concurrency, and secret ceilings.
 - Persisting the effective resource policy used for each run.
 - API, CLI, and admin display of effective per-run resource policy.
 - Audit/event records for resource-policy validation failures and enforcement outcomes.
+- Full browser-proven Docker and Helm admin runtime audit for every roadmap PR.
 - Project-level goblin configuration for external/adopting projects.
 - Bring-your-own-goblin validation workflows for arbitrary project images.
 - Golden path project templates and adopter quickstart.

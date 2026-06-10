@@ -1,8 +1,16 @@
 #!/bin/sh
 set -eu
 
+DIR_ARGS=""
+for dir in /goblin /goblin-data /goblin-config /goblin-result /artifacts; do
+  if [ -d "$dir" ]; then
+    DIR_ARGS="$DIR_ARGS --dir $dir"
+  fi
+done
+
+# shellcheck disable=SC2086
 wasmtime run \
-  --dir /goblin \
+  $DIR_ARGS \
   --env "GOBLIN_INPUT_PATH=${GOBLIN_INPUT_PATH:?GOBLIN_INPUT_PATH is required}" \
   --env "GOBLIN_CONTEXT_PATH=${GOBLIN_CONTEXT_PATH:?GOBLIN_CONTEXT_PATH is required}" \
   --env "GOBLIN_RESULT_PATH=${GOBLIN_RESULT_PATH:?GOBLIN_RESULT_PATH is required}" \

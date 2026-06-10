@@ -44,10 +44,13 @@ The path should let a user:
 6. Inspect run status, results, logs, and artifacts.
 7. Understand what is stable, alpha, and internal.
 
-## Phase 34: Project-Adoptable Goblin Configuration
+Phase 34 is reserved for runtime resource-policy enforcement. The project-adoptable
+alpha work starts after that enforcement pass.
 
-- Branch: `phase-34-project-goblin-config`.
-- PR title: `Phase 34 project-adoptable goblin configuration`.
+## Phase 35: Project-Adoptable Goblin Configuration
+
+- Branch: `phase-35-project-goblin-config`.
+- PR title: `Phase 35 project-adoptable goblin configuration`.
 - Status: planned.
 
 Add or formalize a project-level configuration format that lets consuming
@@ -95,10 +98,10 @@ Proof:
 - Prove project-defined goblins do not require Python worker imports.
 - Run full local CI.
 
-## Phase 35: Bring-Your-Own-Goblin Validation
+## Phase 36: Bring-Your-Own-Goblin Validation
 
-- Branch: `phase-35-bring-your-own-goblin-validation`.
-- PR title: `Phase 35 bring-your-own-goblin validation`.
+- Branch: `phase-36-bring-your-own-goblin-validation`.
+- PR title: `Phase 36 bring-your-own-goblin validation`.
 - Status: planned.
 
 Add a validation workflow that lets an adopting project verify a goblin
@@ -128,10 +131,10 @@ Proof:
   fit the CLI.
 - Docker proof and full local CI are included.
 
-## Phase 36: Project Template And Golden Path Quickstart
+## Phase 37: Project Template And Golden Path Quickstart
 
-- Branch: `phase-36-project-template-quickstart`.
-- PR title: `Phase 36 project template and quickstart`.
+- Branch: `phase-37-project-template-quickstart`.
+- PR title: `Phase 37 project template and quickstart`.
 - Status: planned.
 
 Add a small, boring, copy-paste-friendly project template and quickstart that
@@ -172,10 +175,10 @@ Proof:
 - Result and artifact inspection commands work.
 - Full local CI passes.
 
-## Phase 37: External Project Scheduling And Run Inspection
+## Phase 38: External Project Scheduling And Run Inspection
 
-- Branch: `phase-37-external-project-scheduling`.
-- PR title: `Phase 37 external project scheduling and run inspection`.
+- Branch: `phase-38-external-project-scheduling`.
+- PR title: `Phase 38 external project scheduling and run inspection`.
 - Status: planned.
 
 Make sure project-defined goblins can be scheduled and inspected cleanly through
@@ -210,10 +213,10 @@ Proof:
 - API and admin surfaces work where already supported.
 - Full local CI passes.
 
-## Phase 38: Stable v1alpha1 Contract And Public API Boundaries
+## Phase 39: Stable v1alpha1 Contract And Public API Boundaries
 
-- Branch: `phase-38-v1alpha1-contract-public-boundaries`.
-- PR title: `Phase 38 v1alpha1 contract and public boundaries`.
+- Branch: `phase-39-v1alpha1-contract-public-boundaries`.
+- PR title: `Phase 39 v1alpha1 contract and public boundaries`.
 - Status: planned.
 
 Mark the Goblin Container Contract and project config format with explicit
@@ -239,10 +242,10 @@ Proof:
 - Public/semi-public/internal module docs are updated.
 - Full local CI passes.
 
-## Phase 39: Adopter Documentation Pass
+## Phase 40: Adopter Documentation Pass
 
-- Branch: `phase-39-adopter-documentation-pass`.
-- PR title: `Phase 39 adopter documentation pass`.
+- Branch: `phase-40-adopter-documentation-pass`.
+- PR title: `Phase 40 adopter documentation pass`.
 - Status: planned.
 
 Write and reorganize documentation for people who want to use Goblin King inside
@@ -289,10 +292,10 @@ Proof:
 - Docs links are valid.
 - Full local CI passes.
 
-## Phase 40: Adopter Smoke Suite
+## Phase 41: Adopter Smoke Suite
 
-- Branch: `phase-40-adopter-smoke-suite`.
-- PR title: `Phase 40 adopter smoke suite`.
+- Branch: `phase-41-adopter-smoke-suite`.
+- PR title: `Phase 41 adopter smoke suite`.
 - Status: planned.
 
 Add a local smoke suite that proves the adopter path works end to end. It should
@@ -321,10 +324,10 @@ Proof:
   required quality gate.
 - Full local CI passes.
 
-## Phase 41: Project-Adoptable Alpha Closeout
+## Phase 42: Project-Adoptable Alpha Closeout
 
-- Branch: `phase-41-project-adoptable-alpha-closeout`.
-- PR title: `Phase 41 project-adoptable alpha closeout`.
+- Branch: `phase-42-project-adoptable-alpha-closeout`.
+- PR title: `Phase 42 project-adoptable alpha closeout`.
 - Status: planned.
 
 Perform a closeout pass to ensure Goblin King is ready for early adopter

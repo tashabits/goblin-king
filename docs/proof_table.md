@@ -40,23 +40,27 @@ receipt, not a user guide.
 | 31 | Container-first admin/docs wording | Admin UI and docs were updated to present goblins as language-agnostic OCI worker containers. | None known. |
 | 32 | Language-agnostic closeout | Language/runtime docs and samples were audited; closeout doc captured proof commands and deferred non-goals. | Deferred items are tracked below. |
 | 33 | Per-goblin resource policies | `docs/goblin-resource-policies.md` documented policy shape, defaults, ceilings, Docker mapping, Kubernetes/Helm mapping, and proof expectations. | Runtime-level CPU, memory, process, network, filesystem, log, artifact byte, concurrency, and secret ceiling enforcement remains outstanding. |
-| 34 | Project-adoptable goblin configuration | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: project-level config for defining goblins outside Goblin King internals. |
-| 35 | Bring-your-own-goblin validation | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: direct/project-config validation for arbitrary contract-compliant goblin images. |
-| 36 | Project template and quickstart | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: copy-paste adopter project template and golden path quickstart. |
-| 37 | External project scheduling and run inspection | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: CLI/API/admin path for scheduling and inspecting project-defined goblins. |
-| 38 | v1alpha1 contract and public boundaries | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: explicit alpha versioning for container contract, project config, and public API boundaries. |
-| 39 | Adopter documentation pass | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: complete adopter documentation set and README adopter path. |
-| 40 | Adopter smoke suite | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: one-command local smoke proving project config, validation, scheduling, results, artifacts, failures, and cleanup. |
-| 41 | Project-adoptable alpha closeout | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: clean-checkout audit and project-adoptable alpha status proof. |
+| Preflight | Roadmap proof hardening | Planned as non-phase branch `roadmap-proof-preflight`. | Outstanding until merged: docs audit, audit helper/doc, full Docker/Helm browser runtime audit proof. |
+| 34 | Runtime resource policy enforcement | Planned after preflight. | Outstanding: runtime-level enforcement, persisted effective policy, API/CLI/admin display, audit/events, Docker/Kubernetes mappings. |
+| 35 | Project-adoptable goblin configuration | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: project-level config for defining goblins outside Goblin King internals. |
+| 36 | Bring-your-own-goblin validation | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: direct/project-config validation for arbitrary contract-compliant goblin images. |
+| 37 | Project template and quickstart | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: copy-paste adopter project template and golden path quickstart. |
+| 38 | External project scheduling and run inspection | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: CLI/API/admin path for scheduling and inspecting project-defined goblins. |
+| 39 | v1alpha1 contract and public boundaries | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: explicit alpha versioning for container contract, project config, and public API boundaries. |
+| 40 | Adopter documentation pass | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: complete adopter documentation set and README adopter path. |
+| 41 | Adopter smoke suite | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: one-command local smoke proving project config, validation, scheduling, results, artifacts, failures, and cleanup. |
+| 42 | Project-adoptable alpha closeout | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: clean-checkout audit and project-adoptable alpha status proof. |
 
 ## Outstanding Items
 
+- Preflight roadmap proof hardening and the required Docker/Helm browser runtime audit
+  procedure.
 - Runtime-level enforcement for per-goblin CPU, memory, process, network, filesystem,
   log, artifact byte, concurrency, and secret ceilings.
 - Persisting the effective resource policy used for each run.
 - API, CLI, and admin display of effective per-run resource policy.
 - Audit/event records for resource-policy validation failures and enforcement outcomes.
-- Phases 34-41 project-adoptable alpha work, as detailed in
+- Phases 35-42 project-adoptable alpha work, as detailed in
   `docs/project-adoptable-roadmap.md`.
 - Public PyPI/package-publication hardening.
 - Cloud-provider-specific managed service recipes.

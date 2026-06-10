@@ -27,7 +27,9 @@ def test_wasi_wrappers_pass_contract_environment() -> None:
         "GOBLIN_RESULT_PATH",
         "GOBLIN_ARTIFACT_ROOT",
         "worker.wasm",
-        "--dir /goblin",
+        "/goblin",
+        "/goblin-config",
+        "/goblin-result",
     }
     for sample in SAMPLES:
         wrapper = (EXAMPLES / sample / "run-wasi.sh").read_text(encoding="utf-8")

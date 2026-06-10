@@ -4,7 +4,8 @@ Goblin King code should stay easy to review, test, and reuse across projects.
 
 ## Branches And Pull Requests
 
-- Do code work on feature branches. Agent-created branches should use the `codex/` prefix unless a maintainer asks for another naming scheme.
+- Do code work on feature branches. Use the exact branch name requested by the
+  maintainer for roadmap phases; do not add prefixes when the plan specifies a branch.
 - Submit changes through pull requests into `main`.
 - Do not commit directly to `main`.
 - Keep each pull request scoped to one coherent change.
@@ -35,6 +36,11 @@ of what the command proved.
 When a phase includes Docker behavior, PR evidence must include real local Docker proof.
 Mocked Docker tests are useful, but they do not replace building the worker image,
 running the Docker-backed path, and recording the observed result in the PR body.
+
+Roadmap PRs from `roadmap-proof-preflight` onward must include the browser-driven Docker
+and Helm admin runtime audit described in `docs/admin-runtime-audit.md`. The PR body
+must include screenshots plus an audit table with each goblin kind, Docker result,
+Helm result, run IDs, and notes. Unexpected failed runs are blockers.
 
 When a phase includes API behavior, PR evidence must include local HTTP smoke proof.
 At minimum, record a successful read endpoint, a rejected unauthenticated mutation,
