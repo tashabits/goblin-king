@@ -21,6 +21,7 @@ hardening.
 - [Goblin King](#goblin-king)
 - [Table Of Contents](#table-of-contents)
 - [Quick Start](#quick-start)
+- [Clean Restarts](#clean-restarts)
 - [Using Goblin King In Your Project](#using-goblin-king-in-your-project)
 - [Goblin Container Contract](#goblin-container-contract)
   - [Launch Language Goblins In Admin](#launch-language-goblins-in-admin)
@@ -197,6 +198,45 @@ curl -H "Authorization: Bearer local-dev-token" http://127.0.0.1:8000/admin/disc
 Failed reloads leave the previous valid registry active and report validation errors
 for the Discovery panel. New goblin kinds are read from the API at runtime, so the
 React admin does not need a rebuild when project goblins are added.
+
+## Clean Restarts
+
+Use these targets when you want to tear a stack down and keep no runtime data.
+They remove Docker Compose volumes or the Helm PVC before starting fresh.
+
+Docker Compose:
+
+```bash
+make docker-restart-clean
+```
+
+Kubernetes/Helm:
+
+```bash
+make helm-restart-clean
+```
+
+Both runtimes:
+
+```bash
+make stack-restart-clean
+```
+
+Useful individual targets:
+
+```bash
+make docker-up
+make docker-wipe
+make helm-up
+make helm-wipe
+make stack-wipe
+```
+
+The Helm targets use overridable variables:
+
+```bash
+make helm-restart-clean HELM_RELEASE=goblin-king HELM_NAMESPACE=default
+```
 
 ## Using Goblin King In Your Project
 
