@@ -9,6 +9,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from goblin_king.jsonio import read_json_file
+
 
 class ResourcePolicyError(ValueError):
     """Raised when a resource policy file or effective policy is invalid."""
@@ -92,7 +94,7 @@ class ResourcePolicySet(BaseModel):
         """Load one JSON resource policy file."""
         policy_path = Path(path)
         try:
-            payload = json.loads(policy_path.read_text(encoding="utf-8"))
+            payload = read_json_file(policy_path)
         except FileNotFoundError as error:
             raise ResourcePolicyError(f"resource policy file not found: {policy_path}") from error
         except json.JSONDecodeError as error:

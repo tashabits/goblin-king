@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,6 +12,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from goblin_king.contracts import ScheduleRecord
+from goblin_king.jsonio import pretty_json_line, read_json_object
 from goblin_king.project import ProjectSettings
 from goblin_king.registry import GoblinRegistry
 from goblin_king.scheduler import Scheduler
@@ -66,7 +66,7 @@ def run_adopter_project_smoke(
         *validate_workers(
             registry=registry,
             workers=workers,
-            input_payload=_read_json(project_dir / "inputs" / "hello.json"),
+            input_payload=read_json_object(project_dir / "inputs" / "hello.json"),
             kinds=[f"{prefix}.hello"],
             build=True,
             require_success=True,
@@ -75,7 +75,7 @@ def run_adopter_project_smoke(
         *validate_workers(
             registry=registry,
             workers=workers,
-            input_payload=_read_json(project_dir / "inputs" / "artifact.json"),
+            input_payload=read_json_object(project_dir / "inputs" / "artifact.json"),
             kinds=[f"{prefix}.artifact"],
             build=True,
             require_success=True,
@@ -84,7 +84,7 @@ def run_adopter_project_smoke(
         *validate_workers(
             registry=registry,
             workers=workers,
-            input_payload=_read_json(project_dir / "inputs" / "failure.json"),
+            input_payload=read_json_object(project_dir / "inputs" / "failure.json"),
             kinds=[f"{prefix}.failure"],
             build=True,
             require_success=False,
@@ -96,9 +96,9 @@ def run_adopter_project_smoke(
     store = SQLiteStore(db_path)
     now = datetime.now(UTC)
     schedule_inputs = {
-        f"{prefix}.hello": _read_json(project_dir / "inputs" / "hello.json"),
-        f"{prefix}.artifact": _read_json(project_dir / "inputs" / "artifact.json"),
-        f"{prefix}.failure": _read_json(project_dir / "inputs" / "failure.json"),
+        f"{prefix}.hello": read_json_object(project_dir / "inputs" / "hello.json"),
+        f"{prefix}.artifact": read_json_object(project_dir / "inputs" / "artifact.json"),
+        f"{prefix}.failure": read_json_object(project_dir / "inputs" / "failure.json"),
     }
     for kind, payload in schedule_inputs.items():
         store.save_schedule(
@@ -160,7 +160,7 @@ def _add_failure_goblin(project_dir: Path, prefix: str) -> None:
     """Add a controlled-failure worker to the generated adopter project."""
     kind = f"{prefix}.failure"
     project_path = project_dir / "goblin-king-project.json"
-    payload = _read_json(project_path)
+    payload = read_json_object(project_path)
     payload["goblins"][kind] = {
         "image": f"{prefix}-failure:local",
         "context": f"workers/{kind}",
@@ -170,9 +170,9 @@ def _add_failure_goblin(project_dir: Path, prefix: str) -> None:
         "tags": ["quickstart", "failure"],
         "resourcePolicy": {"timeout_seconds": 30, "memory": {"limit": "256Mi"}},
     }
-    project_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    project_path.write_text(pretty_json_line(payload), encoding="utf-8")
     (project_dir / "inputs" / "failure.json").write_text(
-        json.dumps({"reason": "expected adopter smoke failure"}, indent=2) + "\n",
+        pretty_json_line({"reason": "expected adopter smoke failure"}),
         encoding="utf-8",
     )
     worker_dir = project_dir / "workers" / kind
@@ -231,11 +231,6 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 '''
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    """Read a JSON object from a local proof file."""
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _run_summary(run: Any) -> dict[str, Any]:

@@ -12,6 +12,14 @@ work less cramped without moving public adoption boundaries.
 | Admin UI data helpers | Sorting, quotes, JSON parsing, and traffic compaction lived in `App.tsx`. | Small data helpers live in `admin-ui/src/adminData.ts`. |
 | Admin UI components | Reusable `Stat` and `Table` lived at the bottom of `App.tsx`. | Presentational components live in `admin-ui/src/components.tsx`. |
 
+## Cleanup 01 Backend Helpers
+
+| Area | Before | After |
+| --- | --- | --- |
+| Job metadata | API, CLI, and scheduler each built goblin source/effective policy metadata locally. | `src/goblin_king/metadata.py` provides the shared internal metadata builder. |
+| JSON file reads | Registry, project, API settings, worker image maps, and resource policies each repeated UTF-8 JSON file reads. | `src/goblin_king/jsonio.py` centralizes small JSON file and pretty-print helpers while preserving caller-specific errors. |
+| Generated JSON snippets | Template and smoke helpers repeated pretty JSON formatting for generated files. | Template/smoke generation now use the shared pretty JSON helpers. |
+
 ## Stable Boundary
 
 No public imports were changed. Adopting projects should continue using the root

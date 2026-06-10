@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 from goblin_king.contracts import GOBLIN_KIND_PATTERN
+from goblin_king.jsonio import pretty_json_line
 from goblin_king.versions import PROJECT_CONFIG_API_VERSION, PROJECT_CONFIG_KIND
 
 
@@ -109,12 +110,12 @@ def init_project(target_dir: str | Path, *, prefix: str = "project") -> Path:
         directory.mkdir(parents=True, exist_ok=True)
 
     _write(root / "goblin-king-project.json", _adopter_project_json(prefix))
-    _write(root / "goblin-images.json", json.dumps({"workers": {}}, indent=2) + "\n")
+    _write(root / "goblin-images.json", pretty_json_line({"workers": {}}))
     _write(root / "goblin-king-api.json", _api_settings_json())
-    _write(root / "inputs" / "hello.json", json.dumps({"name": "World"}, indent=2) + "\n")
+    _write(root / "inputs" / "hello.json", pretty_json_line({"name": "World"}))
     _write(
         root / "inputs" / "artifact.json",
-        json.dumps({"filename": "report.txt", "message": "Artifact proof"}, indent=2) + "\n",
+        pretty_json_line({"filename": "report.txt", "message": "Artifact proof"}),
     )
     _write(root / "schemas" / "hello.input.schema.json", _hello_schema_json())
     _write(root / "schemas" / "artifact.input.schema.json", _artifact_schema_json())
