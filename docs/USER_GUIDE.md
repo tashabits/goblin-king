@@ -50,8 +50,8 @@ Queue and execute the short Hello World sample:
 ```bash
 goblin-king jobs submit example.hello \
   --input examples/input.json \
-  --registry examples/goblins.json \
-  --images goblin-images.json \
+  --registry demo-goblins.json \
+  --images demo-images.json \
   --redis-url redis://localhost:6379/0
 ```
 
@@ -65,12 +65,12 @@ Create a due schedule and run one deterministic scheduler pass:
 goblin-king schedules add example.echo \
   --cron "* * * * *" \
   --input examples/input.json \
-  --registry examples/goblins.json \
+  --registry demo-goblins.json \
   --due-now
 
 goblin-king scheduler run-once \
-  --registry examples/goblins.json \
-  --images goblin-images.json \
+  --registry demo-goblins.json \
+  --images demo-images.json \
   --redis-url redis://localhost:6379/0
 ```
 
@@ -112,6 +112,10 @@ captures request payloads, responses, durable events, Redis Stream delivery heal
 live WebSocket messages. King-side kill controls cancel jobs or stop registered
 services. Admin hard-kill runtime controls are separate and only target Docker
 containers or Kubernetes Jobs with Goblin King ownership labels.
+
+The default demo setup uses `demo-goblins.json` and `demo-images.json`, so the Goblin
+Lab dropdown includes the core samples plus explicit language goblins for .NET, Go,
+Java, Node.js, PHP, Python, Ruby, Rust, shell, C/WASI, and Rust/WASI.
 
 For a screenshot walkthrough of each admin panel, see
 [Goblin King Admin Guide](ADMIN_GUIDE.md).
@@ -172,7 +176,7 @@ Plan an image promotion:
 ```bash
 goblin-king deploy promotions plan example.hello \
   --target-image registry.example/goblin-king-example-hello:prod \
-  --images goblin-images.json --build --push
+  --images demo-images.json --build --push
 goblin-king deploy promotions list
 ```
 

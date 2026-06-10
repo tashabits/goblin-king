@@ -76,8 +76,8 @@ persistence:
     - ReadWriteOnce
 
 config:
-  registryPath: /app/examples/goblins.json
-  imagesPath: /app/goblin-images.json
+  registryPath: /app/demo-goblins.json
+  imagesPath: /app/demo-images.json
   projectSettingsPath: ""
   dbPath: /data/goblin-king.sqlite3
   artifactRoot: /data/artifacts

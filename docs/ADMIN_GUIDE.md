@@ -31,6 +31,11 @@ and press **Submit job**. The quick buttons run common proof paths:
 The captured traffic panel records the request and response so the proof is visible in
 the UI.
 
+The default demo registry includes the core samples plus explicit language goblins for
+.NET, Go, Java, Node.js, PHP, Python, Ruby, Rust, shell, C/WASI, and Rust/WASI. Search
+the dropdown for `hello-go`, `hello-rust`, `hello-node`, or `wasi` when you want to
+prove one runtime at a time.
+
 ![Goblin Lab job submission](images/admin/admin-goblin-lab.png)
 
 ## Watch And Cancel Tasks
