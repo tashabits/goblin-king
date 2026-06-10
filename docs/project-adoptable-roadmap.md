@@ -317,7 +317,7 @@ Proof:
 
 - Branch: `phase-40-adopter-documentation-pass`.
 - PR title: `Phase 40 adopter documentation pass`.
-- Status: planned.
+- Status: implemented.
 
 Write and reorganize documentation for people who want to use Goblin King inside
 their own project.
@@ -356,12 +356,33 @@ the adoption guide and shows the shortest possible working path.
 
 Proof:
 
-- Docs provide a complete adopter path with copy-paste commands and expected
-  outputs.
-- Docs avoid implying goblins are Python plugins.
+- README now includes `Using Goblin King In Your Project` with the shortest template,
+  validation, submit, schedule, and inspection path.
+- `docs/adopter-guide.md` provides a complete adopter path with copy-paste commands,
+  expected outputs, Docker, Helm, admin, result, artifact, failure, and public-boundary
+  guidance.
+- `docs/ADOPTING_PROJECTS.md` now leads with project config and container goblins;
+  Python package metadata is documented as optional.
 - Docs consistently say goblins are contract-compliant containers.
-- Docs links are valid.
-- Full local CI passes.
+- Documentation tests verify README heading anchors and the adopter guide link.
+- Docker admin audit passed for every registered demo goblin. Representative
+  proof: `example.hello` completed as job
+  `cb69982b-9b73-4fa1-87f6-86a183686eb5` / run
+  `cd2d9fef-9c95-4f92-b40c-b296723eaf8e`, `example.artifact`
+  completed as job `aa0b107c-b046-437e-9f70-3e99499f4b4a` / run
+  `2ce3cf0e-467d-4d1d-aee2-b1aaa5720ecc`, controlled failures failed
+  readably as expected, and `example.long-hello` returned changing timestamps
+  for service `6a489ccd-546a-4ed7-a04f-ed148ff1386e`.
+- Helm admin audit passed for every registered demo goblin. Representative
+  proof: `example.hello` completed as job
+  `98a139b4-a694-45ba-bbf6-1555ef567c65` / run
+  `41e64861-6e60-40bd-ab48-46b87bff7d0d`, `example.artifact`
+  completed as job `0b6c78d7-40c6-4980-a8a3-deec6ceb766d` / run
+  `1e2c34e9-9ec4-4b9d-aa3a-0e75002bfae0`, controlled failures failed
+  readably as expected, and `example.long-hello` returned changing timestamps
+  for service `f39bab2a-5bac-47df-86e1-0e64f425a4cd`.
+- Phase 40 screenshots live at `docs/screenshots/phase-40-docker-admin.png`
+  and `docs/screenshots/phase-40-helm-admin.png`.
 
 ## Phase 41: Adopter Smoke Suite
 

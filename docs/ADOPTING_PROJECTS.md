@@ -11,7 +11,8 @@ Use an editable install while building the integration:
 python -m pip install -e ../goblin-king[dev]
 ```
 
-Host-project goblin packages should import only from the root package boundary:
+If a host project chooses to use Python package metadata or tests, import only from the
+root package boundary:
 
 ```python
 from goblin_king import GoblinContext, GoblinDefinition, GoblinResult
@@ -34,9 +35,24 @@ python -m pip install dist/goblin_king-*.whl
 Pin the wheel version together with the API, scheduler, and admin Docker image tags used
 by the deployment.
 
-## Generate A Goblin Package
+## Define Container Goblins In Project Config
 
-Create a starter plugin package:
+For most projects, start with a standalone project config instead of a Python plugin:
+
+```bash
+goblin-king project init ./my-goblin-project --prefix myproject
+cd ./my-goblin-project
+```
+
+The generated `goblin-king-project.json` defines project-owned container goblins and
+points each kind at a self-contained worker folder with its own Dockerfile. See
+[Adopter Guide](adopter-guide.md) for the full validation, run, schedule, and admin
+proof path.
+
+## Optional Python Package Metadata
+
+Create a starter package only when the host project wants Python entry-point discovery
+or Python-side metadata helpers:
 
 ```bash
 goblin-king project init-package ./my-goblins \
@@ -63,8 +79,8 @@ other OCI image that obeys the same contract.
 
 ## Connect The Host Project
 
-Use `goblin-king-project.json` to describe the host project's registries, entry points,
-worker image map, and API settings:
+Use `goblin-king-project.json` to describe the host project's registries, optional
+entry points, worker image map, inline container goblins, and API settings:
 
 ```json
 {
