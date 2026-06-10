@@ -57,6 +57,7 @@ class GoblinDefinition(BaseModel):
     entrypoint: str = Field(default="run", min_length=1)
     timeout_seconds: int | None = Field(default=None, gt=0)
     max_retries: int | None = Field(default=None, ge=0)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("kind")
     @classmethod

@@ -86,10 +86,15 @@ class GoblinRegistry:
         paths: list[str | Path],
         *,
         include_entry_points: bool = True,
+        definitions: list[GoblinDefinition] | None = None,
     ) -> GoblinRegistry:
         """Merge registry files with optional Python entry point discovery."""
-        definitions = discover_entry_point_definitions() if include_entry_points else []
-        return cls.from_paths_and_definitions(paths, definitions)
+        if definitions is None:
+            definitions = []
+        entry_point_definitions = (
+            discover_entry_point_definitions() if include_entry_points else []
+        )
+        return cls.from_paths_and_definitions(paths, [*entry_point_definitions, *definitions])
 
     @staticmethod
     def load_file(path: str | Path) -> list[GoblinDefinition]:

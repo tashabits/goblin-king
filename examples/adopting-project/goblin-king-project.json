@@ -1,9 +1,31 @@
 {
+  "apiVersion": "goblin-king/v1alpha1",
+  "kind": "GoblinProject",
   "registries": [
     "registries/maintenance.json",
     "registries/reports.json"
   ],
   "entry_points": false,
   "images": "goblin-images.json",
-  "api_settings": "goblin-king-api.json"
+  "api_settings": "goblin-king-api.json",
+  "goblins": {
+    "project.inline.hello": {
+      "displayName": "Project Inline Hello",
+      "description": "A project-defined container goblin loaded without Goblin King source edits.",
+      "image": "project-inline-hello:local",
+      "context": "../../workers/example.hello",
+      "dockerfile": "Dockerfile",
+      "inputSchema": "schemas/inline-hello.input.schema.json",
+      "resources": {
+        "timeout_seconds": 30,
+        "memory": {"limit": "256Mi"}
+      },
+      "artifacts": {"enabled": false},
+      "labels": {"owner": "adopting-project"},
+      "tags": ["demo", "inline-config"],
+      "env": {"PROJECT_GOBLIN_MODE": "demo"},
+      "secretRefs": ["project-inline-demo-token"],
+      "schedule": {"cron": "*/15 * * * *", "enabled": false}
+    }
+  }
 }
