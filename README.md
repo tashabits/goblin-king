@@ -784,6 +784,9 @@ instructions stay focused on features that exist today.
   network-aware examples.
 - [Release Packaging Roadmap](docs/release-packaging-roadmap.md): future
   packaging, install, image, Helm chart, docs-site, and provenance work.
+- [Kubernetes Placement And Federation Roadmap](docs/kubernetes-placement-and-federation-roadmap.md):
+  future path from single-cluster Kubernetes placement to later multi-cluster
+  and geographic federation.
 
 ## Documentation
 
@@ -824,6 +827,7 @@ instructions stay focused on features that exist today.
 | [Goblin Scaffolding Roadmap](docs/goblin-scaffolding-roadmap.md) | Future-work plan for shared CLI and Goblin Designer starter templates. |
 | [Example Recipes Roadmap](docs/example-recipes-roadmap.md) | Future-work plan for practical recipe examples beyond hello-world. |
 | [Release Packaging Roadmap](docs/release-packaging-roadmap.md) | Future-work plan for packaging, publishing, install, chart, docs-site, and provenance work. |
+| [Kubernetes Placement And Federation Roadmap](docs/kubernetes-placement-and-federation-roadmap.md) | Future-work plan for single-cluster Kubernetes placement and later multi-cluster/geographic federation. |
 | [Compatibility Matrix](docs/COMPATIBILITY.md) | Contract and schema compatibility versions for project-ready adoption. |
 | [Upgrade Guide](docs/UPGRADING.md) | Host-project upgrade procedure and compatibility fixture policy. |
 | [Migration Guide](docs/MIGRATION_GUIDE.md) | How to move existing scripts and workers into project goblins. |
