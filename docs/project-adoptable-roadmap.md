@@ -752,6 +752,44 @@ sufficient.
 ## Deferred After Phase 53
 
 - Current release: `v0.1.0-alpha.2`.
+
+### Phase 54: Vendored Project Usage Docs
+
+- Branch: `phase-54-vendored-project-usage-docs`.
+- PR title: `Phase 54 vendored project usage docs`.
+- Status: implemented.
+- Document submodule, subtree, and local path dependency adoption.
+- Clarify that vendored users still use CLI/project config and do not import internals
+  to define goblins.
+- Clarify that vendored admin UI source may require Docker/admin build steps and that
+  project goblin tasks still launch as Docker containers.
+
+### Phase 55: Adopter Admin Dev/Test Stack
+
+- Branch: `phase-55-adopter-admin-test-stack`.
+- PR title: `Phase 55 adopter admin test stack`.
+- Status: planned.
+
+### Phase 56: Admin Project Goblin Visibility
+
+- Branch: `phase-56-admin-project-goblin-visibility`.
+- PR title: `Phase 56 admin project goblin visibility`.
+- Status: planned.
+
+### Phase 57: Project Admin Test Quickstart
+
+- Branch: `phase-57-project-admin-test-quickstart`.
+- PR title: `Phase 57 project admin test quickstart`.
+- Status: planned.
+
+### Phase 58: Adopter Stack Closeout
+
+- Branch: `phase-58-adopter-stack-closeout`.
+- PR title: `Phase 58 adopter stack closeout`.
+- Status: planned.
+
+## Deferred After Phase 58
+
 - Public PyPI release hardening.
 - Full production hardening for untrusted multi-tenant execution.
 - Secret allow-lists, provider-specific admission controls, object-storage quota

@@ -4,6 +4,10 @@ Use `goblin-king project init` to create a standalone adopter project that defin
 container goblins without editing Goblin King source and without requiring Python worker
 imports.
 
+If your host project vendors Goblin King under a path such as `vendor/goblin-king`, see
+[Using Goblin King From A Vendored Checkout](using-goblin-king-from-a-vendored-checkout.md)
+before wiring the generated project into the local admin stack.
+
 ## Create The Project
 
 ```bash
