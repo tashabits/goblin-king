@@ -23,20 +23,12 @@ from goblin_king.contracts import (
     utc_now,
 )
 from goblin_king.store import SQLiteStore
+from tests.api_helpers import auth_headers, build_api_client
 
 
 def build_client(tmp_path: Path) -> tuple[TestClient, SQLiteStore, Path]:
     """Create a test API app with isolated settings and SQLite state."""
-    artifact_root = tmp_path / "artifacts"
-    settings = ApiSettings(
-        registry=Path("examples/goblins.json").resolve(),
-        images=Path("goblin-images.json").resolve(),
-        db=tmp_path / "api.sqlite3",
-        redis_url="redis://localhost:6379/0",
-        artifact_root=artifact_root,
-        auth_token="test-token",
-    )
-    return TestClient(create_app(settings)), SQLiteStore(settings.db), artifact_root
+    return build_api_client(tmp_path)
 
 
 def build_client_with_limit(
@@ -44,21 +36,11 @@ def build_client_with_limit(
     rate_limit_per_minute: int,
 ) -> tuple[TestClient, SQLiteStore]:
     """Create a test API app with a custom local rate limit."""
-    settings = ApiSettings(
-        registry=Path("examples/goblins.json").resolve(),
-        images=Path("goblin-images.json").resolve(),
-        db=tmp_path / "api.sqlite3",
-        redis_url="redis://localhost:6379/0",
-        artifact_root=tmp_path / "artifacts",
-        auth_token="test-token",
+    client, store, _ = build_api_client(
+        tmp_path,
         rate_limit_per_minute=rate_limit_per_minute,
     )
-    return TestClient(create_app(settings)), SQLiteStore(settings.db)
-
-
-def auth_headers() -> dict[str, str]:
-    """Return the static bearer token used by test settings."""
-    return {"Authorization": "Bearer test-token"}
+    return client, store
 
 
 def test_health_and_goblins_endpoints(tmp_path: Path) -> None:

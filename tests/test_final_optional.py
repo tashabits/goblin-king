@@ -8,31 +8,11 @@ from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
-from goblin_king.api import create_app
-from goblin_king.api_settings import ApiSettings
 from goblin_king.contracts import GoblinContext
 from goblin_king.registry import GoblinRegistry
 from goblin_king.runtime import InProcessRuntime
-from goblin_king.store import SQLiteStore
 from goblin_king.workers import WorkerImageMap
-
-
-def _client(tmp_path: Path) -> tuple[TestClient, SQLiteStore]:
-    settings = ApiSettings(
-        registry=Path("examples/goblins.json").resolve(),
-        images=Path("goblin-images.json").resolve(),
-        db=tmp_path / "api.sqlite3",
-        redis_url="redis://localhost:6379/0",
-        artifact_root=tmp_path / "artifacts",
-        auth_token="test-token",
-    )
-    return TestClient(create_app(settings)), SQLiteStore(settings.db)
-
-
-def _auth() -> dict[str, str]:
-    return {"Authorization": "Bearer test-token"}
+from tests.api_helpers import auth_headers, build_api_client
 
 
 def test_short_hello_goblin_returns_hello_world() -> None:
@@ -65,7 +45,7 @@ def test_sample_worker_image_map_covers_demo_goblins() -> None:
 
 def test_admin_ui_requires_auth_and_renders_goblin_inventory(tmp_path: Path) -> None:
     """Verify the API admin route points users toward the React admin service."""
-    client, _ = _client(tmp_path)
+    client, _, _ = build_api_client(tmp_path)
 
     rendered = client.get("/admin")
 
@@ -100,18 +80,18 @@ def test_long_running_service_registration_and_probe_records_traffic(tmp_path: P
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    client, store = _client(tmp_path)
+    client, store, _ = build_api_client(tmp_path)
     base_url = f"http://127.0.0.1:{server.server_port}"
 
     try:
         created = client.post(
             "/services/long-running",
             json={"kind": "example.long-hello", "base_url": base_url},
-            headers=_auth(),
+            headers=auth_headers(),
         )
         service_id = created.json()["id"]
-        first = client.post(f"/services/long-running/{service_id}/probe", headers=_auth())
-        second = client.post(f"/services/long-running/{service_id}/probe", headers=_auth())
+        first = client.post(f"/services/long-running/{service_id}/probe", headers=auth_headers())
+        second = client.post(f"/services/long-running/{service_id}/probe", headers=auth_headers())
     finally:
         server.shutdown()
 
@@ -128,17 +108,17 @@ def test_long_running_service_registration_and_probe_records_traffic(tmp_path: P
 
 def test_long_running_service_detail_stop_and_stopped_probe_conflict(tmp_path: Path) -> None:
     """Verify service stop supports tester kill controls without hard-killing containers."""
-    client, store = _client(tmp_path)
+    client, store, _ = build_api_client(tmp_path)
     created = client.post(
         "/services/long-running",
         json={"kind": "example.long-hello", "base_url": "http://service.example"},
-        headers=_auth(),
+        headers=auth_headers(),
     )
     service_id = created.json()["id"]
 
-    detail = client.get(f"/services/long-running/{service_id}", headers=_auth())
-    stopped = client.post(f"/services/long-running/{service_id}/stop", headers=_auth())
-    probe = client.post(f"/services/long-running/{service_id}/probe", headers=_auth())
+    detail = client.get(f"/services/long-running/{service_id}", headers=auth_headers())
+    stopped = client.post(f"/services/long-running/{service_id}/stop", headers=auth_headers())
+    probe = client.post(f"/services/long-running/{service_id}/probe", headers=auth_headers())
 
     assert created.status_code == 200
     assert detail.status_code == 200
