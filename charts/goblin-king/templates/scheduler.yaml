@@ -98,6 +98,8 @@ spec:
             - {{ .Values.config.dbPath }}
             - --redis-url
             - {{ .Values.config.redisUrl }}
+            - --resource-policies
+            - {{ .Values.config.resourcePoliciesPath }}
             - --interval-seconds
             - "{{ .Values.scheduler.intervalSeconds }}"
       volumes:

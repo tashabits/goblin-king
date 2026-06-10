@@ -578,7 +578,13 @@ export function App() {
         <section id="runs" className="panel two-column">
           <Table
             title="Runs & Results"
-            rows={runs.map((run) => [run.kind, run.status, run.id, run.error || JSON.stringify(run.result || {})])}
+            rows={runs.map((run) => [
+              run.kind,
+              run.status,
+              run.id,
+              run.error || JSON.stringify(run.result || {}),
+              JSON.stringify(run.resource_policy || {}),
+            ])}
           />
           <div>
             <h3><ClipboardList /> Artifacts</h3>

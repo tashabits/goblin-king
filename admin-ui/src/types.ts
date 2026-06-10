@@ -26,6 +26,7 @@ export type Run = {
   result?: Record<string, unknown> | null;
   error?: string | null;
   started_at: string;
+  resource_policy?: Record<string, unknown> | null;
 };
 
 export type EventRecord = {
