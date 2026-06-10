@@ -65,6 +65,58 @@ def test_workers_validate_reports_unknown_kind() -> None:
     assert "unknown goblin kind: example.missing" in result.stdout
 
 
+def test_workers_validate_accepts_project_settings() -> None:
+    """Verify worker validation can use project settings discovery."""
+    result = runner.invoke(
+        app,
+        [
+            "workers",
+            "validate",
+            "--project",
+            "examples/adopting-project/goblin-king-project.json",
+            "--input",
+            "examples/input.json",
+            "--kind",
+            "example.missing",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "unknown goblin kind: example.missing" in result.stdout
+
+
+def test_workers_validate_image_reports_missing_image(monkeypatch) -> None:
+    """Verify direct image validation reports unavailable prebuilt images clearly."""
+
+    def fake_validate_workers(**_kwargs):
+        from goblin_king.validation import WorkerValidationResult
+
+        return [
+            WorkerValidationResult(
+                kind="adopter.validation",
+                ok=False,
+                image="missing:local",
+                error="worker image unavailable: missing:local",
+            )
+        ]
+
+    monkeypatch.setattr("goblin_king.cli.validate_workers", fake_validate_workers)
+    result = runner.invoke(
+        app,
+        [
+            "workers",
+            "validate-image",
+            "--image",
+            "missing:local",
+            "--input",
+            "examples/input.json",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "worker image unavailable: missing:local" in result.stdout
+
+
 def test_project_goblins_list_and_validate() -> None:
     """Verify project commands load merged project settings."""
     listed = runner.invoke(

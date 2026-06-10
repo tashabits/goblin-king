@@ -12,9 +12,11 @@ from redis import Redis
 
 from goblin_king.contracts import GoblinDefinition
 from goblin_king.events import EventBus
+from goblin_king.registry import GoblinRegistry
 from goblin_king.runtime import DockerRuntime, new_run_context
 from goblin_king.store import SQLiteStore
-from goblin_king.workers import WorkerImageMap
+from goblin_king.validation import validate_workers
+from goblin_king.workers import WorkerImageDefinition, WorkerImageMap
 
 REDIS_CONTAINER = "goblin-king-test-redis"
 REDIS_PORT = 6380
@@ -133,6 +135,94 @@ def test_docker_runtime_records_worker_heartbeats(
     assert heartbeats[0].run_id == context.run_id
     assert "worker.started" in event_types
     assert "worker.completed" in event_types
+
+
+def test_worker_validation_reports_missing_result_json(
+    tmp_path: Path,
+    redis_container: str,
+) -> None:
+    """Verify adopter validation catches containers that produce no result file."""
+    del redis_container
+    worker_dir = tmp_path / "missing-result"
+    worker_dir.mkdir()
+    (worker_dir / "Dockerfile").write_text(
+        'FROM python:3.12-slim\nCMD ["python", "-c", "print(\\\"no result\\\")"]\n',
+        encoding="utf-8",
+    )
+    registry = GoblinRegistry.from_definitions(
+        [
+            GoblinDefinition(
+                kind="adopter.missing-result",
+                display_name="Missing Result",
+                module="goblin_king.container_only",
+            )
+        ]
+    )
+    workers = WorkerImageMap.from_definitions(
+        {
+            "adopter.missing-result": WorkerImageDefinition(
+                context=worker_dir,
+                image="goblin-validation-missing-result:local",
+            )
+        }
+    )
+
+    results = validate_workers(
+        registry=registry,
+        workers=workers,
+        input_payload={},
+        build=True,
+        redis_url=REDIS_URL,
+    )
+
+    assert results[0].ok is False
+    assert "produced no result" in (results[0].error or "")
+
+
+def test_worker_validation_reports_invalid_result_json(
+    tmp_path: Path,
+    redis_container: str,
+) -> None:
+    """Verify adopter validation catches invalid result envelopes."""
+    del redis_container
+    worker_dir = tmp_path / "invalid-result"
+    worker_dir.mkdir()
+    (worker_dir / "Dockerfile").write_text(
+        (
+            "FROM python:3.12-slim\n"
+            "CMD [\"python\", \"-c\", \"import os; "
+            "open(os.environ['GOBLIN_RESULT_PATH'], 'w').write('not json')\"]\n"
+        ),
+        encoding="utf-8",
+    )
+    registry = GoblinRegistry.from_definitions(
+        [
+            GoblinDefinition(
+                kind="adopter.invalid-result",
+                display_name="Invalid Result",
+                module="goblin_king.container_only",
+            )
+        ]
+    )
+    workers = WorkerImageMap.from_definitions(
+        {
+            "adopter.invalid-result": WorkerImageDefinition(
+                context=worker_dir,
+                image="goblin-validation-invalid-result:local",
+            )
+        }
+    )
+
+    results = validate_workers(
+        registry=registry,
+        workers=workers,
+        input_payload={},
+        build=True,
+        redis_url=REDIS_URL,
+    )
+
+    assert results[0].ok is False
+    assert "result envelope invalid" in (results[0].error or "")
 
 
 def test_event_bus_records_malformed_worker_heartbeat(tmp_path: Path) -> None:

@@ -207,6 +207,27 @@ python -m goblin_king.cli workers validate \
   --require-success
 ```
 
+Adopting projects can validate workers directly from project settings:
+
+```bash
+python -m goblin_king.cli workers validate \
+  --project examples/adopting-project/goblin-king-project.json \
+  --input examples/input.json \
+  --kind project.inline.hello \
+  --build \
+  --require-success
+```
+
+To validate a one-off prebuilt image without adding it to a registry first:
+
+```bash
+python -m goblin_king.cli workers validate-image \
+  --image my-project/my-goblin:local \
+  --kind my.project.goblin \
+  --input examples/input.json \
+  --require-success
+```
+
 For host-project deployment integration, see
 `examples/adopting-project/`. It includes:
 
