@@ -647,12 +647,14 @@ language-specific protocols.
 
 ### Phase 26: Add Minimal Cross-Language Hello Goblins
 
-- Status: planned.
+- Status: implemented.
 - Branch: `phase-26-cross-language-hello-goblins`.
 - Add small contract-compliant hello goblins for Go, Rust, Node.js, Java, .NET/C#,
   Ruby, PHP, shell, and a minimal Python baseline if needed.
 - Each sample includes source, Dockerfile, README, build/run commands, stdout proof,
   and valid result JSON without depending on Goblin King Python internals.
+- Added under `examples/goblins/hello-*` as standalone container-contract examples.
+  Runtime registration remains in Phase 28.
 
 ### Phase 27: Add Container-Wrapped WASI/WebAssembly Goblins
 
