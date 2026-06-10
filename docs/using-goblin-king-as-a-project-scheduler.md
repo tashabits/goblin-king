@@ -8,6 +8,10 @@ events, and admin inspection.
 The short version: package each task as a container, describe it in
 `goblin-king-project.json`, validate the image, then submit or schedule the goblin.
 
+If your project includes Goblin King as a submodule, subtree, or local path dependency,
+see [Using Goblin King From A Vendored Checkout](using-goblin-king-from-a-vendored-checkout.md)
+for the install and local stack details.
+
 ## When this is a good fit
 
 - Trusted self-hosted projects.

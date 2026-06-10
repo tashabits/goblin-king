@@ -272,6 +272,9 @@ imports, and the React admin reads goblin kinds from the API at runtime after di
 reload. See [Adopter Guide](docs/adopter-guide.md) for the full Docker, Helm,
 validation, result, artifact, and failure inspection path.
 
+If your project vendors Goblin King as a submodule, subtree, or local path dependency,
+see [Using Goblin King From A Vendored Checkout](docs/using-goblin-king-from-a-vendored-checkout.md).
+
 Project configs can also set shared resource defaults once under
 `defaults.resources`. Those defaults are merged into each inline goblin's `resources`
 before validation, so teams can keep normal timeout, memory, filesystem, network, and
@@ -765,6 +768,7 @@ Goblin King provides:
 | [Goblin Contract Validation](docs/goblin-contract-validation.md) | Local validation command for image builds, result envelopes, and artifacts. |
 | [Goblin Resource Policies](docs/goblin-resource-policies.md) | Per-goblin resource expectations, defaults, ceilings, and Docker/Kubernetes mapping. |
 | [Using Goblin King As Your Project Scheduler](docs/using-goblin-king-as-a-project-scheduler.md) | Practical guide for defining project background tasks as validated, scheduled goblin containers. |
+| [Using Goblin King From A Vendored Checkout](docs/using-goblin-king-from-a-vendored-checkout.md) | Submodule, subtree, and local path dependency workflow for host projects. |
 | [Project Goblin Config](docs/project-goblin-config.md) | Versioned `GoblinProject` config for defining container goblins without editing Goblin King source. |
 | [Project Template Quickstart](docs/project-template-quickstart.md) | Copy-paste path for generating, validating, and proving a standalone adopter project. |
 | [Language-Agnostic Closeout](docs/language-agnostic-closeout.md) | Audit summary for the container-first worker phases and remaining deferrals. |

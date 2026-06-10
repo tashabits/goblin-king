@@ -8,6 +8,11 @@ same project config into Helm.
 Goblins are containers. Python imports and entry points are optional helper surfaces for
 metadata and tests; they are not required for a deployed worker.
 
+If the host project keeps Goblin King under `vendor/goblin-king`, use the same project
+config and CLI workflow described here. See
+[Using Goblin King From A Vendored Checkout](using-goblin-king-from-a-vendored-checkout.md)
+for submodule, subtree, and local path dependency options.
+
 ## What You Build
 
 An adopting project owns:
