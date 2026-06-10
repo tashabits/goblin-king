@@ -575,6 +575,87 @@ No GitHub Actions proof is required or sufficient.
 - Backwards compatibility should be preserved by safe defaults or migration
   guidance.
 
+## Non-Destructive Adoption Hardening Extension
+
+These phases continue after the project-adoptable alpha closeout. They are explicitly
+compatibility-first: existing CLI, API, Docker, Helm, admin, examples, and documented
+public imports must keep working unless a compatibility shim and deprecation note are
+added.
+
+### Phase 43: Slim Package Root Public API
+
+- Branch: `phase-43-slim-package-root-api`.
+- PR title: `Phase 43 slim package root public API`.
+- Make `import goblin_king` lightweight for adopter code.
+- Keep contract, version, registry, project settings, worker image settings, API
+  settings, and template helpers available from the package root.
+- Keep API app creation, scheduler, store, CLI, Docker/Kubernetes runtime, and admin
+  dependencies behind explicit imports or lazy compatibility shims.
+- Update public API docs and tests proving heavy modules are not loaded by root import.
+
+### Phase 44: Behavior-Preserving Module Cleanup Pass
+
+- Branch: `phase-44-module-cleanup-pass`.
+- PR title: `Phase 44 behavior-preserving module cleanup pass`.
+- Continue splitting oversized modules only where boundaries are obvious.
+- Preserve public imports, CLI commands, API routes, schemas, scheduler behavior,
+  runtime behavior, database behavior, and admin UX.
+- Avoid generic dumping-ground helper modules.
+
+### Phase 45: Mandatory Goblin Validation Gate
+
+- Branch: `phase-45-mandatory-goblin-validation`.
+- PR title: `Phase 45 mandatory goblin validation gate`.
+- Goblin King must never schedule an unvalidated goblin by default.
+- A goblin definition is schedulable only when its configuration is valid and its
+  resolved image digest has passed the Goblin Container Contract validator for the
+  declared contract version.
+- Static validation runs on every schedule attempt.
+- Runtime validation is required before scheduling a newly resolved image digest.
+- Scheduling rejects unvalidated images by default.
+- Production mode forbids validation override; a dev-only override may exist if it is
+  explicit, audited, and unavailable in production mode.
+- Persist validation results with goblin kind, image reference, resolved image digest,
+  contract version, validator version, timestamp, status, failure reasons, and effective
+  runtime policy summary.
+- Revalidation must be available from CLI/API/admin, and validation invalidates when the
+  resolved image digest changes.
+- API, CLI, admin, events, and audit logs must show validation status, validation
+  failures, and scheduling rejections.
+
+### Phase 46: Docker Resource Policy Proof
+
+- Branch: `phase-46-docker-resource-policy-proof`.
+- PR title: `Phase 46 Docker resource policy proof`.
+- Harden Docker resource-policy proof without breaking current safe defaults.
+- Prove CPU, memory, timeout, read-only root, writable contract mounts,
+  network-disabled mode, artifact ceilings, log ceilings where practical, above-ceiling
+  rejection, and effective policy display.
+- Resource policy validity feeds into the mandatory validation gate.
+
+### Phase 47: Project Config Hero Path
+
+- Branch: `phase-47-project-config-hero-path`.
+- PR title: `Phase 47 project config hero path`.
+- Make project config the primary documented adoption path.
+- The golden path must cover project init, config validation, goblin listing, worker
+  validation/revalidation, job submit, run inspection, and artifact inspection.
+- Project-defined goblins are schedulable only after passing the mandatory validation
+  gate for their resolved image digest.
+
+### Phase 48: Adoption Hardening Closeout
+
+- Branch: `phase-48-adoption-hardening-closeout`.
+- PR title: `Phase 48 adoption hardening closeout`.
+- Re-audit the complete adoption path.
+- Update README, proof table, roadmap, outstanding/deferred items, screenshots, and
+  validation docs.
+- Confirm the final status clearly states that unvalidated goblins are not schedulable
+  by default.
+
+All Phase 43-48 proof remains local. GitHub Actions are not required and are not
+sufficient.
+
 ## Deferred After Phase 42
 
 - Public PyPI release hardening.

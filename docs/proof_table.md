@@ -50,6 +50,12 @@ receipt, not a user guide.
 | 40 | Adopter documentation pass | README adopter section, `docs/adopter-guide.md`, project-config-first wording in `docs/ADOPTING_PROJECTS.md`, README heading/link documentation tests, full Docker/Helm admin audits, screenshots at `docs/screenshots/phase-40-docker-admin.png` and `docs/screenshots/phase-40-helm-admin.png`, and updated roadmap/proof docs were added. | None known for this phase. |
 | 41 | Adopter smoke suite | `goblin-king smoke adopter-project`, `make adopter-smoke`, generated adopter project validation, project goblin scheduling, success/artifact/controlled-failure inspection, cleanup, tests, docs, full local CI, clean-board Docker/Helm admin audits, explicit WASI launches from the admin console, and screenshots at `docs/screenshots/phase-41-docker-admin.png`, `docs/screenshots/phase-41-helm-admin.png`, and `docs/screenshots/phase-41-admin-wasi-ui.png` were added. | None known for this phase. |
 | 42 | Project-adoptable alpha closeout | README status updated to `Project-adoptable alpha`, clean-checkout adopter smoke passed, branch-local adopter smoke passed, docs were re-audited for Python-worker assumptions, proof/roadmap/outstanding items were updated, Docker/Helm admin audits passed for every registered goblin including WASI workers, and screenshots at `docs/screenshots/phase-42-docker-admin.png` and `docs/screenshots/phase-42-helm-admin.png` were added. | None known for the project-adoptable alpha milestone. |
+| 43 | Slim package root public API | Package root import was made lightweight for adopter code; heavy API, scheduler, and store objects are available through explicit modules and lazy compatibility shims; import-hygiene tests, public API docs, full local CI, Docker admin audit, and Helm render/admin audit were completed. | None known for this phase. |
+| 44 | Behavior-preserving module cleanup pass | Planned. | Not started. |
+| 45 | Mandatory goblin validation gate | Planned. Goblin King must reject unvalidated goblins by default before scheduling. | Not started. |
+| 46 | Docker resource policy proof | Planned. | Not started. |
+| 47 | Project config hero path | Planned. | Not started. |
+| 48 | Adoption hardening closeout | Planned. | Not started. |
 
 ## Deferred Items
 
@@ -62,3 +68,5 @@ receipt, not a user guide.
 - Official language SDKs beyond the current language-agnostic container contract and
   examples.
 - Deep goblin conformance certification beyond the practical local validation command.
+- Mandatory scheduling-time validation gate for resolved image digests remains planned for
+  Phase 45.

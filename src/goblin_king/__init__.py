@@ -1,6 +1,5 @@
-"""Public package surface for the Goblin King scheduler kernel."""
+"""Lightweight public package surface for Goblin King adopters."""
 
-from goblin_king.api import create_app
 from goblin_king.api_settings import ApiSettings, ApiSettingsError
 from goblin_king.contracts import (
     ApiTokenRecord,
@@ -27,8 +26,6 @@ from goblin_king.registry import (
     RegistryError,
     discover_entry_point_definitions,
 )
-from goblin_king.scheduler import Scheduler
-from goblin_king.store import SQLiteStore
 from goblin_king.templates import TemplateError, init_package
 from goblin_king.versions import (
     API_SETTINGS_SCHEMA_VERSION,
@@ -45,6 +42,12 @@ from goblin_king.workers import (
     WorkerImageDefinition,
     WorkerImageMap,
 )
+
+_LAZY_COMPAT_EXPORTS = {
+    "create_app": ("goblin_king.api", "create_app"),
+    "Scheduler": ("goblin_king.scheduler", "Scheduler"),
+    "SQLiteStore": ("goblin_king.store", "SQLiteStore"),
+}
 
 __all__ = [
     "ApiSettings",
@@ -88,3 +91,20 @@ __all__ = [
     "discover_entry_point_definitions",
     "init_package",
 ]
+
+
+def __getattr__(name: str) -> object:
+    """Load legacy heavy root exports only when callers explicitly request them."""
+    if name not in _LAZY_COMPAT_EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attribute_name = _LAZY_COMPAT_EXPORTS[name]
+    from importlib import import_module
+
+    value = getattr(import_module(module_name), attribute_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    """Return the documented root surface, including lazy compatibility exports."""
+    return sorted(set(globals()) | set(__all__))
