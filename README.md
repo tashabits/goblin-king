@@ -140,6 +140,17 @@ goblin-king project validate --project goblin-king-project.json
 goblin-king project goblins list --project goblin-king-project.json
 ```
 
+Create a standalone adopter project template when you want container goblins without
+Python package entry points:
+
+```bash
+goblin-king project init ./my-goblin-project --prefix myproject
+cd ./my-goblin-project
+python -m goblin_king.cli project validate --project goblin-king-project.json
+python -m goblin_king.cli workers validate --project goblin-king-project.json --input inputs/hello.json --kind myproject.hello --build --require-success
+python -m goblin_king.cli workers validate --project goblin-king-project.json --input inputs/artifact.json --kind myproject.artifact --build --require-success
+```
+
 Project integration settings live in `goblin-king-project.json` and can combine JSON
 registry files with installed Python package entry points from `goblin_king.goblins`.
 After deploying a new project plugin or worker image map, reload discovery through the
@@ -597,6 +608,7 @@ Goblin King provides:
 | [Goblin Contract Validation](docs/goblin-contract-validation.md) | Local validation command for image builds, result envelopes, and artifacts. |
 | [Goblin Resource Policies](docs/goblin-resource-policies.md) | Per-goblin resource expectations, defaults, ceilings, and Docker/Kubernetes mapping. |
 | [Project Goblin Config](docs/project-goblin-config.md) | Versioned `GoblinProject` config for defining container goblins without editing Goblin King source. |
+| [Project Template Quickstart](docs/project-template-quickstart.md) | Copy-paste path for generating, validating, and proving a standalone adopter project. |
 | [Language-Agnostic Closeout](docs/language-agnostic-closeout.md) | Audit summary for the container-first worker phases and remaining deferrals. |
 | [Security Model](docs/security-model.md) | Honest container security expectations and runtime hardening guidance. |
 | [Public API Boundary](docs/PUBLIC_API.md) | Stable root imports, semi-public commands, internal modules, and internal wheel compatibility policy. |

@@ -44,7 +44,7 @@ receipt, not a user guide.
 | 34 | Runtime resource policy enforcement | `goblin-resource-policies.json`, policy loading, defaults/overrides/ceilings, queue-time rejection, persisted job/run effective policy metadata, API/CLI/scheduler integration, Docker runtime flags, Kubernetes Job resource fields, artifact count/byte checks where artifacts are inspectable, concurrency deferral, events, audit records, Helm config, admin run visibility, and focused tests were added. | Secret allow-lists, provider-specific admission controls, object-storage quota enforcement, and deeper policy engines remain deferred. |
 | 35 | Project-adoptable goblin configuration | Versioned `GoblinProject` config, inline container goblin definitions, path resolution, safe secret references, registry/image-map merging, API/admin `project-config` source reporting, adopting-project fixture updates, tests, docs, full local CI, project validation/list smoke proof, Docker/Helm admin audits, and screenshots at `docs/screenshots/phase-35-docker-admin.png` and `docs/screenshots/phase-35-helm-admin.png` were added. | Later phases still need project template, scheduling UX, and adopter closeout. |
 | 36 | Bring-your-own-goblin validation | `workers validate --project`, `workers validate-image`, prebuilt image checks, project-config validation dispatch, missing result JSON proof, invalid result JSON proof, missing image proof, tests, docs, Docker/Helm admin audits, and screenshots at `docs/screenshots/phase-36-docker-admin.png` and `docs/screenshots/phase-36-helm-admin.png` were added. | Deeper conformance certification remains deferred beyond practical local validation. |
-| 37 | Project template and quickstart | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: copy-paste adopter project template and golden path quickstart. |
+| 37 | Project template and quickstart | `goblin-king project init`, standalone adopter project template, hello and artifact worker folders, input files, schemas, quickstart docs, tests, local validation proof, Docker/Helm admin audits, and screenshots at `docs/screenshots/phase-37-docker-admin.png` and `docs/screenshots/phase-37-helm-admin.png` were added. | Later phases still need external project scheduling/run inspection and adopter closeout. |
 | 38 | External project scheduling and run inspection | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: CLI/API/admin path for scheduling and inspecting project-defined goblins. |
 | 39 | v1alpha1 contract and public boundaries | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: explicit alpha versioning for container contract, project config, and public API boundaries. |
 | 40 | Adopter documentation pass | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: complete adopter documentation set and README adopter path. |
@@ -53,7 +53,7 @@ receipt, not a user guide.
 
 ## Outstanding Items
 
-- Phases 37-42 project-adoptable alpha work, as detailed in
+- Phases 38-42 project-adoptable alpha work, as detailed in
   `docs/project-adoptable-roadmap.md`.
 - Secret allow-lists, provider-specific admission controls, object-storage quota
   enforcement, and deeper resource-policy engines.
