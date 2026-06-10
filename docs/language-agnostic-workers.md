@@ -38,6 +38,10 @@ Rust/WASI and C/WASI modules wrapped in regular container images with Wasmtime.
 They are examples of the supported container-wrapped model, not native WASI
 scheduling.
 
+Phase 28 adds `examples/cross-language-goblins.json`,
+`examples/cross-language-images.json`, and `make run-cross-language-proof` so these
+examples can be built and submitted through Goblin King's Docker runtime.
+
 ## Optional Python Helpers
 
 Python helpers are useful for:

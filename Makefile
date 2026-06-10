@@ -3,6 +3,9 @@ DB ?= .goblin-king/goblin-king.sqlite3
 REGISTRY ?= examples/goblins.json
 IMAGES ?= goblin-images.json
 INPUT ?= examples/input.json
+CROSS_LANGUAGE_REGISTRY ?= examples/cross-language-goblins.json
+CROSS_LANGUAGE_IMAGES ?= examples/cross-language-images.json
+CROSS_LANGUAGE_INPUT ?= examples/cross-language-input.json
 REDIS_URL ?= redis://localhost:6379/0
 LONG_HELLO_URL ?= http://long-hello:8080
 HOST_PROJECT ?= examples/adopting-project
@@ -12,7 +15,7 @@ ADMIN_BASE ?= http://127.0.0.1:8080
 ADMIN_TOKEN ?= local-dev-token
 DIST ?= dist
 
-.PHONY: help install test lint local-ci build-workers admin-build redis-up redis-down deploy run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke project-validate project-build-workers project-discovery-reload project-admin-proof release-wheel release-check helm-template helm-admin-smoke kind-smoke clean docker-clean
+.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof admin-build redis-up redis-down deploy run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke project-validate project-build-workers project-discovery-reload project-admin-proof release-wheel release-check helm-template helm-admin-smoke kind-smoke clean docker-clean
 
 help:
 	@echo "Targets:"
@@ -21,6 +24,8 @@ help:
 	@echo "  lint           Run ruff locally"
 	@echo "  local-ci       Run local CI checks"
 	@echo "  build-workers  Build configured Docker worker images"
+	@echo "  build-cross-language-workers Build cross-language example worker images"
+	@echo "  run-cross-language-proof Run every cross-language example through Docker runtime"
 	@echo "  admin-build    Build the React admin image"
 	@echo "  redis-up       Start Redis with Docker Compose"
 	@echo "  redis-down     Stop Redis"
@@ -59,6 +64,12 @@ local-ci: test lint
 
 build-workers:
 	$(PYTHON) -m goblin_king.cli workers build --images $(IMAGES)
+
+build-cross-language-workers:
+	$(PYTHON) -m goblin_king.cli workers build --images $(CROSS_LANGUAGE_IMAGES)
+
+run-cross-language-proof: build-cross-language-workers redis-up
+	$(PYTHON) -c "import json, subprocess, tempfile; from pathlib import Path; kinds=['example.hello-dotnet','example.hello-go','example.hello-java','example.hello-node','example.hello-php','example.hello-python','example.hello-ruby','example.hello-rust','example.hello-shell','example.wasi-c-hello','example.wasi-rust-hello']; db=Path(tempfile.mkdtemp())/'cross-language.sqlite3';\nfor kind in kinds:\n    completed=subprocess.run(['$(PYTHON)','-m','goblin_king.cli','jobs','submit',kind,'--input','$(CROSS_LANGUAGE_INPUT)','--registry','$(CROSS_LANGUAGE_REGISTRY)','--images','$(CROSS_LANGUAGE_IMAGES)','--db',str(db),'--redis-url','$(REDIS_URL)'], check=True, capture_output=True, text=True); print(completed.stdout.strip().splitlines()[-1])"
 
 admin-build:
 	docker build -t goblin-king-admin-ui:local admin-ui

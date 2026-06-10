@@ -1,0 +1,92 @@
+{
+  "goblins": [
+    {
+      "kind": "example.hello-dotnet",
+      "display_name": "Example Hello .NET",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello-go",
+      "display_name": "Example Hello Go",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello-java",
+      "display_name": "Example Hello Java",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello-node",
+      "display_name": "Example Hello Node.js",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello-php",
+      "display_name": "Example Hello PHP",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello-python",
+      "display_name": "Example Hello Python",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello-ruby",
+      "display_name": "Example Hello Ruby",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello-rust",
+      "display_name": "Example Hello Rust",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.hello-shell",
+      "display_name": "Example Hello Shell",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.wasi-c-hello",
+      "display_name": "Example WASI C Hello",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    },
+    {
+      "kind": "example.wasi-rust-hello",
+      "display_name": "Example WASI Rust Hello",
+      "module": "examples.goblins.container_only",
+      "entrypoint": "run",
+      "timeout_seconds": 30,
+      "max_retries": 0
+    }
+  ]
+}

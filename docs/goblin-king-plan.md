@@ -668,12 +668,14 @@ language-specific protocols.
 
 ### Phase 28: Register And Run Cross-Language Goblins Through Goblin King
 
-- Status: planned.
+- Status: implemented.
 - Branch: `phase-28-cross-language-runtime-proof`.
 - Add registry and image-map definitions, build scripts or commands, and repeatable
   run-all proof for the cross-language and container-wrapped WASI samples.
 - Prove job/run/result records and admin/API visibility through the existing Docker
   runtime path.
+- Added `examples/cross-language-goblins.json`, `examples/cross-language-images.json`,
+  and `make run-cross-language-proof`.
 
 ### Phase 29: Add Artifact, Progress, And Failure Goblins Across Languages
 
