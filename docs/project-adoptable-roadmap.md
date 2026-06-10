@@ -45,7 +45,7 @@ The path should let a user:
 7. Understand what is stable, alpha, and internal.
 
 Phase 34 completed runtime resource-policy enforcement. The project-adoptable alpha work
-started from that enforced policy baseline and is now adoption-hardened through Phase 49.
+started from that enforced policy baseline and is now adoption-hardened through Phase 53.
 
 ## Phase 35: Project-Adoptable Goblin Configuration
 
@@ -733,10 +733,25 @@ sufficient.
 All Phase 43-52 proof remains local. GitHub Actions are not required and are not
 sufficient.
 
-## Deferred After Phase 52
+### Phase 53: Resource Policy Documentation And Closeout
 
-- After Phase 53 is merged and `main` is synced, create a GitHub release from `main`
-  summarizing the completed layered resource-policy work across Phases 49-53.
+- Branch: `phase-53-resource-policy-closeout`.
+- PR title: `Phase 53 resource policy documentation and closeout`.
+- Status: implemented.
+- Consolidate README, resource policy docs, adopter guide, project config docs, and
+  quickstart guidance around the final layered policy model.
+- Confirm the proof table and roadmap accurately describe project defaults,
+  per-goblin overrides, project-wide concurrency, runtime mapping, and the remaining
+  deployment-specific gaps.
+- Keep the release note explicit: after this phase is merged and `main` is synced,
+  create a GitHub release from `main` summarizing the completed layered resource-policy
+  work across Phases 49-53.
+
+All Phase 43-53 proof remains local. GitHub Actions are not required and are not
+sufficient.
+
+## Deferred After Phase 53
+
 - Public PyPI release hardening.
 - Full production hardening for untrusted multi-tenant execution.
 - Secret allow-lists, provider-specific admission controls, object-storage quota

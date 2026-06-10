@@ -58,6 +58,14 @@ If you add or edit `defaults.resources`, run `project validate` before worker va
 The command reports the default block and rejects defaults or effective per-goblin
 resources that exceed any ceilings in a sibling `goblin-resource-policies.json`.
 
+When a project carries a resource policy file, inspect one resolved policy before the
+first deployment:
+
+```bash
+python -m goblin_king.cli resource-policies inspect myproject.hello \
+  --policies goblin-resource-policies.json
+```
+
 For the complete proof lifecycle and failure table, see
 [Goblin Contract Validation](goblin-contract-validation.md).
 

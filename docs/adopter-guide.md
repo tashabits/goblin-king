@@ -131,6 +131,17 @@ The full scheduler gate, proof lifecycle, stale-digest behavior, and failure map
 live in [Goblin Contract Validation](goblin-contract-validation.md). Keep the adoption
 loop simple: validate first, then schedule.
 
+Inspect resource-policy resolution when you need deployment proof:
+
+```bash
+goblin-king resource-policies inspect myproject.hello \
+  --policies goblin-resource-policies.json
+```
+
+The effective policy is resolved from operator defaults, project `defaults.resources`,
+and the goblin's own `resources` override. Jobs and runs persist that effective policy,
+and workers receive it as `GOBLIN_EFFECTIVE_RESOURCE_POLICY_JSON`.
+
 ## Run Through Docker
 
 Submit one project goblin through Docker:

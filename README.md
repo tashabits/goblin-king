@@ -687,7 +687,7 @@ goblin-king resource-policies inspect example.hello \
 
 Effective policy appears in stored job metadata, run records, CLI/API JSON, and the admin
 Runs panel. See [Goblin Resource Policies](docs/goblin-resource-policies.md) for the file
-shape and exact Docker/Kubernetes mappings.
+shape, closeout checklist, concurrency behavior, and exact Docker/Kubernetes mappings.
 
 ## Image Promotion And Deployment Proof
 

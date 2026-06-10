@@ -60,3 +60,8 @@ future-work plan.
   scheduling validation, Docker resource-policy proof, project-config hero path, and
   adoption-hardening closeout completed in `docs/project-adoptable-roadmap.md` and
   `docs/proof_table.md`.
+- Phases 49-53: layered resource-policy hardening completed project defaults,
+  per-goblin overrides, persisted effective policy proof, project-wide concurrency,
+  runtime policy mapping, and documentation closeout in
+  `docs/goblin-resource-policies.md`, `docs/project-adoptable-roadmap.md`, and
+  `docs/proof_table.md`.
