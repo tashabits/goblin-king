@@ -950,11 +950,13 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         mapped = {kind: worker for kind, worker in state.workers.items()}
         for definition in state.registry.list():
             worker = mapped.get(definition.kind)
+            validation = state.store.latest_worker_validation_for_kind(definition.kind)
             payload.append(
                 {
                     **definition.model_dump(mode="json"),
                     "worker_image": worker.image if worker else None,
                     "worker_mapped": worker is not None,
+                    "validation": validation.model_dump(mode="json") if validation else None,
                     "source": "project-config"
                     if definition.kind in state._project_defined_kinds
                     else "registry",

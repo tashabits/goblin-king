@@ -21,6 +21,7 @@ from goblin_king.contracts import (
     RunRecord,
     ScheduleRecord,
     UserRecord,
+    WorkerValidationRecord,
 )
 
 
@@ -250,6 +251,22 @@ def _row_to_deployment_record(payload: dict[str, Any]) -> DeploymentRecord:
     )
 
 
+def _row_to_worker_validation(payload: dict[str, Any]) -> WorkerValidationRecord:
+    """Convert a SQLAlchemy row mapping into a WorkerValidationRecord."""
+    return WorkerValidationRecord(
+        id=payload["id"],
+        kind=payload["kind"],
+        image=payload["image"],
+        image_digest=payload["image_digest"],
+        contract_version=payload["contract_version"],
+        validator_version=payload["validator_version"],
+        validated_at=_coerce_datetime(payload["validated_at"]),
+        status=payload["status"],
+        failure_reasons=json.loads(payload.get("failure_reasons_json") or "[]"),
+        effective_policy=json.loads(payload.get("effective_policy_json") or "{}"),
+    )
+
+
 def _coerce_datetime(value: datetime | str) -> datetime:
     """Normalize SQLite-returned timestamp values for Pydantic models."""
     if isinstance(value, datetime):
@@ -259,4 +276,3 @@ def _coerce_datetime(value: datetime | str) -> datetime:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=UTC)
     return parsed
-

@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from goblin_king.contracts import GoblinDefinition, GoblinResult
+from goblin_king.contracts import GoblinDefinition, GoblinResult, WorkerValidationRecord
 from goblin_king.registry import GoblinRegistry
 from goblin_king.runtime import DockerRuntime, new_run_context
+from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
+
+VALIDATOR_VERSION = "goblin-king-validator/v1"
 
 
 class WorkerValidationResult(BaseModel):
@@ -21,6 +26,10 @@ class WorkerValidationResult(BaseModel):
     kind: str
     ok: bool
     image: str | None = None
+    image_digest: str | None = None
+    contract_version: str = GOBLIN_CONTAINER_CONTRACT_VERSION
+    validator_version: str = VALIDATOR_VERSION
+    validated_at: datetime | None = None
     result_status: str | None = None
     result_file: str | None = None
     artifact_count: int = 0
@@ -29,6 +38,26 @@ class WorkerValidationResult(BaseModel):
     exit_code: int | None = None
     stdout: str | None = None
     stderr: str | None = None
+
+
+def validation_record(
+    result: WorkerValidationResult,
+    *,
+    effective_policy: dict[str, Any] | None = None,
+) -> WorkerValidationRecord:
+    """Convert a validation attempt into the durable scheduler gate record."""
+    return WorkerValidationRecord(
+        id=str(uuid4()),
+        kind=result.kind,
+        image=result.image or "",
+        image_digest=result.image_digest or "",
+        contract_version=result.contract_version,
+        validator_version=result.validator_version,
+        validated_at=result.validated_at or datetime.now().astimezone(),
+        status="passed" if result.ok else "failed",
+        failure_reasons=[] if result.ok else [result.error or "validation failed"],
+        effective_policy=effective_policy or {},
+    )
 
 
 def validate_workers(
@@ -42,6 +71,7 @@ def validate_workers(
     prebuilt_image: bool = False,
     timeout_seconds: int | None = None,
     redis_url: str = "redis://localhost:6379/0",
+    run_root: str | Path | None = None,
 ) -> list[WorkerValidationResult]:
     """Build/run selected workers and validate their result envelopes."""
     definitions = registry.list()
@@ -61,7 +91,7 @@ def validate_workers(
         runtime = DockerRuntime(
             workers=workers,
             redis_url=redis_url,
-            run_root=root / "runs",
+            run_root=run_root or root / "runs",
         )
         for definition in definitions:
             results.append(
@@ -93,13 +123,17 @@ def _validate_one(
     checks: list[str] = []
     try:
         worker = workers.get(kind)
+        image_digest: str | None = None
         if prebuilt_image:
-            image_error = _inspect_image(runtime.docker_executable, worker.image)
+            image_digest, image_error = inspect_image_identity(
+                runtime.docker_executable, worker.image
+            )
             if image_error is not None:
                 return WorkerValidationResult(
                     kind=kind,
                     ok=False,
                     image=worker.image,
+                    validated_at=datetime.now().astimezone(),
                     error=image_error,
                     checks=checks,
                 )
@@ -127,8 +161,26 @@ def _validate_one(
             if build:
                 runtime.build_image(kind)
                 checks.append("build")
+            image_digest, image_error = inspect_image_identity(
+                runtime.docker_executable, worker.image
+            )
+            if image_error is not None:
+                return WorkerValidationResult(
+                    kind=kind,
+                    ok=False,
+                    image=worker.image,
+                    validated_at=datetime.now().astimezone(),
+                    error=image_error,
+                    checks=checks,
+                )
     except WorkerConfigError as error:
-        return WorkerValidationResult(kind=kind, ok=False, error=str(error), checks=checks)
+        return WorkerValidationResult(
+            kind=kind,
+            ok=False,
+            validated_at=datetime.now().astimezone(),
+            error=str(error),
+            checks=checks,
+        )
 
     context = new_run_context(f"validation-{kind}", kind)
     context = context.model_copy(
@@ -147,6 +199,8 @@ def _validate_one(
             kind=kind,
             ok=False,
             image=worker.image,
+            image_digest=image_digest,
+            validated_at=datetime.now().astimezone(),
             result_status=result.status,
             error=result.error or "worker did not write result.json",
             checks=checks,
@@ -160,6 +214,8 @@ def _validate_one(
             kind=kind,
             ok=False,
             image=worker.image,
+            image_digest=image_digest,
+            validated_at=datetime.now().astimezone(),
             result_file=str(result_file),
             error=f"result envelope invalid: {error}",
             checks=checks,
@@ -181,6 +237,8 @@ def _validate_one(
             kind=kind,
             ok=False,
             image=worker.image,
+            image_digest=image_digest,
+            validated_at=datetime.now().astimezone(),
             result_status=parsed.status,
             result_file=str(result_file),
             artifact_count=len(parsed.artifacts),
@@ -194,6 +252,8 @@ def _validate_one(
             kind=kind,
             ok=False,
             image=worker.image,
+            image_digest=image_digest,
+            validated_at=datetime.now().astimezone(),
             result_status=parsed.status,
             result_file=str(result_file),
             artifact_count=len(parsed.artifacts),
@@ -205,6 +265,8 @@ def _validate_one(
         kind=kind,
         ok=True,
         image=worker.image,
+        image_digest=image_digest,
+        validated_at=datetime.now().astimezone(),
         result_status=parsed.status,
         result_file=str(result_file),
         artifact_count=len(parsed.artifacts),
@@ -212,10 +274,10 @@ def _validate_one(
     )
 
 
-def _inspect_image(docker_executable: str, image: str) -> str | None:
-    """Return a clear error when a prebuilt image is unavailable locally."""
+def inspect_image_identity(docker_executable: str, image: str) -> tuple[str | None, str | None]:
+    """Return the local immutable image identity or a clear availability error."""
     completed = subprocess.run(
-        [docker_executable, "image", "inspect", image],
+        [docker_executable, "image", "inspect", image, "--format", "{{.Id}}"],
         check=False,
         capture_output=True,
         text=True,
@@ -223,6 +285,7 @@ def _inspect_image(docker_executable: str, image: str) -> str | None:
         errors="replace",
     )
     if completed.returncode == 0:
-        return None
+        digest = completed.stdout.strip()
+        return digest or None, None
     detail = completed.stderr.strip() or completed.stdout.strip()
-    return f"worker image unavailable: {image}; {detail}"
+    return None, f"worker image unavailable: {image}; {detail}"

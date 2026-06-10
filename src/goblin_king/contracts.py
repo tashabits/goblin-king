@@ -26,6 +26,7 @@ PrincipalRole = Literal["admin", "member", "viewer"]
 LongServiceStatus = Literal["registered", "running", "failed", "stopped"]
 ImagePromotionStatus = Literal["planned", "built", "pushed", "promoted", "failed"]
 DeploymentRecordStatus = Literal["planned", "rendered", "dry_run", "applied", "failed"]
+ValidationStatus = Literal["passed", "failed"]
 
 
 def utc_now() -> datetime:
@@ -220,6 +221,21 @@ class ImagePromotionRecord(BaseModel):
     created_at: datetime
     updated_at: datetime
     detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkerValidationRecord(BaseModel):
+    """Persist proof that one resolved worker image passed contract validation."""
+
+    id: str
+    kind: str
+    image: str
+    image_digest: str
+    contract_version: str
+    validator_version: str
+    validated_at: datetime
+    status: ValidationStatus
+    failure_reasons: list[str] = Field(default_factory=list)
+    effective_policy: dict[str, Any] = Field(default_factory=dict)
 
 
 class DeploymentRecord(BaseModel):

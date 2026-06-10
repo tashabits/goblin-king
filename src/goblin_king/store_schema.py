@@ -254,3 +254,17 @@ deployment_records_table = Table(
     Column("detail_json", Text, nullable=False, default="{}"),
 )
 
+worker_validations_table = Table(
+    "worker_validations",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("kind", String, nullable=False),
+    Column("image", Text, nullable=False),
+    Column("image_digest", Text, nullable=False),
+    Column("contract_version", String, nullable=False),
+    Column("validator_version", String, nullable=False),
+    Column("validated_at", DateTime(timezone=True), nullable=False),
+    Column("status", String, nullable=False),
+    Column("failure_reasons_json", Text, nullable=False, default="[]"),
+    Column("effective_policy_json", Text, nullable=False, default="{}"),
+)

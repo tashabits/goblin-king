@@ -29,6 +29,7 @@ from goblin_king.contracts import (
     ScheduleRecord,
     TeamRecord,
     UserRecord,
+    WorkerValidationRecord,
 )
 from goblin_king.store_migrations import ensure_schema_columns
 from goblin_king.store_rows import (
@@ -46,6 +47,7 @@ from goblin_king.store_rows import (
     _row_to_run,
     _row_to_schedule,
     _row_to_user,
+    _row_to_worker_validation,
 )
 from goblin_king.store_schema import (
     api_tokens_table,
@@ -67,6 +69,7 @@ from goblin_king.store_schema import (
     schedules_table,
     teams_table,
     users_table,
+    worker_validations_table,
 )
 
 DEFAULT_DB_PATH = Path(".goblin-king") / "goblin-king.sqlite3"
@@ -128,6 +131,73 @@ class SQLiteStore:
                     payload_json=json.dumps(event.payload),
                 )
             )
+
+    def save_worker_validation(self, validation: WorkerValidationRecord) -> None:
+        """Insert one worker contract validation record."""
+        with self.engine.begin() as connection:
+            connection.execute(
+                worker_validations_table.insert().values(
+                    id=validation.id,
+                    kind=validation.kind,
+                    image=validation.image,
+                    image_digest=validation.image_digest,
+                    contract_version=validation.contract_version,
+                    validator_version=validation.validator_version,
+                    validated_at=validation.validated_at,
+                    status=validation.status,
+                    failure_reasons_json=json.dumps(validation.failure_reasons),
+                    effective_policy_json=json.dumps(validation.effective_policy),
+                )
+            )
+
+    def get_latest_worker_validation(
+        self,
+        *,
+        kind: str,
+        image_digest: str,
+        contract_version: str,
+        validator_version: str,
+    ) -> WorkerValidationRecord | None:
+        """Return the newest validation record for one resolved image identity."""
+        with self.engine.begin() as connection:
+            row = connection.execute(
+                select(worker_validations_table)
+                .where(worker_validations_table.c.kind == kind)
+                .where(worker_validations_table.c.image_digest == image_digest)
+                .where(worker_validations_table.c.contract_version == contract_version)
+                .where(worker_validations_table.c.validator_version == validator_version)
+                .order_by(worker_validations_table.c.validated_at.desc())
+            ).first()
+        return _row_to_worker_validation(dict(row._mapping)) if row else None
+
+    def list_worker_validations(
+        self,
+        *,
+        kind: str | None = None,
+        limit: int = 100,
+    ) -> list[WorkerValidationRecord]:
+        """Return recent worker validation records for API/CLI/admin status surfaces."""
+        query = select(worker_validations_table).order_by(
+            worker_validations_table.c.validated_at.desc()
+        )
+        if kind is not None:
+            query = query.where(worker_validations_table.c.kind == kind)
+        with self.engine.begin() as connection:
+            rows = connection.execute(query.limit(limit)).fetchall()
+        return [_row_to_worker_validation(dict(row._mapping)) for row in rows]
+
+    def latest_worker_validation_for_kind(
+        self,
+        kind: str,
+    ) -> WorkerValidationRecord | None:
+        """Return the newest validation record for one goblin kind."""
+        with self.engine.begin() as connection:
+            row = connection.execute(
+                select(worker_validations_table)
+                .where(worker_validations_table.c.kind == kind)
+                .order_by(worker_validations_table.c.validated_at.desc())
+            ).first()
+        return _row_to_worker_validation(dict(row._mapping)) if row else None
 
     def list_events(
         self,
