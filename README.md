@@ -243,6 +243,10 @@ make helm-restart-clean HELM_RELEASE=goblin-king HELM_NAMESPACE=default
 
 ## Using Goblin King In Your Project
 
+Have your own project that needs scheduled background tasks? Start with
+[Using Goblin King As Your Project Scheduler](docs/using-goblin-king-as-a-project-scheduler.md)
+for the practical path from project config to validated, scheduled container goblins.
+
 For a project-owned goblin, start with a standalone project template:
 
 ```bash
@@ -760,6 +764,7 @@ Goblin King provides:
 | [Choose Your Runtime](docs/choose-your-runtime.md) | Runtime comparison guide for picking a worker language. |
 | [Goblin Contract Validation](docs/goblin-contract-validation.md) | Local validation command for image builds, result envelopes, and artifacts. |
 | [Goblin Resource Policies](docs/goblin-resource-policies.md) | Per-goblin resource expectations, defaults, ceilings, and Docker/Kubernetes mapping. |
+| [Using Goblin King As Your Project Scheduler](docs/using-goblin-king-as-a-project-scheduler.md) | Practical guide for defining project background tasks as validated, scheduled goblin containers. |
 | [Project Goblin Config](docs/project-goblin-config.md) | Versioned `GoblinProject` config for defining container goblins without editing Goblin King source. |
 | [Project Template Quickstart](docs/project-template-quickstart.md) | Copy-paste path for generating, validating, and proving a standalone adopter project. |
 | [Language-Agnostic Closeout](docs/language-agnostic-closeout.md) | Audit summary for the container-first worker phases and remaining deferrals. |
