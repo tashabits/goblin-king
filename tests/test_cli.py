@@ -256,6 +256,25 @@ def test_project_init_package_creates_template(tmp_path: Path) -> None:
     assert (tmp_path / "generated" / "workers" / "sample.echo.long-service" / "Dockerfile").exists()
 
 
+def test_project_init_creates_adopter_template(tmp_path: Path) -> None:
+    """Verify the adopter project template generator is reachable from the CLI."""
+    result = runner.invoke(
+        app,
+        [
+            "project",
+            "init",
+            str(tmp_path / "adopter"),
+            "--prefix",
+            "acme",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert (tmp_path / "adopter" / "goblin-king-project.json").exists()
+    assert (tmp_path / "adopter" / "workers" / "acme.hello" / "Dockerfile").exists()
+    assert (tmp_path / "adopter" / "workers" / "acme.artifact" / "Dockerfile").exists()
+
+
 def test_project_validate_rejects_missing_worker_mapping(tmp_path: Path) -> None:
     """Verify project validation catches missing worker image coverage."""
     project = tmp_path / "project"
