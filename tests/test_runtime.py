@@ -2,7 +2,8 @@
 
 from goblin_king.contracts import GoblinContext
 from goblin_king.registry import GoblinRegistry
-from goblin_king.runtime import InProcessRuntime
+from goblin_king.runtime import InProcessRuntime, KubernetesRuntime
+from goblin_king.workers import WorkerImageDefinition, WorkerImageMap
 
 
 def test_echo_goblin_runs_successfully() -> None:
@@ -40,3 +41,46 @@ def test_exceptions_become_failed_results() -> None:
 
     assert result.status == "failed"
     assert "intentional failure" in (result.error or "")
+
+
+def test_kubernetes_job_includes_result_forwarder() -> None:
+    """Verify Kubernetes workers can stay language-neutral by writing result.json only."""
+    workers = WorkerImageMap(
+        {"example.hello-go": WorkerImageDefinition(context=".", image="hello-go:local")},
+        root=".",
+    )
+    runtime = KubernetesRuntime(
+        workers=workers,
+        redis_url="redis://redis:6379/0",
+        namespace="default",
+        result_forwarder_image="goblin-king:test",
+    )
+    context = GoblinContext(
+        run_id="run-4",
+        artifact_root=".goblin-king/artifacts/run-4",
+        metadata={"job_id": "job-4"},
+    )
+
+    manifest = runtime._job_manifest(
+        name="gk-example-hello-go-run-4",
+        config_name="gk-example-hello-go-run-4-input",
+        image="hello-go:local",
+        context=context,
+        worker_id="k8s-worker-run-4",
+        timeout_seconds=30,
+    )
+
+    containers = manifest["spec"]["template"]["spec"]["containers"]
+    names = {container["name"] for container in containers}
+    assert names == {"worker", "result-forwarder"}
+
+    forwarder = next(
+        container for container in containers if container["name"] == "result-forwarder"
+    )
+    assert forwarder["image"] == "goblin-king:test"
+    assert forwarder["command"][0:2] == ["python", "-c"]
+    assert {"name": "GOBLIN_REDIS_URL", "value": "redis://redis:6379/0"} in forwarder["env"]
+    assert {"name": "GOBLIN_RESULT_PATH", "value": "/goblin-result/result.json"} in forwarder[
+        "env"
+    ]
+    assert {"name": "result", "mountPath": "/goblin-result"} in forwarder["volumeMounts"]
