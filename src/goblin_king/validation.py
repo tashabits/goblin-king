@@ -60,6 +60,72 @@ def validation_record(
     )
 
 
+def format_validation_gate_error(
+    *,
+    kind: str,
+    image: str | None,
+    reason: str,
+    image_digest: str | None = None,
+    stale_from_digest: str | None = None,
+    contract_version: str = GOBLIN_CONTAINER_CONTRACT_VERSION,
+    validator_version: str = VALIDATOR_VERSION,
+) -> str:
+    """Return an actionable scheduler error for mandatory worker validation failures."""
+    details = [
+        "Goblin image failed contract validation and cannot be run by default.",
+        f"Kind: {kind}",
+        f"Image: {image or '<unknown>'}",
+        f"Image digest: {image_digest or '<unresolved>'}",
+        f"Contract version: {contract_version}",
+        f"Validator version: {validator_version}",
+    ]
+    if stale_from_digest:
+        details.append(f"Previous validation digest: {stale_from_digest}")
+    details.extend(
+        [
+            f"Reason: {reason}",
+            "Validate first, then schedule.",
+            (
+                "Revalidate with: goblin-king workers validate "
+                f"--kind {kind} --input <input-json> --build --require-success"
+            ),
+        ]
+    )
+    return "\n".join(details)
+
+
+def validation_status_payload(
+    *,
+    worker_image: str | None,
+    validation: WorkerValidationRecord | None,
+) -> dict[str, Any]:
+    """Summarize latest validation proof for API/admin status surfaces."""
+    if validation is None:
+        return {
+            "state": "unknown",
+            "message": "No validation proof has been recorded. Validate first, then schedule.",
+        }
+    if worker_image is not None and validation.image and validation.image != worker_image:
+        state = "stale"
+        message = "Latest validation proof was recorded for a different configured image."
+    elif validation.status == "passed":
+        state = "validated"
+        message = "Latest validation proof passed for this configured image."
+    else:
+        state = "failed"
+        message = "; ".join(validation.failure_reasons) or "Latest validation failed."
+    return {
+        "state": state,
+        "message": message,
+        "image": validation.image,
+        "image_digest": validation.image_digest,
+        "contract_version": validation.contract_version,
+        "validator_version": validation.validator_version,
+        "validated_at": validation.validated_at.isoformat(),
+        "failure_reasons": validation.failure_reasons,
+    }
+
+
 def validate_workers(
     *,
     registry: GoblinRegistry,

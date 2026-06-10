@@ -46,6 +46,7 @@ Goblin King enforces or records:
 - Job timeout status.
 - Scoped hard-kill of Goblin King-labeled runtime objects.
 - Artifact path safety.
+- Mandatory worker contract validation before container execution by default.
 - Auth, RBAC, audit, and rate-limit decisions.
 - Durable event and heartbeat history.
 
@@ -56,6 +57,11 @@ runtime enforcement covers timeouts, retries, safe artifact paths, scoped hard
 termination, audit, and events; broader CPU, memory, network, filesystem, log, and
 artifact byte ceilings should be enforced by Docker/Compose/Helm deployment policy until
 runtime-level validation is added.
+
+Worker image validation is documented in
+[Goblin Contract Validation](goblin-contract-validation.md). The scheduler may create
+proof just-in-time, but it does not execute a container-backed goblin unless validation
+passes for the resolved image identity, contract version, and validator version.
 
 ## Secrets
 

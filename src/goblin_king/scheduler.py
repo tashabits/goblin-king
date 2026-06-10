@@ -27,12 +27,13 @@ from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRunti
 from goblin_king.store import SQLiteStore
 from goblin_king.validation import (
     VALIDATOR_VERSION,
+    format_validation_gate_error,
     inspect_image_identity,
     validate_workers,
     validation_record,
 )
 from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
-from goblin_king.workers import WorkerImageMap
+from goblin_king.workers import WorkerConfigError, WorkerImageMap
 
 DEFAULT_LEASE_SECONDS = 60
 DEFAULT_CLAIM_LIMIT = 10
@@ -387,8 +388,19 @@ class Scheduler:
     ) -> str | None:
         """Ensure the current worker image identity has passed contract validation."""
         if self.workers is None:
-            return "worker image map is required for validation"
-        worker = self.workers.get(kind)
+            return format_validation_gate_error(
+                kind=kind,
+                image=None,
+                reason="worker image map is required for validation",
+            )
+        try:
+            worker = self.workers.get(kind)
+        except WorkerConfigError as error:
+            return format_validation_gate_error(
+                kind=kind,
+                image=None,
+                reason=str(error),
+            )
         validation_run_root = (
             self.runtime.run_root if isinstance(self.runtime, DockerRuntime) else None
         )
@@ -398,6 +410,7 @@ class Scheduler:
             else "docker"
         )
         image_digest, image_error = inspect_image_identity(docker_executable, worker.image)
+        latest_for_kind = self.store.latest_worker_validation_for_kind(kind)
         if image_error is not None or image_digest is None:
             error = image_error or f"worker image digest unavailable: {worker.image}"
             self.store.save_worker_validation(
@@ -414,7 +427,13 @@ class Scheduler:
                     effective_policy=resource_policy,
                 )
             )
-            return error
+            return format_validation_gate_error(
+                kind=kind,
+                image=worker.image,
+                image_digest=image_digest,
+                stale_from_digest=latest_for_kind.image_digest if latest_for_kind else None,
+                reason=error,
+            )
         cached = self.store.get_latest_worker_validation(
             kind=kind,
             image_digest=image_digest,
@@ -438,7 +457,22 @@ class Scheduler:
             validation_record(result, effective_policy=resource_policy)
         )
         if not result.ok:
-            return result.error or "worker validation failed"
+            stale_from_digest = (
+                latest_for_kind.image_digest
+                if latest_for_kind
+                and latest_for_kind.status == "passed"
+                and latest_for_kind.image_digest != image_digest
+                else None
+            )
+            return format_validation_gate_error(
+                kind=kind,
+                image=result.image or worker.image,
+                image_digest=result.image_digest or image_digest,
+                stale_from_digest=stale_from_digest,
+                contract_version=result.contract_version,
+                validator_version=result.validator_version,
+                reason=result.error or "worker validation failed",
+            )
         return None
 
     def run_once(self, now: datetime | None = None) -> list[RunRecord]:

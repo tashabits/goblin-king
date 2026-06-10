@@ -11,12 +11,40 @@ const fixtures = {
       display_name: "Example Hello",
       worker_mapped: true,
       worker_image: "goblin-king-example-hello:local",
+      validation_status: {
+        state: "validated",
+        message: "Latest validation proof passed for this configured image.",
+      },
     },
     {
       kind: "example.long-hello",
       display_name: "Example Long Hello",
       worker_mapped: true,
       worker_image: "goblin-king-example-long-hello:local",
+      validation_status: {
+        state: "unknown",
+        message: "No validation proof has been recorded. Validate first, then schedule.",
+      },
+    },
+    {
+      kind: "example.failed-validation",
+      display_name: "Example Failed Validation",
+      worker_mapped: true,
+      worker_image: "goblin-king-example-failed-validation:local",
+      validation_status: {
+        state: "failed",
+        message: "worker did not write result.json",
+      },
+    },
+    {
+      kind: "example.stale-validation",
+      display_name: "Example Stale Validation",
+      worker_mapped: true,
+      worker_image: "goblin-king-example-stale-validation:local",
+      validation_status: {
+        state: "stale",
+        message: "Latest validation proof was recorded for a different configured image.",
+      },
     },
   ],
   jobs: {
@@ -247,6 +275,10 @@ describe("App", () => {
     expect((await screen.findAllByText("Goblin Lab")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Registered Container Goblins").length).toBeGreaterThan(0);
     expect(screen.getAllByText("OCI worker image mapped").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("validated").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("unknown").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("failed").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("stale").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Task Board").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Schedules").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Runs & Results").length).toBeGreaterThan(0);

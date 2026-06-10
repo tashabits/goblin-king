@@ -350,13 +350,18 @@ python -m goblin_king.cli workers validate-image \
   --require-success
 ```
 
-Container-backed goblins are validation-gated. The scheduler will not execute a Docker
-or Kubernetes worker unless the current resolved image identity has passed the Goblin
-Container Contract validator for `goblin-king/v1alpha1`. Inspect persisted proof with:
+Container-backed goblins are validation-gated: validate first, then schedule. The
+scheduler will not execute a Docker or Kubernetes worker unless the current resolved
+image identity has passed the Goblin Container Contract validator for
+`goblin-king/v1alpha1`. Missing or stale proof triggers validation before execution;
+execution continues only if proof passes. Inspect persisted proof with:
 
 ```bash
 goblin-king workers validation-status
 ```
+
+The canonical gate behavior, proof keying, stale-digest handling, and failure mapping
+live in [Goblin Contract Validation](docs/goblin-contract-validation.md).
 
 For host-project deployment integration, see
 `examples/adopting-project/`. It includes:

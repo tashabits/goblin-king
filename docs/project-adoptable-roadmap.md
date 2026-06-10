@@ -606,13 +606,14 @@ added.
 
 - Branch: `phase-45-mandatory-goblin-validation`.
 - PR title: `Phase 45 mandatory goblin validation gate`.
+- Status: implemented.
 - Goblin King must never schedule an unvalidated goblin by default.
 - A goblin definition is schedulable only when its configuration is valid and its
   resolved image digest has passed the Goblin Container Contract validator for the
   declared contract version.
-- Static validation runs on every schedule attempt.
-- Runtime validation is required before scheduling a newly resolved image digest.
-- Scheduling rejects unvalidated images by default.
+- The scheduler checks validation immediately before container execution and may create
+  just-in-time proof; execution continues only when proof passes.
+- Scheduling rejects images whose current proof cannot be created or has failed.
 - Production mode forbids validation override; a dev-only override may exist if it is
   explicit, audited, and unavailable in production mode.
 - Persist validation results with goblin kind, image reference, resolved image digest,
@@ -622,6 +623,8 @@ added.
   resolved image digest changes.
 - API, CLI, admin, events, and audit logs must show validation status, validation
   failures, and scheduling rejections.
+- The canonical design, proof lifecycle, and failure mapping live in
+  [Goblin Contract Validation](goblin-contract-validation.md).
 
 ### Phase 46: Docker Resource Policy Proof
 

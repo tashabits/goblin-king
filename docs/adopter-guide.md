@@ -110,6 +110,10 @@ Re-run validation whenever the worker image digest changes. By default, Goblin K
 not schedule project goblins whose resolved image digest has not passed the container
 contract validator for the declared contract version.
 
+The full scheduler gate, proof lifecycle, stale-digest behavior, and failure mapping
+live in [Goblin Contract Validation](goblin-contract-validation.md). Keep the adoption
+loop simple: validate first, then schedule.
+
 ## Run Through Docker
 
 Submit one project goblin through Docker:

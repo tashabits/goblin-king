@@ -25,6 +25,18 @@ type Counts = {
   services: number;
 };
 
+function validationBadge(goblin: Goblin) {
+  const status = goblin.validation_status ?? {
+    state: "unknown",
+    message: "No validation proof has been recorded. Validate first, then schedule.",
+  };
+  return (
+    <span className={`status-badge validation-${status.state}`} title={status.message}>
+      {status.state}
+    </span>
+  );
+}
+
 export function LoginScreen({
   draftToken,
   onDraftTokenChange,
@@ -196,6 +208,7 @@ export function GoblinLabPanel({
           goblin.display_name,
           goblin.source || "registry",
           goblin.worker_mapped ? "OCI worker image mapped" : "missing worker image",
+          validationBadge(goblin),
           goblin.worker_image || "none",
         ])}
       />

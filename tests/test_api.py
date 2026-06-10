@@ -20,6 +20,7 @@ from goblin_king.contracts import (
     JobRecord,
     LongServiceRecord,
     RunRecord,
+    WorkerValidationRecord,
     utc_now,
 )
 from goblin_king.store import SQLiteStore
@@ -57,6 +58,31 @@ def test_health_and_goblins_endpoints(tmp_path: Path) -> None:
     assert goblins.status_code == 200
     echo = next(item for item in goblins.json() if item["kind"] == "example.echo")
     assert echo["worker_mapped"] is True
+    assert echo["validation_status"]["state"] == "unknown"
+
+
+def test_goblins_endpoint_reports_validation_status(tmp_path: Path) -> None:
+    """Verify admin goblin listings include latest validation status hints."""
+    client, store, _ = build_client(tmp_path)
+    store.save_worker_validation(
+        WorkerValidationRecord(
+            id="validation-1",
+            kind="example.echo",
+            image="goblin-king-example-echo:local",
+            image_digest="sha256:echo",
+            contract_version="goblin-king/v1alpha1",
+            validator_version="goblin-king-validator/v1",
+            validated_at=utc_now(),
+            status="passed",
+        )
+    )
+
+    response = client.get("/goblins", headers=auth_headers())
+    echo = next(item for item in response.json() if item["kind"] == "example.echo")
+
+    assert response.status_code == 200
+    assert echo["validation_status"]["state"] == "validated"
+    assert echo["validation_status"]["image_digest"] == "sha256:echo"
 
 
 def test_goblins_endpoint_uses_project_settings(tmp_path: Path) -> None:
