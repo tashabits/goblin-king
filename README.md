@@ -246,6 +246,8 @@ make helm-restart-clean HELM_RELEASE=goblin-king HELM_NAMESPACE=default
 Have your own project that needs scheduled background tasks? Start with
 [Using Goblin King As Your Project Scheduler](docs/using-goblin-king-as-a-project-scheduler.md)
 for the practical path from project config to validated, scheduled container goblins.
+When you want to prove those goblins in the React admin, use
+[Testing Your Project With The Admin Panel](docs/testing-your-project-with-the-admin-panel.md).
 
 For a project-owned goblin, start with a standalone project template:
 
@@ -770,6 +772,7 @@ Goblin King provides:
 | [Using Goblin King As Your Project Scheduler](docs/using-goblin-king-as-a-project-scheduler.md) | Practical guide for defining project background tasks as validated, scheduled goblin containers. |
 | [Using Goblin King From A Vendored Checkout](docs/using-goblin-king-from-a-vendored-checkout.md) | Submodule, subtree, and local path dependency workflow for host projects. |
 | [Adopter Admin Dev/Test Stack](docs/adopter-admin-dev-stack.md) | Local Docker Compose/admin workflow for testing project-defined goblins. |
+| [Testing Your Project With The Admin Panel](docs/testing-your-project-with-the-admin-panel.md) | Do-this, see-this quickstart for validating, launching, and inspecting project goblins in the admin. |
 | [Project Goblin Config](docs/project-goblin-config.md) | Versioned `GoblinProject` config for defining container goblins without editing Goblin King source. |
 | [Project Template Quickstart](docs/project-template-quickstart.md) | Copy-paste path for generating, validating, and proving a standalone adopter project. |
 | [Language-Agnostic Closeout](docs/language-agnostic-closeout.md) | Audit summary for the container-first worker phases and remaining deferrals. |
