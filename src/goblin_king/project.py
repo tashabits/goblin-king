@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from goblin_king.contracts import GoblinDefinition
+from goblin_king.versions import PROJECT_CONFIG_API_VERSION, PROJECT_CONFIG_KIND
 from goblin_king.workers import WorkerImageDefinition
 
 
@@ -68,16 +69,16 @@ class ProjectSettings(BaseModel):
     @classmethod
     def validate_api_version(cls, value: str | None) -> str | None:
         """Validate the optional project config API version."""
-        if value is not None and value != "goblin-king/v1alpha1":
-            raise ValueError("apiVersion must be goblin-king/v1alpha1")
+        if value is not None and value != PROJECT_CONFIG_API_VERSION:
+            raise ValueError(f"apiVersion must be {PROJECT_CONFIG_API_VERSION}")
         return value
 
     @field_validator("kind")
     @classmethod
     def validate_kind(cls, value: str | None) -> str | None:
         """Validate the optional project config kind marker."""
-        if value is not None and value != "GoblinProject":
-            raise ValueError("kind must be GoblinProject")
+        if value is not None and value != PROJECT_CONFIG_KIND:
+            raise ValueError(f"kind must be {PROJECT_CONFIG_KIND}")
         return value
 
     @classmethod

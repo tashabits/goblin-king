@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 from goblin_king.contracts import GOBLIN_KIND_PATTERN
+from goblin_king.versions import PROJECT_CONFIG_API_VERSION, PROJECT_CONFIG_KIND
 
 
 class TemplateError(ValueError):
@@ -362,8 +363,8 @@ def _adopter_project_json(prefix: str) -> str:
     artifact_kind = f"{prefix}.artifact"
     return json.dumps(
         {
-            "apiVersion": "goblin-king/v1alpha1",
-            "kind": "GoblinProject",
+            "apiVersion": PROJECT_CONFIG_API_VERSION,
+            "kind": PROJECT_CONFIG_KIND,
             "registries": [],
             "entry_points": False,
             "images": "goblin-images.json",

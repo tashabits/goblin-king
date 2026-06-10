@@ -24,6 +24,7 @@ from goblin_king.events import (
     worker_heartbeat_key,
 )
 from goblin_king.resource_policies import ResourcePolicy
+from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
 
 _KUBERNETES_RESULT_FORWARDER_SCRIPT = r"""
@@ -256,6 +257,8 @@ class DockerRuntime:
             f"goblin-king.job-id={context.metadata.get('job_id', '')}",
             "--add-host",
             "host.docker.internal:host-gateway",
+            "-e",
+            f"GOBLIN_CONTRACT_VERSION={GOBLIN_CONTAINER_CONTRACT_VERSION}",
             "-e",
             f"GOBLIN_RUN_ID={context.run_id}",
             "-e",
@@ -496,6 +499,10 @@ class KubernetesRuntime:
             "image": image,
             "imagePullPolicy": self.image_pull_policy,
             "env": [
+                {
+                    "name": "GOBLIN_CONTRACT_VERSION",
+                    "value": GOBLIN_CONTAINER_CONTRACT_VERSION,
+                },
                 {"name": "GOBLIN_RUN_ID", "value": context.run_id},
                 {
                     "name": "GOBLIN_JOB_ID",
