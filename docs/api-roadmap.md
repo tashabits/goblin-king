@@ -124,10 +124,10 @@ target phase below.
 - API, CLI, admin, audit, and event visibility for effective per-run resource policies.
 - Resource-policy validation failures surfaced before queueing or launching unsafe work.
 
-## Planned In Phases 41-42
+## Planned In Phase 42
 
-- Adopter smoke suite and project-adoptable alpha closeout.
-- Every PR in this range must include the Docker and Helm browser runtime audit from
+- Project-adoptable alpha closeout.
+- The PR in this range must include the Docker and Helm browser runtime audit from
   `docs/admin-runtime-audit.md`.
 
 ## Later Infrastructure Follow-Up

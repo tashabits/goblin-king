@@ -193,7 +193,6 @@ If the ingress host is not resolving, add this hosts-file entry:
 Use the admin **Runs & Artifacts** panel or CLI:
 
 ```bash
-goblin-king runs list
 goblin-king runs show <run-id> --with-job
 ```
 
@@ -230,3 +229,16 @@ Stable-enough internal-adopter surfaces:
 Do not build host-project code against `goblin_king.runtime`, `goblin_king.store`,
 or other non-root internals unless the needed behavior is promoted to the public
 boundary first.
+
+## One-Command Smoke
+
+Run the complete local adopter proof:
+
+```bash
+goblin-king smoke adopter-project
+```
+
+The command generates a temporary adopter project, adds hello, artifact, and
+controlled-failure goblins, validates their worker images, schedules them through
+Docker, inspects success/artifact/failure results, and deletes the generated project
+after proof. Pass `--keep` to keep the generated files for debugging.
