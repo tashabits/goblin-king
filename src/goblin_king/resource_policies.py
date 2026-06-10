@@ -70,11 +70,12 @@ class LogsPolicy(BaseModel):
 
 
 class ConcurrencyPolicy(BaseModel):
-    """Per-kind concurrency limit metadata."""
+    """Per-kind and project-wide concurrency limit metadata."""
 
     model_config = ConfigDict(extra="forbid")
 
     max_running: int | None = Field(default=None, gt=0)
+    max_project_running: int | None = Field(default=None, gt=0)
 
 
 class ResourcePolicy(BaseModel):
@@ -183,6 +184,11 @@ class ResourcePolicySet(BaseModel):
                 "concurrency.max_running",
                 policy.concurrency.max_running,
                 ceiling.concurrency.max_running,
+            ),
+            (
+                "concurrency.max_project_running",
+                policy.concurrency.max_project_running,
+                ceiling.concurrency.max_project_running,
             ),
         ]
         for field, value, max_value in checks:

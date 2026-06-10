@@ -1149,6 +1149,25 @@ class SQLiteStore:
                 query = query.where(jobs_table.c.id != exclude_job_id)
             return int(connection.execute(query).scalar_one())
 
+    def count_active_project_jobs(
+        self,
+        project_id: str | None,
+        *,
+        exclude_job_id: str | None = None,
+    ) -> int:
+        """Count leased/running jobs in one project scope."""
+        with self.engine.connect() as connection:
+            query = select(func.count()).select_from(jobs_table).where(
+                jobs_table.c.status.in_(["leased", "running"]),
+            )
+            if project_id is None:
+                query = query.where(jobs_table.c.project_id.is_(None))
+            else:
+                query = query.where(jobs_table.c.project_id == project_id)
+            if exclude_job_id is not None:
+                query = query.where(jobs_table.c.id != exclude_job_id)
+            return int(connection.execute(query).scalar_one())
+
     def finish_job(
         self,
         job_id: str,

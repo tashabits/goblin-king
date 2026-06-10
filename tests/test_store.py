@@ -204,6 +204,60 @@ def test_store_counts_active_jobs_by_kind(tmp_path: Path) -> None:
     assert store.count_active_jobs("example.echo", exclude_job_id="leased") == 1
 
 
+def test_store_counts_active_jobs_by_project(tmp_path: Path) -> None:
+    """Verify project concurrency helpers count only active jobs in one project."""
+    now = utc_now()
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    jobs = [
+        JobRecord(
+            id="leased-a",
+            kind="example.echo",
+            input={},
+            created_at=now,
+            project_id="project-a",
+            status="leased",
+        ),
+        JobRecord(
+            id="running-a",
+            kind="example.other",
+            input={},
+            created_at=now,
+            project_id="project-a",
+            status="running",
+        ),
+        JobRecord(
+            id="queued-a",
+            kind="example.echo",
+            input={},
+            created_at=now,
+            project_id="project-a",
+            status="queued",
+        ),
+        JobRecord(
+            id="running-b",
+            kind="example.echo",
+            input={},
+            created_at=now,
+            project_id="project-b",
+            status="running",
+        ),
+        JobRecord(
+            id="projectless",
+            kind="example.echo",
+            input={},
+            created_at=now,
+            status="running",
+        ),
+    ]
+    for job in jobs:
+        store.save_job(job)
+
+    assert store.count_active_project_jobs("project-a") == 2
+    assert store.count_active_project_jobs("project-a", exclude_job_id="leased-a") == 1
+    assert store.count_active_project_jobs("project-b") == 1
+    assert store.count_active_project_jobs(None) == 1
+
+
 def test_claim_due_jobs_once_and_reclaim_after_lease_expiry(tmp_path: Path) -> None:
     """Verify leasing prevents duplicate claims until the lease expires."""
     now = utc_now()
