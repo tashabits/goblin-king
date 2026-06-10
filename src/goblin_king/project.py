@@ -27,7 +27,10 @@ class ProjectGoblinSpec(BaseModel):
     context: Path = Path(".")
     dockerfile: str = "Dockerfile"
     input_schema: Path | None = Field(default=None, alias="inputSchema")
-    resource_policy: str | None = Field(default=None, alias="resourcePolicy")
+    resource_policy: str | dict[str, Any] | None = Field(
+        default=None,
+        alias="resourcePolicy",
+    )
     resources: dict[str, Any] = Field(default_factory=dict)
     artifacts: dict[str, Any] = Field(default_factory=dict)
     labels: dict[str, str] = Field(default_factory=dict)

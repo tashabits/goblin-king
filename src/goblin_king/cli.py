@@ -43,7 +43,7 @@ from goblin_king.resource_policies import ResourcePolicyError, ResourcePolicySet
 from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRuntime, new_run_context
 from goblin_king.scheduler import DEFAULT_INTERVAL_SECONDS, Scheduler, next_run_after
 from goblin_king.store import DEFAULT_DB_PATH, SQLiteStore
-from goblin_king.templates import TemplateError, init_package
+from goblin_king.templates import TemplateError, init_package, init_project
 from goblin_king.validation import WorkerValidationResult, validate_workers
 from goblin_king.workers import WorkerConfigError, WorkerImageDefinition, WorkerImageMap
 
@@ -255,6 +255,23 @@ def init_project_package(
             image=image,
             include_long_service=include_long_service,
         )
+    except TemplateError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+    typer.echo(f"created {created}")
+
+
+@project_app.command("init")
+def init_project_template(
+    target_dir: Annotated[Path, typer.Argument(help="Directory to create.")],
+    prefix: Annotated[
+        str,
+        typer.Option("--prefix", help="Kind and image prefix for generated goblins."),
+    ] = "project",
+) -> None:
+    """Generate a standalone adopter project with contract-compliant workers."""
+    try:
+        created = init_project(target_dir, prefix=prefix)
     except TemplateError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
