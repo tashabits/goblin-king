@@ -213,6 +213,8 @@ Goblin Lab without a frontend rebuild.
 
 For the full local admin test stack flow, including Docker socket warnings and CLI/admin
 proof commands, see [Adopter Admin Dev/Test Stack](adopter-admin-dev-stack.md).
+For a shorter hands-on checklist, see
+[Testing Your Project With The Admin Panel](testing-your-project-with-the-admin-panel.md).
 
 ![Docker admin adopter proof](screenshots/phase-39-docker-admin.png)
 

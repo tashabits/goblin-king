@@ -107,7 +107,9 @@ kinds after reload:
 
 For a complete adopter stack flow that starts Compose, mounts project config, validates
 project goblins, submits a CLI job, and inspects the result in admin, see
-[Adopter Admin Dev/Test Stack](adopter-admin-dev-stack.md).
+[Adopter Admin Dev/Test Stack](adopter-admin-dev-stack.md). For a shorter
+do-this, see-this workflow, use
+[Testing Your Project With The Admin Panel](testing-your-project-with-the-admin-panel.md).
 
 ## Run The Full Runtime Audit
 

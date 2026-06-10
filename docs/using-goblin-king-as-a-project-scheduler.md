@@ -321,6 +321,8 @@ Helm, then manage schedules through the CLI, API, or admin interface.
 
 For a project-oriented Docker Compose stack that mounts project config and opens the
 React admin, see [Adopter Admin Dev/Test Stack](adopter-admin-dev-stack.md).
+For a shorter proof checklist centered on the admin panels, see
+[Testing Your Project With The Admin Panel](testing-your-project-with-the-admin-panel.md).
 
 ## Step 7: Inspect runs, results, logs, and artifacts
 
@@ -387,6 +389,7 @@ Docker mappings, Kubernetes mappings, ceilings, and proof commands.
 - [Project Goblin Config](project-goblin-config.md)
 - [Goblin Contract Validation](goblin-contract-validation.md)
 - [Goblin Resource Policies](goblin-resource-policies.md)
+- [Testing Your Project With The Admin Panel](testing-your-project-with-the-admin-panel.md)
 - [Project Template Quickstart](project-template-quickstart.md)
 - [Adopter Guide](adopter-guide.md)
 - [Security Model](security-model.md)

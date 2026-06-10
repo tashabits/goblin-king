@@ -789,7 +789,13 @@ sufficient.
 
 - Branch: `phase-57-project-admin-test-quickstart`.
 - PR title: `Phase 57 project admin test quickstart`.
-- Status: planned.
+- Status: implemented.
+- Add `docs/testing-your-project-with-the-admin-panel.md`.
+- Link the guide from README, admin guide, adopter guide, vendored checkout guide, and
+  project scheduler guide.
+- Document a do-this, see-this admin proof path for starting the adopter stack,
+  validating project config/workers, reloading discovery, launching a project goblin,
+  inspecting runs/artifacts, confirming Docker execution, and shutting down.
 
 ### Phase 58: Adopter Stack Closeout
 

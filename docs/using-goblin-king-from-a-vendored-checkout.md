@@ -83,7 +83,9 @@ Open `http://127.0.0.1:8080/admin`, log in with the configured local token, relo
 Discovery, and confirm the project goblins appear.
 
 For the full local admin workflow, see
-[Adopter Admin Dev/Test Stack](adopter-admin-dev-stack.md).
+[Adopter Admin Dev/Test Stack](adopter-admin-dev-stack.md). For a shorter admin
+proof checklist, see
+[Testing Your Project With The Admin Panel](testing-your-project-with-the-admin-panel.md).
 
 ## Validate and run project goblins
 
@@ -122,5 +124,6 @@ and do not expose the local admin/API stack publicly without proper auth and TLS
 - [Using Goblin King As Your Project Scheduler](using-goblin-king-as-a-project-scheduler.md)
 - [Adopter Guide](adopter-guide.md)
 - [Project Template Quickstart](project-template-quickstart.md)
+- [Testing Your Project With The Admin Panel](testing-your-project-with-the-admin-panel.md)
 - [Project Goblin Config](project-goblin-config.md)
 - [Security Model](security-model.md)
