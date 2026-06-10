@@ -161,7 +161,7 @@ The pattern is:
 
 ## Reload Discovery After Deploy
 
-After installing a new plugin wheel, mounting a changed registry, or updating
+After installing a new project goblin package, mounting a changed registry, or updating
 `goblin-images.json`, reload discovery before submitting the new goblin kind:
 
 ```bash

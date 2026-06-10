@@ -15,7 +15,11 @@ For local development, an editable install is fine:
 python -m pip install -e ../goblin-king[dev]
 ```
 
-## 2. Generate A Plugin
+## 2. Generate A Project Goblin Package
+
+This command creates a starter project package with a self-contained goblin container
+folder. The Python package metadata is optional integration glue; the worker itself is
+still a contract-compliant Docker/OCI container.
 
 ```bash
 goblin-king project init-package ./my-goblins \
@@ -31,7 +35,7 @@ goblin-king project validate --project ./my-goblins/goblin-king-project.json
 goblin-king project goblins list --project ./my-goblins/goblin-king-project.json
 ```
 
-## 4. Build The Worker
+## 4. Build The Goblin Container
 
 ```bash
 goblin-king workers build --images ./my-goblins/goblin-images.json
