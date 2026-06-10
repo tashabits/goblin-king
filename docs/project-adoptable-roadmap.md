@@ -1,8 +1,8 @@
 # Project-Adoptable Goblin King Roadmap
 
 This roadmap extends Goblin King from the current container-contract and
-cross-language demo state into a project-adoptable alpha. It is future-work
-planning, not a user guide.
+cross-language demo state into a project-adoptable alpha. It is a roadmap and
+proof ledger, not a user guide.
 
 All proof remains local. GitHub Actions are not required and are not sufficient
 for these phases; every PR must include exact local command output.
@@ -22,16 +22,16 @@ script, or WASI module inside the container is an implementation detail.
 
 ## Target Adoption Flow
 
-The exact commands may adjust to match the existing CLI style, but the intended
-journey is:
+The supported alpha journey is:
 
-```bash
-goblin-king project init
-goblin-king goblin add invoice-renderer --image my-project/invoice-renderer:local
-goblin-king goblin validate invoice-renderer
-goblin-king run invoice-renderer --input examples/invoice.json
-goblin-king runs show <run-id>
-goblin-king artifacts list <run-id>
+```shell
+goblin-king project init ./my-goblin-project --prefix myproject
+cd ./my-goblin-project
+goblin-king project validate --project goblin-king-project.json
+goblin-king workers validate --project goblin-king-project.json --kind myproject.hello --input inputs/hello.json --build --require-success
+goblin-king jobs submit myproject.hello --project goblin-king-project.json --input inputs/hello.json --runtime docker
+goblin-king scheduler run-once --project goblin-king-project.json --runtime docker
+goblin-king runs show <run-id> --with-job
 ```
 
 The path should let a user:
@@ -45,7 +45,7 @@ The path should let a user:
 7. Understand what is stable, alpha, and internal.
 
 Phase 34 completed runtime resource-policy enforcement. The project-adoptable alpha work
-starts from that enforced policy baseline.
+started from that enforced policy baseline and is now closed out through Phase 42.
 
 ## Phase 35: Project-Adoptable Goblin Configuration
 
@@ -461,23 +461,22 @@ Implemented proof:
 
 - Branch: `phase-42-project-adoptable-alpha-closeout`.
 - PR title: `Phase 42 project-adoptable alpha closeout`.
-- Status: planned.
+- Status: implemented.
 
-Perform a closeout pass to ensure Goblin King is ready for early adopter
+Performed a closeout pass to ensure Goblin King is ready for early adopter
 projects.
 
-Goals:
+Completed goals:
 
-- Re-audit the adopter path from a clean checkout.
-- Re-audit docs for Python-specific assumptions.
-- Re-audit examples for contract compliance.
-- Re-audit project config docs and validation errors.
-- Ensure quickstart commands still work.
-- Ensure public/semi-public/internal boundaries are clear.
-- Ensure the README accurately describes readiness.
-- Add a clear status statement.
+- Re-audited the adopter path from a clean checkout.
+- Re-audited docs for Python-specific assumptions.
+- Re-audited examples for contract compliance.
+- Re-audited project config docs and validation errors.
+- Ensured quickstart and smoke commands still work.
+- Ensured public/semi-public/internal boundaries are clear.
+- Updated the README with an explicit readiness status statement.
 
-Suggested status language:
+Status language added to the README:
 
 ```text
 Status: Project-adoptable alpha.
@@ -492,13 +491,45 @@ environments without additional hardening.
 
 Proof:
 
-- Full local CI passes.
-- Adopter smoke suite proof is included.
-- Docker proof for project-defined goblin validation and execution is included.
-- Final docs index links are valid.
-- README status is updated.
-- Before/after summary confirms a consuming project can define and schedule its
-  own goblins without modifying Goblin King internals.
+- Clean checkout proof passed from a temporary clone of `main`:
+  `clean42.hello` completed as job
+  `bc8485f6-29a0-40c5-ab0a-6f049b22d48a` / run
+  `ef47b345-0d26-4113-bf4a-595cb2379185`, `clean42.artifact`
+  completed as job `b7b025d3-18c6-4d48-aa3e-04e6ee391b25` / run
+  `138f271c-7f66-4b11-ae53-a2c8468a8299` with one artifact, and
+  `clean42.failure` failed readably as job
+  `7661b030-332b-4712-b25e-d1b2c708bee4` / run
+  `5d4de845-9eed-4e71-b0f4-147197f65690`.
+- Branch-local adopter smoke proof passed:
+  `phase42.hello` completed as job
+  `109f4736-ad2d-4091-a04c-8e25ae3023be` / run
+  `d17d9684-ea16-42a1-bac2-29532d79679f`, `phase42.artifact`
+  completed as job `5e54b59c-786c-4bf4-b1a8-73d632217f61` / run
+  `41fd09fc-a3db-46e6-a2af-3c93efbe92ea` with one artifact, and
+  `phase42.failure` failed readably as job
+  `af8941c9-adf4-4470-bcb0-c034144c2d7e` / run
+  `fa849641-2817-4e4b-8520-0d5a983cad0c`.
+- Clean-board Docker admin audit removed 2 artifacts, 1 handoff, 30 runs,
+  30 jobs, 185 events, 8 worker heartbeats, and 1 long service before proof.
+- Docker admin audit passed for every registered goblin type. WASI proof:
+  `example.behavior-wasi-c-context` completed as run
+  `3764862a-8112-4e7a-a7e2-94bb2953b389`,
+  `example.wasi-c-hello` completed as run
+  `986890f2-cc93-46de-92fd-fee4e4828790`, and
+  `example.wasi-rust-hello` completed as run
+  `86d3f4ee-b825-48e0-abe8-12ef429995a7`.
+- Clean-board Helm admin audit removed 2 artifacts, 1 handoff, 23 runs,
+  23 jobs, 143 events, 6 worker heartbeats, and 1 long service before proof.
+- Helm admin audit passed for every registered goblin type. WASI proof:
+  `example.behavior-wasi-c-context` completed as run
+  `fa779788-288f-4864-abfe-c8579f5a59ed`,
+  `example.wasi-c-hello` completed as run
+  `4a628656-32e6-48e5-a8fe-bd3705d23a30`, and
+  `example.wasi-rust-hello` completed as run
+  `9294a7d1-2324-47c0-86e6-00b9c787ffd4`.
+- Final screenshots live at `docs/screenshots/phase-42-docker-admin.png` and
+  `docs/screenshots/phase-42-helm-admin.png`.
+- Full local CI passed. GitHub Actions remain neither required nor sufficient.
 
 ## Required Proof For Every PR
 

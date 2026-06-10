@@ -48,5 +48,6 @@ hardening into the cleanup and container-first worker roadmap.
   Docker/Helm admin runtime audit procedure.
 - Phase 34: runtime resource policy enforcement for the gaps documented in
   `docs/goblin-resource-policies.md`.
-- Phase 42: remaining project-adoptable alpha closeout work in
-  `docs/project-adoptable-roadmap.md`.
+- Phase 42: project-adoptable alpha closeout completed in
+  `docs/project-adoptable-roadmap.md`, with clean-checkout adopter smoke proof
+  and final Docker/Helm admin audit evidence.
