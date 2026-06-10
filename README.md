@@ -16,6 +16,12 @@ to define and schedule their own contract-compliant container goblins. It is not
 yet recommended for untrusted multi-tenant workloads without additional
 hardening.
 
+Goblin King can be used by trusted self-hosted projects as a local/project
+scheduler for contract-compliant Docker task containers. Adopters can run the
+local/dev stack and use the admin panel to validate, submit, and inspect their
+own project goblins. This remains project-adoptable alpha software and is not
+intended for untrusted third-party container execution.
+
 ## Table Of Contents
 
 - [Goblin King](#goblin-king)
