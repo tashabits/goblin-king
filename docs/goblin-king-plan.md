@@ -777,8 +777,14 @@ Phase sequence:
 - Phase 40: adopter documentation pass. Implemented.
 - Phase 41: adopter smoke suite. Implemented.
 - Phase 42: project-adoptable alpha closeout. Implemented.
+- Phase 43: slim package root public API. Implemented.
+- Phase 44: behavior-preserving module cleanup pass. Planned.
+- Phase 45: mandatory goblin validation gate. Planned.
+- Phase 46: Docker resource policy proof. Planned.
+- Phase 47: project config hero path. Planned.
+- Phase 48: adoption hardening closeout. Planned.
 
-All Phase 34-42 proof is local. GitHub Actions are not required and are not sufficient
+All Phase 34-48 proof is local. GitHub Actions are not required and are not sufficient
 as the quality gate.
 
 ## Deferred Items

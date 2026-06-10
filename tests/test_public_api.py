@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
+
 import goblin_king
 
 
@@ -20,19 +24,81 @@ def test_root_exports_adoption_primitives() -> None:
         "PROJECT_CONFIG_KIND",
         "ProjectSettings",
         "REGISTRY_SCHEMA_VERSION",
-        "Scheduler",
-        "SQLiteStore",
         "WORKER_HEARTBEAT_CONTRACT_VERSION",
         "WORKER_IMAGE_MAP_SCHEMA_VERSION",
         "WORKER_RESULT_CONTRACT_VERSION",
         "WorkerImageMap",
-        "create_app",
         "init_package",
     }
 
     assert expected.issubset(set(goblin_king.__all__))
     for name in expected:
         assert getattr(goblin_king, name)
+
+
+def test_root_keeps_lazy_compatibility_exports() -> None:
+    """Verify older root imports still work without eager runtime imports."""
+    expected = {"Scheduler", "SQLiteStore", "create_app"}
+
+    assert expected.issubset(set(goblin_king.__all__))
+    assert goblin_king.Scheduler
+    assert goblin_king.SQLiteStore
+    assert goblin_king.create_app
+
+
+def test_root_import_does_not_load_heavy_runtime_modules() -> None:
+    """Verify package import stays lightweight for adopting projects."""
+    script = """
+import json
+import sys
+import goblin_king
+print(json.dumps({
+    name: name in sys.modules
+    for name in [
+        "goblin_king.api",
+        "goblin_king.scheduler",
+        "goblin_king.store",
+        "goblin_king.runtime",
+        "goblin_king.cli",
+    ]
+}))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    loaded = json.loads(completed.stdout)
+
+    assert loaded == {
+        "goblin_king.api": False,
+        "goblin_king.scheduler": False,
+        "goblin_king.store": False,
+        "goblin_king.runtime": False,
+        "goblin_king.cli": False,
+    }
+
+
+def test_legacy_root_exports_are_loaded_on_demand() -> None:
+    """Verify compatibility shims import heavy modules only when requested."""
+    script = """
+import json
+import sys
+import goblin_king
+before = "goblin_king.api" in sys.modules
+_ = goblin_king.create_app
+after = "goblin_king.api" in sys.modules
+print(json.dumps({"before": before, "after": after}))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {"before": False, "after": True}
 
 
 def test_generated_goblin_style_imports_from_root() -> None:

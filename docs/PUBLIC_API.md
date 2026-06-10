@@ -21,8 +21,7 @@ Use these imports from `goblin_king` in host projects and generated goblin packa
 - Project settings: `ProjectSettings` and `ProjectSettingsError`.
 - Worker image settings: `WorkerImageMap`, `WorkerImageDefinition`, and
   `WorkerConfigError`.
-- API and scheduler entrypoints: `ApiSettings`, `ApiSettingsError`, `create_app`,
-  `Scheduler`, and `SQLiteStore`.
+- API settings: `ApiSettings` and `ApiSettingsError`.
 - Template helpers: `init_package` and `TemplateError`.
 
 Generated goblin packages should normally need only:
@@ -45,6 +44,22 @@ from goblin_king import (
     WorkerImageMap,
 )
 ```
+
+## Explicit Heavy Imports
+
+Runtime and control-plane objects stay supported, but importing them should be explicit
+so simple adopter imports do not load FastAPI, SQLite storage, Docker/Kubernetes runtime
+helpers, scheduler code, or CLI dependencies:
+
+```python
+from goblin_king.api import create_app
+from goblin_king.scheduler import Scheduler
+from goblin_king.store import SQLiteStore
+```
+
+For compatibility, the package root still exposes lazy shims for `create_app`,
+`Scheduler`, and `SQLiteStore`. Those names load their heavy modules only when the
+attribute is requested. New code should prefer the explicit imports above.
 
 ## Semi-Public Command Surface
 
