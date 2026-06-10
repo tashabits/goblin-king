@@ -12,7 +12,7 @@ requires-python = ">=3.12"
 dependencies = [
     "croniter>=2.0,<7",
     "fastapi>=0.115,<1",
-    "kubernetes>=29,<34",
+    "kubernetes>=29,<37",
     "pyjwt[crypto]>=2.8,<3",
     "pydantic>=2.7,<3",
     "redis>=5,<7",
