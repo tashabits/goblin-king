@@ -194,7 +194,7 @@ def validate_project(
     """Validate project settings, registry discovery, and worker image settings."""
     settings = _load_project_settings(project)
     registry = _load_project_registry(project)
-    workers = _load_workers(settings.images)
+    workers = _load_project_workers(settings)
     missing: list[str] = []
     invalid: list[str] = []
     for definition in registry.list():
@@ -1028,6 +1028,7 @@ def _load_project_registry(path: Path) -> GoblinRegistry:
         return GoblinRegistry.from_project_sources(
             settings.registries,
             include_entry_points=settings.entry_points,
+            definitions=settings.registry_definitions(),
         )
     except RegistryError as error:
         typer.echo(str(error), err=True)
@@ -1044,7 +1045,11 @@ def _load_scheduler_discovery(
     if project_path is not None:
         settings = _load_project_settings(project_path)
         registry = _load_project_registry(project_path)
-        workers = _load_workers(settings.images) if runtime in {"docker", "kubernetes"} else None
+        workers = (
+            _load_project_workers(settings)
+            if runtime in {"docker", "kubernetes"}
+            else None
+        )
         return registry, workers
     registry = _load_registry(registry_path)
     workers = _load_workers(images_path) if runtime in {"docker", "kubernetes"} else None
@@ -1060,6 +1065,18 @@ def _load_resource_policies(path: Path | None) -> ResourcePolicySet | None:
     try:
         return ResourcePolicySet.from_path(path)
     except ResourcePolicyError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
+
+
+def _load_project_workers(settings: ProjectSettings) -> WorkerImageMap:
+    """Load worker images plus inline project-config worker definitions."""
+    try:
+        return WorkerImageMap.from_path_and_definitions(
+            settings.images,
+            settings.worker_definitions(),
+        )
+    except WorkerConfigError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
 

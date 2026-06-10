@@ -114,6 +114,7 @@ class AppState:
         self._source_registry_files: list[Path] = []
         self._source_entry_points_enabled = False
         self._source_worker_image_map = settings.images
+        self._project_defined_kinds: set[str] = set()
         self.registry, self.workers = self._load_discovery_state()
         self.artifact_root = settings.artifact_root.resolve()
         self.artifact_root.mkdir(parents=True, exist_ok=True)
@@ -187,19 +188,25 @@ class AppState:
             registry_files = project.registries
             entry_points_enabled = project.entry_points
             worker_image_map = project.images
+            project_definitions = project.registry_definitions()
             registry = GoblinRegistry.from_project_sources(
                 registry_files,
                 include_entry_points=entry_points_enabled,
+                definitions=project_definitions,
             )
+            project_workers = project.worker_definitions()
         else:
             registry_files = [self.settings.registry]
             entry_points_enabled = False
             worker_image_map = self.settings.images
             registry = GoblinRegistry.from_path(self.settings.registry)
-        workers = WorkerImageMap.from_path(worker_image_map)
+            project_definitions = []
+            project_workers = {}
+        workers = WorkerImageMap.from_path_and_definitions(worker_image_map, project_workers)
         self._source_registry_files = list(registry_files)
         self._source_entry_points_enabled = entry_points_enabled
         self._source_worker_image_map = worker_image_map
+        self._project_defined_kinds = {definition.kind for definition in project_definitions}
         return registry, workers
 
 
@@ -1041,6 +1048,9 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                     **definition.model_dump(mode="json"),
                     "worker_image": worker.image if worker else None,
                     "worker_mapped": worker is not None,
+                    "source": "project-config"
+                    if definition.kind in state._project_defined_kinds
+                    else "registry",
                 }
             )
         return payload
