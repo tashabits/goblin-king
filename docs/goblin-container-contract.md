@@ -221,8 +221,12 @@ Workers should be built to run with least privilege:
 - Support read-only root filesystems where practical.
 - Treat CPU, memory, process, network, log, and artifact limits as platform policy.
 
-Per-goblin resource policy is planned in `docs/goblin-king-plan.md` Phase 33 and will
-live in `docs/goblin-resource-policies.md`.
+Per-goblin resource policy is documented in
+[`docs/goblin-resource-policies.md`](goblin-resource-policies.md). Current runtime
+enforcement covers timeouts, retries, safe artifact paths, scoped hard termination,
+audit, and events. CPU, memory, process, network, filesystem, log, and artifact byte
+ceilings should be expressed in deployment policy until runtime-level policy validation
+is added.
 
 ## WASI And WebAssembly
 

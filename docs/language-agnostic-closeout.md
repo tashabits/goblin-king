@@ -39,6 +39,7 @@ make validate-behavior-workers
 - [Goblin Examples Index](examples-index.md)
 - [Choose Your Runtime](choose-your-runtime.md)
 - [Goblin Contract Validation](goblin-contract-validation.md)
+- [Goblin Resource Policies](goblin-resource-policies.md)
 - [Security Model](security-model.md)
 
 ## Deferred
@@ -46,7 +47,8 @@ make validate-behavior-workers
 - Native Kubernetes WASI scheduling remains out of scope.
 - Official SDKs for every language remain out of scope.
 - Cloud-specific object storage examples remain out of scope.
-- Per-goblin CPU, memory, process, network, log, timeout, and artifact policies move to
-  Phase 33 in `docs/goblin-resource-policies.md`.
+- Runtime-level enforcement for CPU, memory, process, network, log, and artifact policy
+  ceilings remains future work. The policy model and deployment mappings now live in
+  `docs/goblin-resource-policies.md`.
 
 The King now has a court full of languages. The law is still one contract.
