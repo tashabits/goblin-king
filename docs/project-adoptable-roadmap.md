@@ -717,7 +717,23 @@ sufficient.
 All Phase 43-51 proof remains local. GitHub Actions are not required and are not
 sufficient.
 
-## Deferred After Phase 51
+### Phase 52: Effective Policy Runtime Mapping
+
+- Branch: `phase-52-effective-policy-runtime-mapping`.
+- PR title: `Phase 52 effective policy runtime mapping`.
+- Status: implemented.
+- Pass only the resolved effective policy into Docker and Kubernetes runtime adapters.
+- Expose the exact resolved policy to workers with `GOBLIN_EFFECTIVE_RESOURCE_POLICY_JSON`.
+- Keep Docker mappings for supported CPU, memory, PID, network, read-only root, tmpfs, and
+  log fields.
+- Keep Kubernetes mappings for container resources, read-only root filesystem, and job
+  active deadlines.
+- Document the Goblin King versus Docker versus Kubernetes responsibility boundary.
+
+All Phase 43-52 proof remains local. GitHub Actions are not required and are not
+sufficient.
+
+## Deferred After Phase 52
 
 - After Phase 53 is merged and `main` is synced, create a GitHub release from `main`
   summarizing the completed layered resource-policy work across Phases 49-53.
