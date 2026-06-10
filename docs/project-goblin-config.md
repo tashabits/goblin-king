@@ -119,6 +119,12 @@ identity has passing proof for the declared contract and validator version. See
 [Goblin Contract Validation](goblin-contract-validation.md) for the canonical proof
 lifecycle and failure mapping.
 
+Project configs may set shared runtime policy under `defaults.resources`. Each inline
+goblin may then declare a smaller `resources` block for exceptions. Goblin King resolves
+the runtime policy as operator defaults, then project defaults, then the goblin override;
+the final effective policy is persisted on jobs/runs and visible in API, CLI, and admin
+run detail. Unknown resource fields fail validation so typos do not silently fall through.
+
 ## Validate
 
 ```bash

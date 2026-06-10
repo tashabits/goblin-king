@@ -687,7 +687,22 @@ sufficient.
 All Phase 43-49 proof remains local. GitHub Actions are not required and are not
 sufficient.
 
-## Deferred After Phase 49
+### Phase 50: Goblin Resource Overrides And Effective Policy Resolution
+
+- Branch: `phase-50-goblin-resource-overrides`.
+- PR title: `Phase 50 goblin resource overrides and effective policy resolution`.
+- Status: implemented.
+- Formalize resource policy resolution as operator defaults, then project defaults, then
+  goblin-specific overrides.
+- Reject unknown resource policy fields instead of silently ignoring them.
+- Validate the final effective policy against global ceilings.
+- Persist and expose effective policy on jobs and runs.
+- Show effective policy in the React admin task board and run detail surfaces.
+
+All Phase 43-50 proof remains local. GitHub Actions are not required and are not
+sufficient.
+
+## Deferred After Phase 50
 
 - Public PyPI release hardening.
 - Full production hardening for untrusted multi-tenant execution.

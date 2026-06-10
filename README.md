@@ -274,6 +274,11 @@ before validation, so teams can keep normal timeout, memory, filesystem, network
 concurrency expectations in one project-owned place while leaving per-kind overrides
 small.
 
+Inline goblins can still override those defaults with their own `resources` block. At
+queue time the resolved policy is layered as: Goblin King/operator policy defaults,
+project `defaults.resources`, then the goblin-specific override. The resulting effective
+policy is what appears on the job, run, API response, and admin detail panels.
+
 To prove the complete adopter path in one local command:
 
 ```bash
@@ -650,7 +655,8 @@ the nearest `goblin-resource-policies.json` ceilings when present, and prints
 scheduler flows, those defaults are also layered into the effective policy for queued
 jobs/runs. Use the standalone policy file for runtime ceilings and operator-wide
 defaults; use project defaults to keep repeated inline goblin resource expectations out
-of every goblin block.
+of every goblin block; use goblin-level overrides only for the kinds that need a larger
+or smaller runtime envelope.
 
 Supported enforcement includes:
 
