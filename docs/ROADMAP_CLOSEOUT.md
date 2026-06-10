@@ -25,15 +25,21 @@ future-work plan.
 - `docs/api-roadmap.md` marks Phases 5-21 as covered and leaves only explicit deferred
   infrastructure items.
 - `docs/goblin-king-plan.md` contains the completed production roadmap, cleanup phase,
-  appended language/runtime phases, resource-policy work, and Phase 43-48 adoption
-  hardening notes.
+  appended language/runtime phases, resource-policy work, and adoption hardening notes.
 - `docs/project-adoptable-roadmap.md` records the project config path and confirms that
-  unvalidated goblins are not schedulable by default.
+  unvalidated goblins are not schedulable by default. It also records the vendored
+  checkout and adopter admin stack passes through Phase 58.
 - `docs/proof_table.md` is the complete phase-by-phase proof ledger.
+- `docs/testing-your-project-with-the-admin-panel.md` is the short do-this, see-this
+  admin proof guide for adopter projects.
 
 ## Explicit Deferred Items
 
 - Public PyPI hardening and publication.
+- Federation, remote runners, geographic placement, and distributed experiments.
+- Production hardening beyond the current trusted self-hosted project scope.
+- Untrusted third-party container execution.
+- Image signing/scanning.
 - Cloud-specific managed service recipes.
 - External webhook callbacks.
 - Object storage providers beyond Docker volumes and Kubernetes PVCs.
@@ -66,3 +72,7 @@ future-work plan.
   `docs/goblin-resource-policies.md`, `docs/project-adoptable-roadmap.md`, and
   `docs/proof_table.md`. Release `v0.1.0-alpha.2` records this closeout from synced
   `main`.
+- Phases 54-58: vendored checkout docs, adopter admin dev/test stack docs, project
+  goblin visibility in the React admin, project admin test quickstart, and adopter stack
+  closeout completed the trusted self-hosted project workflow. The admin/API can show,
+  validate, submit, and inspect project goblins without rebuilding the React UI.

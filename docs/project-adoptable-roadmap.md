@@ -801,17 +801,32 @@ sufficient.
 
 - Branch: `phase-58-adopter-stack-closeout`.
 - PR title: `Phase 58 adopter stack closeout`.
-- Status: planned.
+- Status: implemented.
+- Re-audit the complete vendored/project/admin-test workflow.
+- Update README, roadmap, proof table, closeout docs, and deferred items.
+- Confirm the adopter position:
+
+```text
+Goblin King can be used by trusted self-hosted projects as a local/project
+scheduler for contract-compliant Docker task containers. Adopters can run the
+local/dev stack and use the admin panel to validate, submit, and inspect their
+own project goblins. This remains project-adoptable alpha software and is not
+intended for untrusted third-party container execution.
+```
 
 ## Deferred After Phase 58
 
+- Federation.
+- Remote runners.
+- Geographic placement.
+- Distributed experiments.
+- Production hardening beyond current scope.
+- Untrusted third-party container execution.
 - Public PyPI release hardening.
-- Full production hardening for untrusted multi-tenant execution.
+- Image signing/scanning.
 - Secret allow-lists, provider-specific admission controls, object-storage quota
   enforcement, and deeper resource-policy engines.
 - Deep conformance certification.
-- Image signing/scanning.
 - Cloud-provider-specific deployment recipes.
 - Object storage backends.
 - Native WASI scheduling, if ever desired later.
-- Untrusted third-party goblin execution.
