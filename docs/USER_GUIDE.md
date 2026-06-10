@@ -35,6 +35,14 @@ Python helpers and in-process runtime support are useful for local debugging and
 definitions, but they are optional conveniences. Production worker execution should be
 designed around the container contract.
 
+Worker authors should read:
+
+- [What Is A Goblin?](what-is-a-goblin.md)
+- [Writing Goblins](writing-goblins.md)
+- [Goblin Dockerfiles](goblin-dockerfiles.md)
+- [Language-Agnostic Workers](language-agnostic-workers.md)
+- [Security Model](security-model.md)
+
 ## Run A Short Job
 
 Queue and execute the short Hello World sample:

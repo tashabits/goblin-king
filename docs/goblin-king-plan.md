@@ -637,7 +637,7 @@ language-specific protocols.
 
 ### Phase 25: Expand Goblin Authoring Documentation
 
-- Status: planned.
+- Status: implemented in Phase 25.
 - Branch: `phase-25-goblin-authoring-docs`.
 - Add or update docs such as `docs/what-is-a-goblin.md`, `docs/writing-goblins.md`,
   `docs/goblin-dockerfiles.md`, `docs/language-agnostic-workers.md`, and
