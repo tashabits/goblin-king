@@ -319,6 +319,9 @@ goblin-king scheduler run-once \
 For a real local stack, run the scheduler loop as a service through Docker Compose or
 Helm, then manage schedules through the CLI, API, or admin interface.
 
+For a project-oriented Docker Compose stack that mounts project config and opens the
+React admin, see [Adopter Admin Dev/Test Stack](adopter-admin-dev-stack.md).
+
 ## Step 7: Inspect runs, results, logs, and artifacts
 
 Inspect a run with source job metadata:

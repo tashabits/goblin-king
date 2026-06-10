@@ -82,6 +82,9 @@ HOST_PROJECT_PATH=. docker compose \
 Open `http://127.0.0.1:8080/admin`, log in with the configured local token, reload
 Discovery, and confirm the project goblins appear.
 
+For the full local admin workflow, see
+[Adopter Admin Dev/Test Stack](adopter-admin-dev-stack.md).
+
 ## Validate and run project goblins
 
 Use the same commands whether Goblin King is installed from a wheel, submodule, subtree,

@@ -768,7 +768,11 @@ sufficient.
 
 - Branch: `phase-55-adopter-admin-test-stack`.
 - PR title: `Phase 55 adopter admin test stack`.
-- Status: planned.
+- Status: implemented.
+- Document the Docker Compose adopter admin stack with host-project config mounting.
+- Document validation, discovery reload, CLI submit, admin inspection, shutdown, and
+  Docker socket safety.
+- Document local API plus admin dev server as a secondary UI-development path.
 
 ### Phase 56: Admin Project Goblin Visibility
 

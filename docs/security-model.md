@@ -75,3 +75,13 @@ Network access should be deliberate. Some goblins need APIs; many do not. Resour
 policies should make network mode or egress intent explicit per goblin.
 
 The King can run chaos. He should not hand chaos the master key.
+
+## Local Docker socket access
+
+In the Docker Compose development stack, the Goblin King scheduler/control plane may need
+Docker socket access so it can launch goblin task containers. Treat that socket as
+security-sensitive root-equivalent access to the local Docker host.
+
+Goblin task containers should not receive the Docker socket. Keep the socket mounted only
+where the control plane needs it, run only trusted project images, and do not expose the
+local admin/API stack publicly without proper auth and TLS.
