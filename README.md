@@ -18,6 +18,7 @@ needs a cluster deployment.
 - [Goblin Container Contract](#goblin-container-contract)
 - [Worker Images](#worker-images)
 - [Admin Runtime Audit](#admin-runtime-audit)
+- [Resource Policies](#resource-policies)
 - [Image Promotion And Deployment Proof](#image-promotion-and-deployment-proof)
 - [Capabilities](#capabilities)
 - [Documentation](#documentation)
@@ -471,6 +472,37 @@ Workers receive JSON input/context files, publish a `GoblinResult`-shaped envelo
 Redis, write the same result to a mounted fallback file, and publish heartbeat envelopes
 while they run. The worker can be written in any language that obeys the
 [Goblin Container Contract](docs/goblin-container-contract.md).
+
+## Resource Policies
+
+Runtime policy defaults live in `goblin-resource-policies.json`. The API, CLI, scheduler,
+Docker runtime, and Helm chart load this file by default. Policies resolve from global
+defaults plus per-goblin overrides, then Goblin King rejects any request above configured
+ceilings before queueing or launching unsafe work.
+
+Supported enforcement includes:
+
+- timeout and retry metadata,
+- Docker CPU, memory, PID, network, read-only root, tmpfs, and log options,
+- Kubernetes Job CPU/memory resource fields and read-only root filesystem,
+- artifact count/byte ceilings where artifacts are locally inspectable,
+- per-kind scheduler concurrency deferral,
+- persisted effective policy metadata on jobs and runs,
+- audit and event records for policy rejections.
+
+Use a different policy file when testing a project-specific profile:
+
+```bash
+goblin-king jobs submit example.hello \
+  --input examples/input.json \
+  --registry demo-goblins.json \
+  --images demo-images.json \
+  --resource-policies goblin-resource-policies.json
+```
+
+Effective policy appears in stored job metadata, run records, CLI/API JSON, and the admin
+Runs panel. See [Goblin Resource Policies](docs/goblin-resource-policies.md) for the file
+shape and exact Docker/Kubernetes mappings.
 
 ## Image Promotion And Deployment Proof
 

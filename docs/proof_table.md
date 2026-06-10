@@ -39,9 +39,9 @@ receipt, not a user guide.
 | 30 | Goblin contract validation | `goblin-king workers validate`, validation docs, tests, and Makefile validation targets were added. | Deep conformance certification beyond practical validation remains out of scope. |
 | 31 | Container-first admin/docs wording | Admin UI and docs were updated to present goblins as language-agnostic OCI worker containers. | None known. |
 | 32 | Language-agnostic closeout | Language/runtime docs and samples were audited; closeout doc captured proof commands and deferred non-goals. | Deferred items are tracked below. |
-| 33 | Per-goblin resource policies | `docs/goblin-resource-policies.md` documented policy shape, defaults, ceilings, Docker mapping, Kubernetes/Helm mapping, and proof expectations. | Runtime-level CPU, memory, process, network, filesystem, log, artifact byte, concurrency, and secret ceiling enforcement remains outstanding. |
-| Preflight | Roadmap proof hardening | Planned as non-phase branch `roadmap-proof-preflight`. | Outstanding until merged: docs audit, audit helper/doc, full Docker/Helm browser runtime audit proof. |
-| 34 | Runtime resource policy enforcement | Planned after preflight. | Outstanding: runtime-level enforcement, persisted effective policy, API/CLI/admin display, audit/events, Docker/Kubernetes mappings. |
+| 33 | Per-goblin resource policies | `docs/goblin-resource-policies.md` documented policy shape, defaults, ceilings, Docker mapping, Kubernetes/Helm mapping, and proof expectations. | Runtime enforcement was intentionally completed in Phase 34. |
+| Preflight | Roadmap proof hardening | `roadmap-proof-preflight` merged the proof-table, roadmap, README/user-doc audit, admin runtime audit helper/doc, and Docker/Helm audit expectations. | None known. |
+| 34 | Runtime resource policy enforcement | `goblin-resource-policies.json`, policy loading, defaults/overrides/ceilings, queue-time rejection, persisted job/run effective policy metadata, API/CLI/scheduler integration, Docker runtime flags, Kubernetes Job resource fields, artifact count/byte checks where artifacts are inspectable, concurrency deferral, events, audit records, Helm config, admin run visibility, and focused tests were added. | Secret allow-lists, provider-specific admission controls, object-storage quota enforcement, and deeper policy engines remain deferred. |
 | 35 | Project-adoptable goblin configuration | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: project-level config for defining goblins outside Goblin King internals. |
 | 36 | Bring-your-own-goblin validation | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: direct/project-config validation for arbitrary contract-compliant goblin images. |
 | 37 | Project template and quickstart | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: copy-paste adopter project template and golden path quickstart. |
@@ -53,15 +53,10 @@ receipt, not a user guide.
 
 ## Outstanding Items
 
-- Preflight roadmap proof hardening and the required Docker/Helm browser runtime audit
-  procedure.
-- Runtime-level enforcement for per-goblin CPU, memory, process, network, filesystem,
-  log, artifact byte, concurrency, and secret ceilings.
-- Persisting the effective resource policy used for each run.
-- API, CLI, and admin display of effective per-run resource policy.
-- Audit/event records for resource-policy validation failures and enforcement outcomes.
 - Phases 35-42 project-adoptable alpha work, as detailed in
   `docs/project-adoptable-roadmap.md`.
+- Secret allow-lists, provider-specific admission controls, object-storage quota
+  enforcement, and deeper resource-policy engines.
 - Public PyPI/package-publication hardening.
 - Cloud-provider-specific managed service recipes.
 - Object storage providers beyond Docker volumes and Kubernetes PVCs.
