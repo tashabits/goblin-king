@@ -68,7 +68,13 @@ def test_init_project_creates_adopter_project_template(tmp_path: Path) -> None:
     assert (target / "schemas" / "hello.input.schema.json").exists()
     assert (target / "workers" / "acme.hello" / "Dockerfile").exists()
     assert (target / "workers" / "acme.artifact" / "worker.py").exists()
-    assert "workers validate" in (target / "README.md").read_text(encoding="utf-8")
+    readme = (target / "README.md").read_text(encoding="utf-8")
+    assert "project goblins list" in readme
+    assert "workers validate" in readme
+    assert "workers validation-status" in readme
+    assert "jobs submit acme.hello" in readme
+    assert "runs show <artifact-run-id> --with-job" in readme
+    assert "scheduler run-once" in readme
 
     settings = ProjectSettings.from_path(target / "goblin-king-project.json")
     definitions = settings.registry_definitions()

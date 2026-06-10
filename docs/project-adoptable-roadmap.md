@@ -638,6 +638,7 @@ added.
 
 - Branch: `phase-47-project-config-hero-path`.
 - PR title: `Phase 47 project config hero path`.
+- Status: implemented.
 - Make project config the primary documented adoption path.
 - The golden path must cover project init, config validation, goblin listing, worker
   validation/revalidation, job submit, run inspection, and artifact inspection.
