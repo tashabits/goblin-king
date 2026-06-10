@@ -245,6 +245,8 @@ describe("App", () => {
     render(<App />);
 
     expect((await screen.findAllByText("Goblin Lab")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Registered Container Goblins").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("OCI worker image mapped").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Task Board").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Schedules").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Runs & Results").length).toBeGreaterThan(0);

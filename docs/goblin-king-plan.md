@@ -700,12 +700,14 @@ language-specific protocols.
 
 ### Phase 31: Update Admin UI And Docs For Container-First Workers
 
-- Status: planned.
+- Status: implemented.
 - Branch: `phase-31-container-first-worker-docs-ui`.
 - Update docs and admin UI text so goblins are presented as language-agnostic
   contract-compliant containers.
 - Add an examples index, runtime comparison table, choose-your-runtime guide, and
   screenshots or command output proving multiple language and WASI goblins.
+- Added `docs/examples-index.md`, `docs/choose-your-runtime.md`, README links, and
+  React admin container-worker wording.
 
 ### Phase 32: Cross-Language Goblin Roadmap Closeout
 

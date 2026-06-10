@@ -511,7 +511,9 @@ export function App() {
         <section id="goblin-lab" className="panel two-column">
           <div>
             <h3><FlaskConical /> Goblin Lab</h3>
-            <p className="muted">Spawn one-shot jobs from the registry. The King-side kill button cancels work in the queue, not a runtime hard-kill.</p>
+            <p className="muted">
+              Spawn one-shot OCI worker containers from the active registry and image map. The King-side kill button cancels work in the queue, not a runtime hard-kill.
+            </p>
             <label>Goblin kind</label>
             <select value={selectedKind} onChange={(event) => setSelectedKind(event.target.value)}>
               {goblins.map((goblin) => <option key={goblin.kind} value={goblin.kind}>{goblin.kind}</option>)}
@@ -525,8 +527,13 @@ export function App() {
             </div>
           </div>
           <Table
-            title="Registered Goblins"
-            rows={goblins.map((goblin) => [goblin.kind, goblin.display_name, goblin.worker_mapped ? goblin.worker_image || "mapped" : "unmapped"])}
+            title="Registered Container Goblins"
+            rows={goblins.map((goblin) => [
+              goblin.kind,
+              goblin.display_name,
+              goblin.worker_mapped ? "OCI worker image mapped" : "missing worker image",
+              goblin.worker_image || "none",
+            ])}
           />
         </section>
 
@@ -684,7 +691,7 @@ export function App() {
           <div>
             <h3><RefreshCw /> Discovery</h3>
             <p className="muted">
-              Reload registry files, package entry points, and worker image maps after a deployment. A failed reload keeps the previous good list active.
+              Reload registry files, package entry points, and container worker image maps after a deployment. A failed reload keeps the previous good list active.
             </p>
             <div className="button-row">
               <button onClick={() => void reloadDiscovery()}><RefreshCw size={16} /> Reload discovery</button>
