@@ -111,34 +111,44 @@ Proof:
 
 - Branch: `phase-36-bring-your-own-goblin-validation`.
 - PR title: `Phase 36 bring-your-own-goblin validation`.
-- Status: planned.
+- Status: implemented.
 
-Add a validation workflow that lets an adopting project verify a goblin
-container image before relying on it. The validator should answer: "Does this
-image behave like a Goblin King goblin?"
+Added a validation workflow that lets an adopting project verify a goblin
+container image before relying on it. The validator answers: "Does this image
+behave like a Goblin King goblin?"
 
-Possible commands, adjusted to the existing CLI style:
+Commands:
 
 ```bash
-goblin-king goblin validate invoice-renderer
-goblin-king goblin validate-image my-project/invoice-renderer:local
-goblin-king project validate
+python -m goblin_king.cli workers validate \
+  --project examples/adopting-project/goblin-king-project.json \
+  --input examples/input.json \
+  --kind project.inline.hello \
+  --build \
+  --require-success
+
+python -m goblin_king.cli workers validate-image \
+  --image my-project/invoice-renderer:local \
+  --kind my.project.invoice-renderer \
+  --input examples/input.json \
+  --require-success
 ```
 
-Validation should check project config validity, image availability/buildability,
+Validation checks project config validity, image availability/buildability,
 container startup, required contract env vars, readable input/context files,
 valid result JSON, result status, writable artifact directory, stdout/stderr
-capture, clear exit-code reporting, timeout reporting, and actionable errors for
+failure detail, clear exit-code reporting, timeout reporting, and actionable errors for
 unsupported or missing behavior.
 
 Proof:
 
-- Validation succeeds for at least one sample project goblin.
-- Validation fails clearly for missing result JSON, invalid result JSON, and
-  missing/invalid project config.
-- Direct image validation and project-config validation are covered where they
-  fit the CLI.
-- Docker proof and full local CI are included.
+- `workers validate --project` loads project settings and discovered worker mappings.
+- `workers validate-image` validates one prebuilt image without requiring a registry file.
+- Tests cover missing prebuilt images, missing worker result JSON, invalid result JSON,
+  and project-settings validation dispatch.
+- Docker proof, Helm proof, full local CI, and screenshots are required in the PR body.
+  Phase 36 screenshots live at `docs/screenshots/phase-36-docker-admin.png` and
+  `docs/screenshots/phase-36-helm-admin.png`.
 
 ## Phase 37: Project Template And Golden Path Quickstart
 
