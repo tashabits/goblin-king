@@ -55,6 +55,23 @@ def test_resource_policy_defaults_and_overrides_merge(tmp_path: Path) -> None:
     assert policy.compact()["filesystem"]["artifact_max_files"] == 2
 
 
+def test_resource_policy_rejects_unknown_fields(tmp_path: Path) -> None:
+    """Verify unknown policy fields fail clearly, including nested sections."""
+    cases = [
+        ({"defaultz": {}}, "defaultz"),
+        ({"defaults": {"cpu": {"shares": 2}}}, "shares"),
+        ({"goblins": {"example.echo": {"filesystem": {"scratch": "/tmp"}}}}, "scratch"),
+    ]
+    for index, (payload, expected_field) in enumerate(cases):
+        policy_path = write_policy(
+            tmp_path / f"unknown-{index}.json",
+            {"version": 1, **payload},
+        )
+
+        with pytest.raises(ResourcePolicyError, match=expected_field):
+            ResourcePolicySet.from_path(policy_path)
+
+
 def test_resource_policy_rejects_above_ceiling(tmp_path: Path) -> None:
     """Verify effective policy values above configured ceilings fail before launch."""
     cases = [

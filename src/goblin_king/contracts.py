@@ -6,7 +6,7 @@ import re
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 GOBLIN_KIND_PATTERN = re.compile(r"^[a-z0-9][a-z0-9]*(?:[.-][a-z0-9][a-z0-9]*)*$")
 JobStatus = Literal[
@@ -152,6 +152,13 @@ class JobRecord(BaseModel):
     timeout_seconds: int | None = None
     last_error: str | None = None
 
+    @computed_field
+    @property
+    def effective_policy(self) -> dict[str, Any]:
+        """Return the resolved resource policy persisted with this job."""
+        policy = self.metadata.get("resource_policy")
+        return policy if isinstance(policy, dict) else {}
+
 
 class FanoutRecord(BaseModel):
     """Capture durable metadata for a batch of fanout-created jobs."""
@@ -270,6 +277,12 @@ class RunRecord(BaseModel):
     max_retries: int = 0
     leased_until: datetime | None = None
     resource_policy: dict[str, Any] | None = None
+
+    @computed_field
+    @property
+    def effective_policy(self) -> dict[str, Any]:
+        """Return the resolved resource policy used for this run."""
+        return self.resource_policy or {}
 
 
 class ScheduleRecord(BaseModel):
