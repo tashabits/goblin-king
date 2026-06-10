@@ -136,6 +136,12 @@ def test_goblins_endpoint_reports_project_config_source(tmp_path: Path) -> None:
                 "entry_points": False,
                 "images": "images.json",
                 "api_settings": "api.json",
+                "defaults": {
+                    "resources": {
+                        "timeout_seconds": 45,
+                        "memory": {"limit": "512Mi"},
+                    }
+                },
                 "goblins": {
                     "project.inline.hello": {
                         "displayName": "Project Inline Hello",
@@ -164,6 +170,69 @@ def test_goblins_endpoint_reports_project_config_source(tmp_path: Path) -> None:
     assert goblin["kind"] == "project.inline.hello"
     assert goblin["source"] == "project-config"
     assert goblin["worker_image"] == "inline-hello:local"
+    assert goblin["project_defaults_resources"] == {
+        "timeout_seconds": 45,
+        "memory": {"limit": "512Mi"},
+    }
+
+
+def test_jobs_endpoint_applies_project_default_resources(tmp_path: Path) -> None:
+    """Verify API-created project jobs inherit project-level resource defaults."""
+    project_path = tmp_path / "goblin-king-project.json"
+    registry_path = tmp_path / "goblins.json"
+    images_path = tmp_path / "images.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "goblins": [
+                    {
+                        "kind": "project.echo",
+                        "display_name": "Project Echo",
+                        "module": "examples.goblins.echo",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    images_path.write_text('{"workers":{}}', encoding="utf-8")
+    project_path.write_text(
+        json.dumps(
+            {
+                "registries": ["goblins.json"],
+                "entry_points": False,
+                "images": "images.json",
+                "api_settings": "api.json",
+                "defaults": {
+                    "resources": {
+                        "timeout_seconds": 45,
+                        "memory": {"limit": "512Mi"},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = ApiSettings(
+        registry=Path("examples/goblins.json").resolve(),
+        images=images_path,
+        db=tmp_path / "api.sqlite3",
+        artifact_root=tmp_path / "artifacts",
+        auth_token="test-token",
+        project=project_path,
+    )
+    client = TestClient(create_app(settings))
+
+    response = client.post(
+        "/jobs",
+        headers=auth_headers(),
+        json={"kind": "project.echo", "input": {"message": "hello"}},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["timeout_seconds"] == 45
+    assert payload["metadata"]["resource_policy"]["memory"]["limit"] == "512Mi"
 
 
 def test_discovery_reload_adds_project_goblin_without_restart(tmp_path: Path) -> None:

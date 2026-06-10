@@ -195,6 +195,128 @@ def test_project_goblins_list_and_validate() -> None:
     assert "dockerfiles\tok" in validated.stdout
 
 
+def test_project_validate_shows_default_resources(tmp_path: Path) -> None:
+    """Verify project validation exposes raw defaults.resources when configured."""
+    worker_dir = tmp_path / "worker"
+    worker_dir.mkdir()
+    (worker_dir / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+    (tmp_path / "registry.json").write_text(
+        json.dumps(
+            {
+                "goblins": [
+                    {
+                        "kind": "project.echo",
+                        "display_name": "Project Echo",
+                        "module": "examples.goblins.echo",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "images.json").write_text(
+        json.dumps(
+            {
+                "workers": {
+                    "project.echo": {
+                        "context": "worker",
+                        "dockerfile": "Dockerfile",
+                        "image": "project-echo:local",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    project_path = tmp_path / "goblin-king-project.json"
+    project_path.write_text(
+        json.dumps(
+            {
+                "registries": ["registry.json"],
+                "entry_points": False,
+                "images": "images.json",
+                "api_settings": "api.json",
+                "defaults": {
+                    "resources": {
+                        "timeout_seconds": 45,
+                        "memory": {"limit": "512Mi"},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["project", "validate", "--project", str(project_path)])
+
+    assert result.exit_code == 0
+    assert (
+        'defaults.resources\t{"memory": {"limit": "512Mi"}, "timeout_seconds": 45}'
+        in result.stdout
+    )
+
+
+def test_jobs_submit_applies_project_default_resources(tmp_path: Path) -> None:
+    """Verify project defaults become the effective policy for submitted jobs."""
+    registry_path = tmp_path / "registry.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "goblins": [
+                    {
+                        "kind": "project.echo",
+                        "display_name": "Project Echo",
+                        "module": "examples.goblins.echo",
+                        "entrypoint": "run",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    project_path = tmp_path / "goblin-king-project.json"
+    project_path.write_text(
+        json.dumps(
+            {
+                "registries": ["registry.json"],
+                "entry_points": False,
+                "defaults": {
+                    "resources": {
+                        "timeout_seconds": 45,
+                        "memory": {"limit": "512Mi"},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    input_path = tmp_path / "input.json"
+    input_path.write_text('{"message":"hello"}', encoding="utf-8")
+    db_path = tmp_path / "goblin.sqlite3"
+
+    result = runner.invoke(
+        app,
+        [
+            "jobs",
+            "submit",
+            "project.echo",
+            "--project",
+            str(project_path),
+            "--input",
+            str(input_path),
+            "--runtime",
+            "in-process",
+            "--db",
+            str(db_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    job = SQLiteStore(db_path).list_jobs()[0]
+    assert job.timeout_seconds == 45
+    assert job.metadata["resource_policy"]["memory"]["limit"] == "512Mi"
+
+
 def test_auth_setup_commands_create_user_project_and_token(tmp_path: Path) -> None:
     """Verify auth CLI commands create local users, projects, and hashed tokens."""
     db_path = tmp_path / "goblin.sqlite3"

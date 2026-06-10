@@ -85,6 +85,115 @@ def test_project_settings_load_inline_goblin_config(tmp_path: Path) -> None:
     ).resolve()
 
 
+def test_project_settings_apply_default_resources_to_inline_goblins(
+    tmp_path: Path,
+) -> None:
+    """Verify defaults.resources merge into each inline goblin resource policy."""
+    project_path = tmp_path / "goblin-king-project.json"
+    project_path.write_text(
+        json.dumps(
+            {
+                "apiVersion": PROJECT_CONFIG_API_VERSION,
+                "kind": PROJECT_CONFIG_KIND,
+                "defaults": {
+                    "resources": {
+                        "timeout_seconds": 30,
+                        "cpu": {"request": "100m", "limit": "500m"},
+                        "memory": {"request": "64Mi", "limit": "256Mi"},
+                    }
+                },
+                "goblins": {
+                    "project.defaulted": {
+                        "image": "defaulted:local",
+                    },
+                    "project.override": {
+                        "image": "override:local",
+                        "resources": {
+                            "timeout_seconds": 60,
+                            "memory": {"limit": "512Mi"},
+                        },
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    settings = ProjectSettings.from_path(project_path)
+    definitions = {
+        definition.kind: definition for definition in settings.registry_definitions()
+    }
+
+    assert definitions["project.defaulted"].metadata["resources"] == {
+        "timeout_seconds": 30,
+        "cpu": {"request": "100m", "limit": "500m"},
+        "memory": {"request": "64Mi", "limit": "256Mi"},
+    }
+    assert definitions["project.override"].metadata["resources"] == {
+        "timeout_seconds": 60,
+        "cpu": {"request": "100m", "limit": "500m"},
+        "memory": {"request": "64Mi", "limit": "512Mi"},
+    }
+    assert settings.defaults.resources["memory"]["limit"] == "256Mi"
+
+
+def test_project_settings_reject_invalid_default_resources(tmp_path: Path) -> None:
+    """Verify project default resources use existing runtime policy validation."""
+    project_path = tmp_path / "goblin-king-project.json"
+    project_path.write_text(
+        json.dumps(
+            {
+                "apiVersion": PROJECT_CONFIG_API_VERSION,
+                "kind": PROJECT_CONFIG_KIND,
+                "defaults": {"resources": {"timeout_seconds": 0}},
+                "goblins": {"project.bad": {"image": "bad:local"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProjectSettingsError, match="timeout_seconds"):
+        ProjectSettings.from_path(project_path)
+
+
+def test_project_settings_reject_resources_above_discovered_ceilings(
+    tmp_path: Path,
+) -> None:
+    """Verify sibling resource-policy ceilings apply to project default resources."""
+    (tmp_path / "goblin-resource-policies.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "ceilings": {
+                    "timeout_seconds": 60,
+                    "memory": {"limit": "256Mi"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    project_path = tmp_path / "goblin-king-project.json"
+    project_path.write_text(
+        json.dumps(
+            {
+                "apiVersion": PROJECT_CONFIG_API_VERSION,
+                "kind": PROJECT_CONFIG_KIND,
+                "defaults": {
+                    "resources": {
+                        "timeout_seconds": 30,
+                        "memory": {"limit": "512Mi"},
+                    }
+                },
+                "goblins": {"project.bad": {"image": "bad:local"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProjectSettingsError, match="memory.limit"):
+        ProjectSettings.from_path(project_path)
+
+
 def test_project_settings_reject_invalid_version_and_secret_values(tmp_path: Path) -> None:
     """Verify invalid project config versions and inline secret values fail clearly."""
     project_path = tmp_path / "goblin-king-project.json"

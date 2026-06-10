@@ -23,6 +23,9 @@ from goblin_king.cli_support import (
     load_input as _load_input,
 )
 from goblin_king.cli_support import (
+    load_project_default_resources as _load_project_default_resources,
+)
+from goblin_king.cli_support import (
     load_project_registry as _load_project_registry,
 )
 from goblin_king.cli_support import (
@@ -260,6 +263,9 @@ def validate_project(
     typer.echo(f"goblins\t{len(registry.list())}")
     typer.echo(f"workers\t{len(workers.items())}")
     typer.echo(f"worker_coverage\t{len(registry.list())}/{len(registry.list())}")
+    default_resources = _load_project_default_resources(project)
+    if default_resources:
+        typer.echo(f"defaults.resources\t{json.dumps(default_resources, sort_keys=True)}")
     typer.echo("dockerfiles\tok")
 
 
@@ -383,7 +389,7 @@ def submit_job(
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
     store = SQLiteStore(db)
-    policy_set = _load_resource_policies(resource_policies)
+    policy_set = _load_resource_policies(resource_policies, project=project)
     try:
         policy = (
             policy_set.effective_for(
@@ -738,7 +744,7 @@ def add_schedule(
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
     input_payload = _load_input(input_path)
-    policy_set = _load_resource_policies(resource_policies)
+    policy_set = _load_resource_policies(resource_policies, project=project)
     try:
         policy = (
             policy_set.effective_for(
@@ -821,7 +827,7 @@ def scheduler_run_once(
         runtime_mode=runtime,
         workers=workers,
         redis_url=redis_url,
-        resource_policies=_load_resource_policies(resource_policies),
+        resource_policies=_load_resource_policies(resource_policies, project=project),
     )
     runs = scheduler.run_once()
     typer.echo(pretty_json([run.model_dump(mode="json") for run in runs]))
@@ -867,7 +873,7 @@ def scheduler_run(
         runtime_mode=runtime,
         workers=workers,
         redis_url=redis_url,
-        resource_policies=_load_resource_policies(resource_policies),
+        resource_policies=_load_resource_policies(resource_policies, project=project),
     )
     try:
         scheduler.run_loop(interval_seconds=interval_seconds)

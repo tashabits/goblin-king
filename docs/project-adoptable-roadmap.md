@@ -45,7 +45,7 @@ The path should let a user:
 7. Understand what is stable, alpha, and internal.
 
 Phase 34 completed runtime resource-policy enforcement. The project-adoptable alpha work
-started from that enforced policy baseline and is now adoption-hardened through Phase 48.
+started from that enforced policy baseline and is now adoption-hardened through Phase 49.
 
 ## Phase 35: Project-Adoptable Goblin Configuration
 
@@ -63,6 +63,11 @@ The config should support fields like:
 ```yaml
 apiVersion: goblin-king/v1alpha1
 kind: GoblinProject
+defaults:
+  resources:
+    timeout_seconds: 60
+    memory:
+      limit: 256Mi
 goblins:
   invoice-renderer:
     image: my-project/invoice-renderer:local
@@ -87,6 +92,8 @@ Implemented capabilities:
 - Define optional labels/tags.
 - Define optional environment variables with safe secret handling rules.
 - Define optional schedule metadata where appropriate.
+- Define optional project-level `defaults.resources` that merge into inline goblin
+  resource settings.
 - Resolve local relative paths from the adopting project root.
 - Validate config with clear error messages.
 - Keep Goblin King source/internals untouched when adding project goblins.
@@ -662,7 +669,25 @@ added.
 All Phase 43-48 proof remains local. GitHub Actions are not required and are not
 sufficient.
 
-## Deferred After Phase 48
+### Phase 49: Project Resource Defaults
+
+- Branch: `phase-49-project-resource-defaults`.
+- PR title: `Phase 49 project resource defaults`.
+- Status: implemented.
+- Add project-level `defaults.resources` to the `GoblinProject` adoption contract.
+- Merge `defaults.resources` into each inline goblin's `resources` before discovery
+  metadata is emitted.
+- Validate project defaults and effective per-goblin resources against local resource
+  policy ceilings when a sibling `goblin-resource-policies.json` is present.
+- Show project defaults in project validation and discovery/status proof so operators can
+  see which baseline the project declared.
+- Update adopter-facing docs so projects know when to use project defaults versus the
+  runtime resource policy file.
+
+All Phase 43-49 proof remains local. GitHub Actions are not required and are not
+sufficient.
+
+## Deferred After Phase 49
 
 - Public PyPI release hardening.
 - Full production hardening for untrusted multi-tenant execution.

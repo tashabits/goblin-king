@@ -965,6 +965,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                     "source": "project-config"
                     if definition.kind in state._project_defined_kinds
                     else "registry",
+                    "project_defaults_resources": state._project_default_resources,
                 }
             )
         return payload

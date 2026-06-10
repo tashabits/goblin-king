@@ -9,7 +9,11 @@ from goblin_king.api_models import DiscoverySourcesResponse, DiscoveryStatusResp
 from goblin_king.api_settings import ApiSettings
 from goblin_king.contracts import utc_now
 from goblin_king.events import EventBus
-from goblin_king.project import ProjectSettings, ProjectSettingsError
+from goblin_king.jsonio import read_json_file
+from goblin_king.project import (
+    ProjectSettings,
+    ProjectSettingsError,
+)
 from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.resource_policies import ResourcePolicySet
 from goblin_king.store import SQLiteStore
@@ -31,14 +35,23 @@ class AppState:
         self._source_entry_points_enabled = False
         self._source_worker_image_map = settings.images
         self._project_defined_kinds: set[str] = set()
+        self._project_default_resources: dict = {}
         self.registry, self.workers = self._load_discovery_state()
         self.artifact_root = settings.artifact_root.resolve()
         self.artifact_root.mkdir(parents=True, exist_ok=True)
         self.event_bus = EventBus(store=self.store, redis_url=settings.redis_url)
-        self.resource_policies = (
+        operator_policies = (
             ResourcePolicySet.from_path(settings.resource_policies)
             if settings.resource_policies and settings.resource_policies.exists()
             else None
+        )
+        project_settings = (
+            ProjectSettings.from_path(settings.project) if settings.project is not None else None
+        )
+        self.resource_policies = (
+            project_settings.resource_policy_set(operator_policies)
+            if project_settings is not None
+            else operator_policies
         )
 
     def reload_discovery(self) -> DiscoveryStatusResponse:
@@ -111,6 +124,7 @@ class AppState:
                 definitions=project_definitions,
             )
             project_workers = project.worker_definitions()
+            default_resources = _project_default_resources(self.settings.project)
         else:
             registry_files = [self.settings.registry]
             entry_points_enabled = False
@@ -118,9 +132,21 @@ class AppState:
             registry = GoblinRegistry.from_path(self.settings.registry)
             project_definitions = []
             project_workers = {}
+            default_resources = {}
         workers = WorkerImageMap.from_path_and_definitions(worker_image_map, project_workers)
         self._source_registry_files = list(registry_files)
         self._source_entry_points_enabled = entry_points_enabled
         self._source_worker_image_map = worker_image_map
         self._project_defined_kinds = {definition.kind for definition in project_definitions}
+        self._project_default_resources = default_resources
         return registry, workers
+
+
+def _project_default_resources(path: Path) -> dict:
+    """Return raw project defaults.resources for visibility-only API output."""
+    payload = read_json_file(path)
+    defaults = payload.get("defaults") if isinstance(payload, dict) else None
+    if not isinstance(defaults, dict):
+        return {}
+    resources = defaults.get("resources")
+    return resources if isinstance(resources, dict) else {}

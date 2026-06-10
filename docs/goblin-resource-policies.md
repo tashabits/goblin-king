@@ -93,6 +93,40 @@ values. The recommended shape is:
 }
 ```
 
+Adopter project configs can also carry a lighter project-owned default profile:
+
+```json
+{
+  "apiVersion": "goblin-king/v1alpha1",
+  "kind": "GoblinProject",
+  "defaults": {
+    "resources": {
+      "timeout_seconds": 60,
+      "memory": {"limit": "256Mi"},
+      "filesystem": {"read_only_root": true},
+      "network": {"mode": "none"}
+    }
+  },
+  "goblins": {
+    "myproject.hello": {
+      "image": "myproject-hello:local",
+      "context": "workers/myproject.hello",
+      "resources": {
+        "timeout_seconds": 30
+      }
+    }
+  }
+}
+```
+
+`defaults.resources` uses the same field names as a resource policy. During project
+loading it is deep-merged into each inline goblin's `resources`; the goblin override wins
+for fields it names. When a project is supplied to API, CLI, or scheduler flows, the
+project defaults are also layered over the operator policy defaults so queued jobs/runs
+receive the inherited effective policy. If `goblin-resource-policies.json` is present
+beside the project config or supplied to the runtime command, the project defaults are
+validated against those ceilings.
+
 ## Policy Fields
 
 | Field | Meaning |
@@ -128,6 +162,11 @@ one goblin into the whole kingdom's appetite.
 Goblin King rejects any effective policy above the configured ceiling before it queues or
 launches work. Rejections create audit and event records so operators can see exactly why
 the job was refused.
+
+For project-defined goblins, `defaults.resources` is an adopter-facing source of default
+resource fields. It does not replace ceilings: ceilings remain the guardrail from the
+resource policy file. Treat project defaults as the team's desired baseline and ceilings
+as the operator's maximum allowed envelope.
 
 ## Docker Mapping
 
@@ -177,6 +216,8 @@ own admission controls, quotas, or network policies.
 The current implementation enforces or records these controls:
 
 - Loading `goblin-resource-policies.json` for API, CLI, scheduler, Docker, and Helm.
+- Loading `defaults.resources` from project config for inline project goblin discovery
+  and validation visibility.
 - Effective policy resolution from global defaults plus per-goblin overrides.
 - Ceiling validation before API queueing, fanout, retry, schedule creation, and scheduler
   materialization.
