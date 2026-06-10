@@ -20,6 +20,15 @@ work less cramped without moving public adoption boundaries.
 | JSON file reads | Registry, project, API settings, worker image maps, and resource policies each repeated UTF-8 JSON file reads. | `src/goblin_king/jsonio.py` centralizes small JSON file and pretty-print helpers while preserving caller-specific errors. |
 | Generated JSON snippets | Template and smoke helpers repeated pretty JSON formatting for generated files. | Template/smoke generation now use the shared pretty JSON helpers. |
 
+## Cleanup 02 Store Persistence Split
+
+| Area | Before | After |
+| --- | --- | --- |
+| SQLite schema | Table definitions lived inline with the `SQLiteStore` method implementation. | `src/goblin_king/store_schema.py` owns SQLAlchemy table definitions and metadata. |
+| Existing database compatibility | Auto-ALTER compatibility logic lived inside the main store module. | `src/goblin_king/store_migrations.py` owns schema compatibility helpers. |
+| Row mapping | Row-to-contract conversion helpers lived at the bottom of `store.py`. | `src/goblin_king/store_rows.py` owns deterministic row mapping and datetime coercion. |
+| Public store imports | `SQLiteStore` and `DEFAULT_DB_PATH` were imported from `goblin_king.store`. | The same imports continue to work; the split is internal only. |
+
 ## Stable Boundary
 
 No public imports were changed. Adopting projects should continue using the root
