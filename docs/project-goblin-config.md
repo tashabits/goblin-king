@@ -3,6 +3,8 @@
 Project goblin config lets an adopting project define container goblins without editing
 Goblin King source code or writing Python worker imports.
 
+Current version: `goblin-king/v1alpha1`.
+
 Use this when a project already has its own worker images and only needs Goblin King to
 discover, validate, queue, schedule, and display them.
 
@@ -48,7 +50,7 @@ All paths resolve relative to the project config file unless they are absolute.
 
 | Field | Meaning |
 | --- | --- |
-| `apiVersion` | Must be `goblin-king/v1alpha1` when present. |
+| `apiVersion` | Must be `goblin-king/v1alpha1`. Older unversioned project settings remain accepted for compatibility, but new project-owned goblin config should include this field. |
 | `kind` | Must be `GoblinProject` when present. |
 | `registries` | Existing registry JSON files to merge. |
 | `entry_points` | Whether to discover installed `goblin_king.goblins` entry points. |

@@ -131,6 +131,11 @@ Use `--runtime in-process` on `jobs submit`, `scheduler run-once`, or `scheduler
 when debugging trusted local Python goblins without Docker. In-process execution is a
 developer convenience; the worker model is the container contract.
 
+The current adopter contract is `goblin-king/v1alpha1`. Worker containers receive that
+value as `GOBLIN_CONTRACT_VERSION`, project config files declare it as
+`apiVersion: goblin-king/v1alpha1`, and the public import boundary is documented in
+[`docs/PUBLIC_API.md`](docs/PUBLIC_API.md).
+
 Create a reusable goblin package skeleton:
 
 ```bash

@@ -2,6 +2,13 @@
 
 This is the canonical worker interface for Goblin King.
 
+Current version: `goblin-king/v1alpha1`.
+
+This alpha contract is stable enough for internal adopters. It may add optional
+environment variables, context metadata, result fields, and helper APIs without
+breaking existing workers. Required field removals or incompatible shape changes must
+be documented in the compatibility matrix and migration guide.
+
 A goblin is always an OCI/Docker container. Goblin King schedules containers, not
 language runtimes. The code inside the container may be Python, Go, Rust, Node.js, Java,
 .NET, Ruby, PHP, shell, container-wrapped WASI/WebAssembly, or any other runtime that
@@ -29,6 +36,7 @@ Every short-running worker container receives these variables:
 | Variable | Meaning |
 | --- | --- |
 | `GOBLIN_RUN_ID` | Durable run ID assigned by the King. |
+| `GOBLIN_CONTRACT_VERSION` | Current worker contract version, currently `goblin-king/v1alpha1`. |
 | `GOBLIN_JOB_ID` | Durable job ID, when available. |
 | `GOBLIN_KIND` | Goblin kind being executed. |
 | `GOBLIN_WORKER_ID` | Runtime worker/container owner ID for heartbeat records. |
@@ -43,7 +51,8 @@ Every short-running worker container receives these variables:
 | `GOBLIN_HEARTBEAT_INTERVAL_SECONDS` | Requested heartbeat interval for long work. |
 
 Workers may receive additional runtime metadata variables in later phases. Unknown
-variables must be ignored.
+variables must be ignored. Workers that require a different contract version should
+fail fast with a clear result envelope.
 
 ## Mounted Paths
 
