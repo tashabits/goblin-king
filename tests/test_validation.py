@@ -1,8 +1,11 @@
 import json
+from pathlib import Path
+from types import SimpleNamespace
 
+from goblin_king.contracts import GoblinDefinition
 from goblin_king.registry import GoblinRegistry
 from goblin_king.validation import validate_workers
-from goblin_king.workers import WorkerImageMap
+from goblin_king.workers import WorkerImageDefinition, WorkerImageMap
 
 
 def test_validate_workers_reports_unknown_kind() -> None:
@@ -62,3 +65,37 @@ def test_validate_workers_reports_missing_context(tmp_path) -> None:
 
     assert results[0].ok is False
     assert "worker context missing" in (results[0].error or "")
+
+
+def test_validate_workers_reports_missing_prebuilt_image(monkeypatch) -> None:
+    def fake_run(*_args, **_kwargs):
+        return SimpleNamespace(returncode=1, stderr="No such image", stdout="")
+
+    monkeypatch.setattr("goblin_king.validation.subprocess.run", fake_run)
+    registry = GoblinRegistry.from_definitions(
+        [
+            GoblinDefinition(
+                kind="example.prebuilt",
+                display_name="Example Prebuilt",
+                module="goblin_king.container_only",
+            )
+        ]
+    )
+    workers = WorkerImageMap.from_definitions(
+        {
+            "example.prebuilt": WorkerImageDefinition(
+                context=Path("."),
+                image="missing-prebuilt:local",
+            )
+        }
+    )
+
+    results = validate_workers(
+        registry=registry,
+        workers=workers,
+        input_payload={},
+        prebuilt_image=True,
+    )
+
+    assert results[0].ok is False
+    assert "worker image unavailable: missing-prebuilt:local" in (results[0].error or "")
