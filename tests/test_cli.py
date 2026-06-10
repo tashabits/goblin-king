@@ -8,7 +8,14 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from goblin_king.cli import app
-from goblin_king.contracts import EventRecord, HeartbeatRecord, JobRecord, ScheduleRecord, utc_now
+from goblin_king.contracts import (
+    EventRecord,
+    HeartbeatRecord,
+    JobRecord,
+    ScheduleRecord,
+    WorkerValidationRecord,
+    utc_now,
+)
 from goblin_king.store import SQLiteStore
 
 runner = CliRunner()
@@ -115,6 +122,28 @@ def test_workers_validate_image_reports_missing_image(monkeypatch) -> None:
 
     assert result.exit_code == 1
     assert "worker image unavailable: missing:local" in result.stdout
+
+
+def test_workers_validation_status_lists_persisted_records(tmp_path: Path) -> None:
+    """Verify operators can inspect persisted scheduler validation proof."""
+    db_path = tmp_path / "goblin.sqlite3"
+    SQLiteStore(db_path).save_worker_validation(
+        WorkerValidationRecord(
+            id="validation-1",
+            kind="example.hello",
+            image="example:local",
+            image_digest="sha256:abc",
+            contract_version="goblin-king/v1alpha1",
+            validator_version="goblin-king-validator/v1",
+            validated_at=utc_now(),
+            status="passed",
+        )
+    )
+
+    result = runner.invoke(app, ["workers", "validation-status", "--db", str(db_path)])
+
+    assert result.exit_code == 0
+    assert "example.hello\tpassed\tsha256:abc" in result.stdout
 
 
 def test_project_goblins_list_and_validate() -> None:

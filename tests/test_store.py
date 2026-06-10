@@ -13,6 +13,7 @@ from goblin_king.contracts import (
     JobRecord,
     RunRecord,
     ScheduleRecord,
+    WorkerValidationRecord,
     utc_now,
 )
 from goblin_king.store import SQLiteStore
@@ -58,6 +59,44 @@ def test_sqlite_store_creates_schema_and_round_trips_completed_run(tmp_path: Pat
         "timeout_seconds": 30,
         "memory": {"limit": "512Mi"},
     }
+
+
+def test_sqlite_store_round_trips_worker_validation(tmp_path: Path) -> None:
+    """Verify worker validation proof can be persisted and queried by image digest."""
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    record = WorkerValidationRecord(
+        id="validation-1",
+        kind="example.hello",
+        image="example:local",
+        image_digest="sha256:abc",
+        contract_version="goblin-king/v1alpha1",
+        validator_version="goblin-king-validator/v1",
+        validated_at=utc_now(),
+        status="passed",
+        effective_policy={"timeout_seconds": 60},
+    )
+
+    store.save_worker_validation(record)
+
+    loaded = store.get_latest_worker_validation(
+        kind="example.hello",
+        image_digest="sha256:abc",
+        contract_version="goblin-king/v1alpha1",
+        validator_version="goblin-king-validator/v1",
+    )
+    assert loaded is not None
+    assert loaded.status == "passed"
+    assert loaded.effective_policy == {"timeout_seconds": 60}
+    assert store.latest_worker_validation_for_kind("example.hello") == loaded
+    assert (
+        store.get_latest_worker_validation(
+            kind="example.hello",
+            image_digest="sha256:def",
+            contract_version="goblin-king/v1alpha1",
+            validator_version="goblin-king-validator/v1",
+        )
+        is None
+    )
 
 
 def test_sqlite_store_round_trips_failed_run(tmp_path: Path) -> None:

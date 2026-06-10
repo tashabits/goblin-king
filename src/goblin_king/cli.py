@@ -80,7 +80,7 @@ from goblin_king.scheduler import DEFAULT_INTERVAL_SECONDS, Scheduler, next_run_
 from goblin_king.smoke import run_adopter_project_smoke
 from goblin_king.store import DEFAULT_DB_PATH, SQLiteStore
 from goblin_king.templates import TemplateError, init_package, init_project
-from goblin_king.validation import validate_workers
+from goblin_king.validation import validate_workers, validation_record
 from goblin_king.workers import WorkerConfigError, WorkerImageDefinition, WorkerImageMap
 
 app = typer.Typer(help="Run and inspect Goblin King jobs.")
@@ -1088,6 +1088,7 @@ def validate_worker_contracts(
         bool,
         typer.Option("--json", help="Print machine-readable validation results."),
     ] = False,
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
 ) -> None:
     """Run Docker workers with temp contract mounts and validate result envelopes."""
     if project is not None:
@@ -1109,6 +1110,9 @@ def validate_worker_contracts(
         timeout_seconds=timeout_seconds,
         redis_url=redis_url,
     )
+    store = SQLiteStore(db)
+    for result in results:
+        store.save_worker_validation(validation_record(result))
     _print_validation_results(results, json_output=json_output)
 
 
@@ -1148,6 +1152,7 @@ def validate_worker_image(
         bool,
         typer.Option("--json", help="Print machine-readable validation results."),
     ] = False,
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
 ) -> None:
     """Validate a one-off prebuilt worker image against the container contract."""
     registry = GoblinRegistry.from_definitions(
@@ -1179,7 +1184,35 @@ def validate_worker_image(
         timeout_seconds=timeout_seconds,
         redis_url=redis_url,
     )
+    store = SQLiteStore(db)
+    for result in results:
+        store.save_worker_validation(validation_record(result))
     _print_validation_results(results, json_output=json_output)
+
+
+@workers_app.command("validation-status")
+def worker_validation_status(
+    kind: Annotated[
+        str | None,
+        typer.Option("--kind", help="Filter validation records to one goblin kind."),
+    ] = None,
+    db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Print machine-readable validation status."),
+    ] = False,
+) -> None:
+    """List persisted worker validation records used by the scheduler gate."""
+    records = SQLiteStore(db).list_worker_validations(kind=kind)
+    if json_output:
+        typer.echo(pretty_json([record.model_dump(mode="json") for record in records]))
+        return
+    for record in records:
+        failures = ",".join(record.failure_reasons) if record.failure_reasons else "-"
+        typer.echo(
+            f"{record.kind}\t{record.status}\t{record.image_digest}\t"
+            f"{record.contract_version}\t{record.validator_version}\t{failures}"
+        )
 
 
 if __name__ == "__main__":

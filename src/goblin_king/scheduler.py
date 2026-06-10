@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 from croniter import croniter
 
+from goblin_king.auth import audit
 from goblin_king.contracts import (
     GoblinResult,
     JobRecord,
@@ -24,6 +25,13 @@ from goblin_king.registry import GoblinRegistry
 from goblin_king.resource_policies import ResourcePolicySet, policy_from_job_metadata
 from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRuntime, new_run_context
 from goblin_king.store import SQLiteStore
+from goblin_king.validation import (
+    VALIDATOR_VERSION,
+    inspect_image_identity,
+    validate_workers,
+    validation_record,
+)
+from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
 from goblin_king.workers import WorkerImageMap
 
 DEFAULT_LEASE_SECONDS = 60
@@ -255,6 +263,53 @@ class Scheduler:
                 }
             )
         if isinstance(self.runtime, DockerRuntime | KubernetesRuntime):
+            validation_error = self._validate_before_container_run(
+                job,
+                definition.kind,
+                resource_policy=resource_policy.compact() if resource_policy else {},
+            )
+            if validation_error is not None:
+                result = GoblinResult.failed(error=validation_error)
+                finished_at = utc_now()
+                run = RunRecord(
+                    id=context.run_id,
+                    job_id=job.id,
+                    kind=definition.kind,
+                    project_id=job.project_id,
+                    attempt=attempt,
+                    status="failed",
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    result=result,
+                    error=validation_error,
+                    timeout_seconds=job.timeout_seconds,
+                    max_retries=job.max_retries,
+                    leased_until=job.leased_until,
+                    resource_policy=resource_policy.compact() if resource_policy else None,
+                )
+                self.store.save_run(run)
+                self.store.finish_job(job.id, status="failed", last_error=validation_error)
+                self.event_bus.emit(
+                    "validation.scheduling_rejected",
+                    source="scheduler",
+                    project_id=job.project_id,
+                    job_id=job.id,
+                    run_id=run.id,
+                    schedule_id=job.schedule_id,
+                    fanout_id=job.fanout_id,
+                    scheduler_id=self.worker_id,
+                    payload={"kind": job.kind, "error": validation_error},
+                )
+                audit(
+                    self.store,
+                    action="validation.scheduling_rejected",
+                    outcome="failure",
+                    project_id=job.project_id,
+                    resource_type="job",
+                    resource_id=job.id,
+                    detail={"kind": job.kind, "error": validation_error},
+                )
+                return run
             result = self.runtime.run(
                 definition,
                 entrypoint,
@@ -322,6 +377,69 @@ class Scheduler:
                 payload={"kind": job.kind, "attempt": attempt, "error": error},
             )
         return run
+
+    def _validate_before_container_run(
+        self,
+        job: JobRecord,
+        kind: str,
+        *,
+        resource_policy: dict,
+    ) -> str | None:
+        """Ensure the current worker image identity has passed contract validation."""
+        if self.workers is None:
+            return "worker image map is required for validation"
+        worker = self.workers.get(kind)
+        validation_run_root = (
+            self.runtime.run_root if isinstance(self.runtime, DockerRuntime) else None
+        )
+        docker_executable = (
+            self.runtime.docker_executable
+            if isinstance(self.runtime, DockerRuntime)
+            else "docker"
+        )
+        image_digest, image_error = inspect_image_identity(docker_executable, worker.image)
+        if image_error is not None or image_digest is None:
+            error = image_error or f"worker image digest unavailable: {worker.image}"
+            self.store.save_worker_validation(
+                validation_record(
+                    validate_workers(
+                        registry=self.registry,
+                        workers=self.workers,
+                        input_payload=job.input,
+                        kinds=[kind],
+                        prebuilt_image=True,
+                        redis_url=self.redis_url,
+                        run_root=validation_run_root,
+                    )[0],
+                    effective_policy=resource_policy,
+                )
+            )
+            return error
+        cached = self.store.get_latest_worker_validation(
+            kind=kind,
+            image_digest=image_digest,
+            contract_version=GOBLIN_CONTAINER_CONTRACT_VERSION,
+            validator_version=VALIDATOR_VERSION,
+        )
+        if cached is not None and cached.status == "passed":
+            return None
+        results = validate_workers(
+            registry=self.registry,
+            workers=self.workers,
+            input_payload=job.input,
+            kinds=[kind],
+            prebuilt_image=True,
+            timeout_seconds=job.timeout_seconds,
+            redis_url=self.redis_url,
+            run_root=validation_run_root,
+        )
+        result = results[0]
+        self.store.save_worker_validation(
+            validation_record(result, effective_policy=resource_policy)
+        )
+        if not result.ok:
+            return result.error or "worker validation failed"
+        return None
 
     def run_once(self, now: datetime | None = None) -> list[RunRecord]:
         """Perform one deterministic scheduler pass for tests and CLI use."""

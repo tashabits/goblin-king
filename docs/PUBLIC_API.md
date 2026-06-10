@@ -15,7 +15,8 @@ Use these imports from `goblin_king` in host projects and generated goblin packa
   `REGISTRY_SCHEMA_VERSION`, `WORKER_IMAGE_MAP_SCHEMA_VERSION`,
   `WORKER_RESULT_CONTRACT_VERSION`, and `WORKER_HEARTBEAT_CONTRACT_VERSION`.
 - Contracts: `GoblinDefinition`, `GoblinContext`, `GoblinResult`, job/run/schedule,
-  fanout, event, heartbeat, artifact, handoff, auth, and project record models.
+  fanout, event, heartbeat, artifact, handoff, auth, project, and worker validation
+  record models.
 - Registry helpers: `GoblinRegistry`, `RegistryError`, `ENTRY_POINT_GROUP`, and
   `discover_entry_point_definitions`.
 - Project settings: `ProjectSettings` and `ProjectSettingsError`.

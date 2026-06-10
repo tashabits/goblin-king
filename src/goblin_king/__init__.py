@@ -18,6 +18,7 @@ from goblin_king.contracts import (
     RunRecord,
     ScheduleRecord,
     UserRecord,
+    WorkerValidationRecord,
 )
 from goblin_king.project import ProjectSettings, ProjectSettingsError
 from goblin_king.registry import (
@@ -87,6 +88,7 @@ __all__ = [
     "WorkerImageMap",
     "WORKER_IMAGE_MAP_SCHEMA_VERSION",
     "WORKER_RESULT_CONTRACT_VERSION",
+    "WorkerValidationRecord",
     "create_app",
     "discover_entry_point_definitions",
     "init_package",
