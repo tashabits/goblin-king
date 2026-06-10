@@ -531,6 +531,7 @@ export function App() {
             rows={goblins.map((goblin) => [
               goblin.kind,
               goblin.display_name,
+              goblin.source || "registry",
               goblin.worker_mapped ? "OCI worker image mapped" : "missing worker image",
               goblin.worker_image || "none",
             ])}

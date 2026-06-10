@@ -6,6 +6,7 @@ copying Goblin King internals.
 It demonstrates:
 
 - Multiple registry files in one project settings file.
+- Inline `GoblinProject` config for `project.inline.hello`.
 - Worker image map coverage for each discovered goblin.
 - A short-running goblin and a long-running service goblin.
 - Static validation before Docker/Helm deployment.
@@ -47,7 +48,7 @@ make project-discovery-reload
 make project-admin-proof
 ```
 
-The admin should list `project.maintenance.hello` and
+The admin should list `project.inline.hello`, `project.maintenance.hello`, and
 `project.reports.long-service` without rebuilding the React UI.
 
 ## Helm Values

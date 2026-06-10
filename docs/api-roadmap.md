@@ -124,7 +124,7 @@ target phase below.
 - API, CLI, admin, audit, and event visibility for effective per-run resource policies.
 - Resource-policy validation failures surfaced before queueing or launching unsafe work.
 
-## Planned In Phases 35-42
+## Planned In Phases 36-42
 
 - Project-defined goblin configuration for adopting projects.
 - Project-config validation and bring-your-own-image contract validation.

@@ -58,6 +58,23 @@ class WorkerImageMap:
             raise WorkerConfigError(str(error)) from error
         return cls(document.workers, image_path.resolve().parent)
 
+    @classmethod
+    def from_path_and_definitions(
+        cls,
+        path: str | Path,
+        extra_workers: dict[str, WorkerImageDefinition],
+    ) -> WorkerImageMap:
+        """Read a worker image map and merge project-config worker definitions."""
+        loaded = cls.from_path(path)
+        workers = dict(loaded._workers)
+        duplicates = sorted(kind for kind in extra_workers if kind in workers)
+        if duplicates:
+            raise WorkerConfigError(
+                "duplicate worker image mapping: " + ", ".join(duplicates)
+            )
+        workers.update(extra_workers)
+        return cls(workers, loaded._root)
+
     def get(self, kind: str) -> WorkerImageDefinition:
         """Return the worker image definition for one goblin kind."""
         try:

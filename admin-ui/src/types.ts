@@ -6,6 +6,7 @@ export type Goblin = {
   display_name: string;
   worker_image?: string | null;
   worker_mapped: boolean;
+  source?: string;
 };
 
 export type Job = {

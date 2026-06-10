@@ -51,9 +51,9 @@ starts from that enforced policy baseline.
 
 - Branch: `phase-35-project-goblin-config`.
 - PR title: `Phase 35 project-adoptable goblin configuration`.
-- Status: planned.
+- Status: implemented.
 
-Add or formalize a project-level configuration format that lets consuming
+Added a project-level configuration format that lets consuming
 projects define their own goblins outside Goblin King internals. Use the
 project's existing config format if one already exists; do not create a second
 competing format.
@@ -76,7 +76,7 @@ goblins:
       enabled: true
 ```
 
-Required capabilities:
+Implemented capabilities:
 
 - Define goblin kind/name.
 - Define container image.
@@ -90,13 +90,22 @@ Required capabilities:
 - Resolve local relative paths from the adopting project root.
 - Validate config with clear error messages.
 - Keep Goblin King source/internals untouched when adding project goblins.
+- Merge inline project goblins with existing JSON registries and entry points.
+- Merge inline worker image definitions with existing image maps.
+- Mark inline goblins as `project-config` in API/admin discovery.
 
 Proof:
 
-- Add example external project config.
-- Add tests for valid and invalid project goblin config loading.
-- Prove project-defined goblins do not require Python worker imports.
-- Run full local CI.
+- `examples/adopting-project/goblin-king-project.json` includes
+  `project.inline.hello`.
+- Tests cover valid/invalid project config, secret reference safety, API source
+  reporting, registry discovery, and worker image map merging.
+- Project-defined goblins use the container-only placeholder module and require Docker
+  or Kubernetes runtime, not Python worker imports.
+- Full local CI, project validation/list smoke proof, Docker admin audit, Helm admin
+  audit, and screenshots are required in the PR body. Phase 35 screenshots live at
+  `docs/screenshots/phase-35-docker-admin.png` and
+  `docs/screenshots/phase-35-helm-admin.png`.
 
 ## Phase 36: Bring-Your-Own-Goblin Validation
 
@@ -411,7 +420,7 @@ No GitHub Actions proof is required or sufficient.
 - Backwards compatibility should be preserved by safe defaults or migration
   guidance.
 
-## Deferred After Phase 41
+## Deferred After Phase 42
 
 - Public PyPI release hardening.
 - Full production hardening for untrusted multi-tenant execution.

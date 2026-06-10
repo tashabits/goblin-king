@@ -114,6 +114,50 @@ def test_goblins_endpoint_uses_project_settings(tmp_path: Path) -> None:
     assert response.json()[0]["kind"] == "project.echo"
 
 
+def test_goblins_endpoint_reports_project_config_source(tmp_path: Path) -> None:
+    """Verify inline project-config goblins are discoverable without registry edits."""
+    project_path = tmp_path / "goblin-king-project.json"
+    images_path = tmp_path / "images.json"
+    images_path.write_text('{"workers":{}}', encoding="utf-8")
+    project_path.write_text(
+        json.dumps(
+            {
+                "apiVersion": "goblin-king/v1alpha1",
+                "kind": "GoblinProject",
+                "registries": [],
+                "entry_points": False,
+                "images": "images.json",
+                "api_settings": "api.json",
+                "goblins": {
+                    "project.inline.hello": {
+                        "displayName": "Project Inline Hello",
+                        "image": "inline-hello:local",
+                        "context": ".",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = ApiSettings(
+        registry=Path("examples/goblins.json").resolve(),
+        images=Path("goblin-images.json").resolve(),
+        db=tmp_path / "api.sqlite3",
+        artifact_root=tmp_path / "artifacts",
+        auth_token="test-token",
+        project=project_path,
+    )
+    client = TestClient(create_app(settings))
+
+    response = client.get("/goblins", headers=auth_headers())
+    goblin = response.json()[0]
+
+    assert response.status_code == 200
+    assert goblin["kind"] == "project.inline.hello"
+    assert goblin["source"] == "project-config"
+    assert goblin["worker_image"] == "inline-hello:local"
+
+
 def test_discovery_reload_adds_project_goblin_without_restart(tmp_path: Path) -> None:
     """Verify admin discovery reload refreshes project registries and image maps."""
     project_path = tmp_path / "goblin-king-project.json"
