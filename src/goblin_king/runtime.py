@@ -25,6 +25,32 @@ from goblin_king.events import (
 )
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
 
+_KUBERNETES_RESULT_FORWARDER_SCRIPT = r"""
+import os
+import time
+from pathlib import Path
+
+from redis import Redis
+
+run_id = os.environ["GOBLIN_RUN_ID"]
+redis_url = os.environ["GOBLIN_REDIS_URL"]
+result_path = Path(os.environ["GOBLIN_RESULT_PATH"])
+wait_seconds = int(os.environ.get("GOBLIN_RESULT_WAIT_SECONDS", "300"))
+deadline = time.monotonic() + wait_seconds
+
+while time.monotonic() < deadline:
+    if result_path.is_file():
+        Redis.from_url(redis_url).set(
+            f"goblin-king:results:{run_id}",
+            result_path.read_text(encoding="utf-8"),
+            ex=3600,
+        )
+        raise SystemExit(0)
+    time.sleep(0.25)
+
+raise SystemExit(f"result file not found before timeout: {result_path}")
+"""
+
 
 class InProcessRuntime:
     """Execute trusted goblin code directly in the current Python process for Phase 1."""
@@ -352,6 +378,7 @@ class KubernetesRuntime:
         redis_url: str = "redis://localhost:6379/0",
         namespace: str | None = None,
         image_pull_policy: str = "IfNotPresent",
+        result_forwarder_image: str = "goblin-king:local",
         event_bus: EventBus | None = None,
         heartbeat_interval_seconds: int = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
         poll_interval_seconds: float = 1.0,
@@ -360,6 +387,7 @@ class KubernetesRuntime:
         self.redis_url = redis_url
         self.namespace = namespace or _current_kubernetes_namespace()
         self.image_pull_policy = image_pull_policy
+        self.result_forwarder_image = result_forwarder_image
         self.event_bus = event_bus
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
         self.poll_interval_seconds = poll_interval_seconds
@@ -500,7 +528,11 @@ class KubernetesRuntime:
                                 {"name": "result", "mountPath": "/goblin-result"},
                                 {"name": "artifacts", "mountPath": "/artifacts"},
                             ],
-                        }
+                        },
+                        self._result_forwarder_container(
+                            context=context,
+                            timeout_seconds=timeout_seconds,
+                        ),
                     ],
                     "volumes": [
                         {"name": "input", "configMap": {"name": config_name}},
@@ -524,6 +556,30 @@ class KubernetesRuntime:
                 },
             },
             "spec": spec,
+        }
+
+    def _result_forwarder_container(
+        self,
+        *,
+        context: GoblinContext,
+        timeout_seconds: int | None,
+    ) -> dict[str, Any]:
+        """Publish the worker result file to Redis for language-neutral Kubernetes jobs."""
+        wait_seconds = str((timeout_seconds or 300) + 15)
+        return {
+            "name": "result-forwarder",
+            "image": self.result_forwarder_image,
+            "imagePullPolicy": self.image_pull_policy,
+            "command": ["python", "-c", _KUBERNETES_RESULT_FORWARDER_SCRIPT],
+            "env": [
+                {"name": "GOBLIN_RUN_ID", "value": context.run_id},
+                {"name": "GOBLIN_REDIS_URL", "value": self.redis_url},
+                {"name": "GOBLIN_RESULT_PATH", "value": "/goblin-result/result.json"},
+                {"name": "GOBLIN_RESULT_WAIT_SECONDS", "value": wait_seconds},
+            ],
+            "volumeMounts": [
+                {"name": "result", "mountPath": "/goblin-result"},
+            ],
         }
 
     def _wait_for_result(
