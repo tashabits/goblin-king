@@ -778,7 +778,12 @@ sufficient.
 
 - Branch: `phase-56-admin-project-goblin-visibility`.
 - PR title: `Phase 56 admin project goblin visibility`.
-- Status: planned.
+- Status: implemented.
+- Make project-config goblins visually distinct in the registered goblin table.
+- Show visible validation status messages and repair commands for unknown, stale, and
+  failed validation states.
+- Preserve existing source, image, worker mapping, job effective-policy, run result, and
+  artifact surfaces.
 
 ### Phase 57: Project Admin Test Quickstart
 

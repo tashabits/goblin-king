@@ -37,6 +37,37 @@ function validationBadge(goblin: Goblin) {
   );
 }
 
+function sourceBadge(goblin: Goblin) {
+  const source = goblin.source || "registry";
+  return (
+    <span className={`source-badge ${source === "project-config" ? "source-project" : ""}`}>
+      {source}
+    </span>
+  );
+}
+
+function validationDetails(goblin: Goblin) {
+  const status = goblin.validation_status ?? {
+    state: "unknown",
+    message: "No validation proof has been recorded. Validate first, then schedule.",
+  };
+  const needsRepair = ["failed", "stale", "unknown"].includes(status.state);
+  return (
+    <div className="validation-detail">
+      {validationBadge(goblin)}
+      <p>{status.message}</p>
+      {status.validated_at && <small>Last validation: {status.validated_at}</small>}
+      {status.image_digest && <small>Image digest: {status.image_digest}</small>}
+      {needsRepair && (
+        <code>
+          goblin-king workers validate --project &lt;path&gt; --kind {goblin.kind} --input{" "}
+          &lt;file&gt; --build --require-success
+        </code>
+      )}
+    </div>
+  );
+}
+
 function jobResourcePolicy(job: Job) {
   const policy = job.metadata?.resource_policy;
   return policy && typeof policy === "object" && !Array.isArray(policy)
@@ -213,9 +244,9 @@ export function GoblinLabPanel({
         rows={goblins.map((goblin) => [
           goblin.kind,
           goblin.display_name,
-          goblin.source || "registry",
+          sourceBadge(goblin),
           goblin.worker_mapped ? "OCI worker image mapped" : "missing worker image",
-          validationBadge(goblin),
+          validationDetails(goblin),
           goblin.worker_image || "none",
         ])}
       />
