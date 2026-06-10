@@ -214,8 +214,9 @@ project:
 ```bash
 python -m pytest
 python -m ruff check .
+goblin-king resource-policies inspect example.hello --policies examples/resource-policy-proof.json
 goblin-king workers validate --registry examples/cross-language-goblins.json --images examples/cross-language-images.json --build --require-success
-helm template goblin-king deploy/helm/goblin-king
+helm template goblin-king charts/goblin-king
 ```
 
 Policy-aware validation should also prove:

@@ -646,6 +646,13 @@ goblin-king jobs submit example.hello \
   --resource-policies goblin-resource-policies.json
 ```
 
+Inspect the effective policy and runtime mappings before you run it:
+
+```bash
+goblin-king resource-policies inspect example.hello \
+  --policies examples/resource-policy-proof.json
+```
+
 Effective policy appears in stored job metadata, run records, CLI/API JSON, and the admin
 Runs panel. See [Goblin Resource Policies](docs/goblin-resource-policies.md) for the file
 shape and exact Docker/Kubernetes mappings.

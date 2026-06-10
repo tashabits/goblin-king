@@ -119,7 +119,11 @@ class ResourcePolicySet(BaseModel):
         """Resolve defaults plus a per-kind override and validate against ceilings."""
         merged = _deep_merge(
             self.defaults.model_dump(mode="json", exclude_none=True),
-            self.goblins.get(kind, ResourcePolicy()).model_dump(mode="json", exclude_none=True),
+            self.goblins.get(kind, ResourcePolicy()).model_dump(
+                mode="json",
+                exclude_none=True,
+                exclude_defaults=True,
+            ),
         )
         if timeout_seconds is not None:
             merged["timeout_seconds"] = timeout_seconds

@@ -627,6 +627,7 @@ added.
 
 - Branch: `phase-46-docker-resource-policy-proof`.
 - PR title: `Phase 46 Docker resource policy proof`.
+- Status: implemented.
 - Harden Docker resource-policy proof without breaking current safe defaults.
 - Prove CPU, memory, timeout, read-only root, writable contract mounts,
   network-disabled mode, artifact ceilings, log ceilings where practical, above-ceiling

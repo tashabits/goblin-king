@@ -57,19 +57,66 @@ def test_resource_policy_defaults_and_overrides_merge(tmp_path: Path) -> None:
 
 def test_resource_policy_rejects_above_ceiling(tmp_path: Path) -> None:
     """Verify effective policy values above configured ceilings fail before launch."""
-    policy_path = write_policy(
-        tmp_path / "policies.json",
-        {
-            "version": 1,
-            "defaults": {"memory": {"limit": "4Gi"}},
-            "ceilings": {"memory": {"limit": "1Gi"}},
-        },
-    )
+    cases = [
+        (
+            {"timeout_seconds": 120},
+            {"timeout_seconds": 60},
+            "timeout_seconds",
+        ),
+        (
+            {"max_retries": 4},
+            {"max_retries": 2},
+            "max_retries",
+        ),
+        (
+            {"cpu": {"limit": "2"}},
+            {"cpu": {"limit": "1"}},
+            "cpu.limit",
+        ),
+        (
+            {"memory": {"limit": "4Gi"}},
+            {"memory": {"limit": "1Gi"}},
+            "memory.limit",
+        ),
+        (
+            {"process": {"pids_limit": 128}},
+            {"process": {"pids_limit": 64}},
+            "process.pids_limit",
+        ),
+        (
+            {"filesystem": {"artifact_max_bytes": 2000}},
+            {"filesystem": {"artifact_max_bytes": 1000}},
+            "filesystem.artifact_max_bytes",
+        ),
+        (
+            {"filesystem": {"artifact_max_files": 20}},
+            {"filesystem": {"artifact_max_files": 10}},
+            "filesystem.artifact_max_files",
+        ),
+        (
+            {"logs": {"max_bytes": 2000}},
+            {"logs": {"max_bytes": 1000}},
+            "logs.max_bytes",
+        ),
+        (
+            {"concurrency": {"max_running": 4}},
+            {"concurrency": {"max_running": 2}},
+            "concurrency.max_running",
+        ),
+    ]
+    for index, (defaults, ceilings, expected_field) in enumerate(cases):
+        policy_path = write_policy(
+            tmp_path / f"policies-{index}.json",
+            {
+                "version": 1,
+                "defaults": defaults,
+                "ceilings": ceilings,
+            },
+        )
+        policies = ResourcePolicySet.from_path(policy_path)
 
-    policies = ResourcePolicySet.from_path(policy_path)
-
-    with pytest.raises(ResourcePolicyError, match="memory.limit"):
-        policies.effective_for("example.echo")
+        with pytest.raises(ResourcePolicyError, match=expected_field):
+            policies.effective_for("example.echo")
 
 
 def test_resource_policy_rejects_unsupported_version(tmp_path: Path) -> None:
