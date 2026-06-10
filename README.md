@@ -34,6 +34,7 @@ Helm chart.
   - [Public API Boundary](docs/PUBLIC_API.md)
   - [Release Checklist](docs/RELEASE_CHECKLIST.md)
   - [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md)
+  - [Code Cleanup Notes](docs/CODE_CLEANUP.md)
 
 ## Quick Start
 
@@ -409,6 +410,7 @@ requires receipts.
 | [First Hour Guide](docs/FIRST_HOUR.md) | Fast path from internal install to first project goblin run. |
 | [Release Checklist](docs/RELEASE_CHECKLIST.md) | Internal wheel, Docker image, local CI, Docker adoption, and Helm proof checklist. |
 | [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md) | Phase 16-21 closeout audit, current proof surfaces, and explicit deferred items. |
+| [Code Cleanup Notes](docs/CODE_CLEANUP.md) | Phase 23 before/after cleanup summary and helper-module rules. |
 | [Compatibility Matrix](docs/COMPATIBILITY.md) | Contract and schema compatibility versions for project-ready adoption. |
 | [Upgrade Guide](docs/UPGRADING.md) | Host-project upgrade procedure and compatibility fixture policy. |
 | [Migration Guide](docs/MIGRATION_GUIDE.md) | How to move existing scripts and workers into goblin plugins. |

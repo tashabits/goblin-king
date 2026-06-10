@@ -18,229 +18,41 @@ import {
   Wand2,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+
+import {
+  compactTrafficPayload,
+  latestFirst,
+  quoteFor,
+  readJson,
+  usefulServicesFirst,
+} from "./adminData";
+import { Stat, Table } from "./components";
+import type {
+  AdminConfig,
+  ArtifactCleanupResponse,
+  ArtifactStorageStatus,
+  AuditLog,
+  CleanupResponse,
+  DeploymentRecord,
+  DiscoverySources,
+  DiscoveryStatus,
+  EventRecord,
+  EventStreamStatus,
+  FanoutDetail,
+  Goblin,
+  Heartbeat,
+  ImagePromotion,
+  Job,
+  LongService,
+  Run,
+  Schedule,
+  TrafficEntry,
+} from "./types";
 
 const API_BASE = "/admin-api";
 const WS_BASE = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/admin-ws/runs`;
 const TOKEN_KEY = "goblinKingAdminToken";
 const DEFAULT_LONG_HELLO_URL = "http://long-hello:8080";
-const QUOTES = [
-  "The King counts every task twice: once for courage, once for evidence.",
-  "A proper goblin returns receipts.",
-  "No mystery enters the queue without a lantern tied to it.",
-  "The throne accepts chaos, but only with structured JSON.",
-  "If it moves, heartbeat it. If it stops, write it down.",
-  "Tiny workers, enormous paperwork.",
-];
-
-type Goblin = {
-  kind: string;
-  display_name: string;
-  worker_image?: string | null;
-  worker_mapped: boolean;
-};
-
-type Job = {
-  id: string;
-  kind: string;
-  status: string;
-  input: Record<string, unknown>;
-  created_at: string;
-  due_at?: string | null;
-  last_error?: string | null;
-};
-
-type Run = {
-  id: string;
-  job_id: string;
-  kind: string;
-  status: string;
-  result?: Record<string, unknown> | null;
-  error?: string | null;
-  started_at: string;
-};
-
-type EventRecord = {
-  id: string;
-  event_type: string;
-  source: string;
-  created_at: string;
-  payload: Record<string, unknown>;
-};
-
-type EventStreamStatus = {
-  stream: string;
-  ok: boolean;
-  length: number;
-  last_generated_id?: string | null;
-  groups: Record<string, unknown>[];
-  pending: number;
-  error?: string | null;
-};
-
-type Heartbeat = {
-  owner_id: string;
-  owner_type: string;
-  status: string;
-  last_seen_at: string;
-};
-
-type LongService = {
-  id: string;
-  kind: string;
-  status: string;
-  base_url: string;
-  last_probe_json?: Record<string, unknown> | null;
-};
-
-type AuditLog = {
-  id: string;
-  action: string;
-  outcome: string;
-  created_at: string;
-};
-
-type Schedule = {
-  id: string;
-  kind: string;
-  cron: string;
-  enabled: boolean;
-  next_run_at: string;
-};
-
-type FanoutDetail = {
-  status: string;
-  fanout: { id: string; description?: string | null };
-  counts: Record<string, number>;
-};
-
-type TrafficEntry = {
-  label: string;
-  request: unknown;
-  response: unknown;
-};
-
-type AdminConfig = {
-  deploymentScope: string;
-  longHelloUrl: string;
-};
-
-type CleanupResponse = {
-  dry_run: boolean;
-  deleted: boolean;
-  counts: Record<string, number>;
-};
-
-type ArtifactStorageStatus = {
-  root: string;
-  exists: boolean;
-  writable: boolean;
-  file_count: number;
-  total_bytes: number;
-  metadata_count: number;
-};
-
-type ArtifactCleanupResponse = {
-  dry_run: boolean;
-  deleted: boolean;
-  root: string;
-  files_selected: number;
-  bytes_selected: number;
-  files: string[];
-};
-
-type DiscoveryStatus = {
-  active_goblin_count: number;
-  worker_mapped_count: number;
-  worker_unmapped: string[];
-  discovery_version: number;
-  last_successful_reload_at: string;
-  last_failed_reload_at?: string | null;
-  last_error?: string | null;
-};
-
-type DiscoverySources = {
-  project_settings?: string | null;
-  registry_files: string[];
-  entry_points_enabled: boolean;
-  worker_image_map: string;
-  goblin_kinds: string[];
-  worker_mapped_kinds: string[];
-  worker_unmapped_kinds: string[];
-  rejected_definitions: string[];
-  duplicate_kind_errors: string[];
-};
-
-type ImagePromotion = {
-  id: string;
-  kind: string;
-  source_image: string;
-  target_image: string;
-  status: string;
-  digest?: string | null;
-  created_at: string;
-  detail: Record<string, unknown>;
-};
-
-type DeploymentRecord = {
-  id: string;
-  name: string;
-  action: string;
-  status: string;
-  command: string[];
-  output?: string | null;
-  created_at: string;
-  detail: Record<string, unknown>;
-};
-
-function latestFirst<T>(items: T[]): T[] {
-  return [...items].sort((left, right) => {
-    const leftRecord = left as Record<string, unknown>;
-    const rightRecord = right as Record<string, unknown>;
-    const leftDate = leftRecord.created_at || leftRecord.submitted_at || leftRecord.started_at;
-    const rightDate = rightRecord.created_at || rightRecord.submitted_at || rightRecord.started_at;
-    const leftTime = typeof leftDate === "string" ? Date.parse(leftDate) : 0;
-    const rightTime = typeof rightDate === "string" ? Date.parse(rightDate) : 0;
-    return (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime);
-  });
-}
-
-function serviceRank(service: LongService): number {
-  if (service.status === "stopped") return 2;
-  if (service.status === "failed") return 1;
-  return 0;
-}
-
-function usefulServicesFirst(services: LongService[]): LongService[] {
-  return latestFirst(services).sort((left, right) => serviceRank(left) - serviceRank(right));
-}
-
-function quoteFor(seed: number) {
-  return QUOTES[seed % QUOTES.length];
-}
-
-async function readJson(response: Response) {
-  const text = await response.text();
-  if (!text) return null;
-  return JSON.parse(text);
-}
-
-function compactTrafficPayload(value: unknown, depth = 0): unknown {
-  if (depth > 3) return "[truncated]";
-  if (Array.isArray(value)) {
-    const preview = value.slice(0, 3).map((item) => compactTrafficPayload(item, depth + 1));
-    return value.length > 3 ? [...preview, `... ${value.length - 3} more`] : preview;
-  }
-  if (value && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>);
-    const compacted = Object.fromEntries(
-      entries.slice(0, 12).map(([key, item]) => [key, compactTrafficPayload(item, depth + 1)]),
-    );
-    if (entries.length > 12) compacted._truncated = `${entries.length - 12} more fields`;
-    return compacted;
-  }
-  return value;
-}
 
 export function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
@@ -989,37 +801,6 @@ export function App() {
           <pre className="traffic">{JSON.stringify(traffic, null, 2)}</pre>
         </section>
       </main>
-    </div>
-  );
-}
-
-function Stat({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
-  return (
-    <article className="stat">
-      {icon}
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </article>
-  );
-}
-
-function Table({ title, rows }: { title: string; rows: ReactNode[][] }) {
-  return (
-    <div className="table-wrap">
-      <h3>{title}</h3>
-      {rows.length === 0 ? (
-        <p className="empty">"{quoteFor(title.length)}"</p>
-      ) : (
-        <table>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr key={`${title}-${index}`}>
-                {row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
     </div>
   );
 }

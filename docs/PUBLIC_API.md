@@ -49,10 +49,11 @@ validate, deploy, run, or prove goblins.
 ## Internal Modules
 
 Modules such as `goblin_king.runtime`, `goblin_king.store`, `goblin_king.auth`,
-`goblin_king.events`, and `goblin_king.fanout` remain importable for Goblin King itself,
-but their non-root symbols are not promised stable for adopting projects. If a project
-needs one of those internals, first promote the needed behavior to the root boundary or
-the CLI/API in a focused compatibility PR.
+`goblin_king.events`, `goblin_king.fanout`, `goblin_king.api_models`, and
+`goblin_king.deployment` remain importable for Goblin King itself, but their non-root
+symbols are not promised stable for adopting projects. If a project needs one of those
+internals, first promote the needed behavior to the root boundary or the CLI/API in a
+focused compatibility PR.
 
 ## Internal Wheel Versioning
 

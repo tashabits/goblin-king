@@ -603,7 +603,7 @@ Primary direction:
 
 ### Phase 23: Repo-Wide Code Cleanup
 
-- Status: planned.
+- Status: implemented in Phase 23.
 - Split oversized backend and React admin files into smaller cohesive modules where
   useful, extract small domain-specific helpers, reduce duplication, and document
   non-obvious helpers without changing behavior or public adoption imports.
