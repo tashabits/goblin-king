@@ -14,6 +14,7 @@ from redis.exceptions import RedisError
 from goblin_king.auth import create_api_token, create_project, create_user
 from goblin_king.contracts import (
     DeploymentRecord,
+    GoblinDefinition,
     ImagePromotionRecord,
     JobRecord,
     RunRecord,
@@ -43,8 +44,8 @@ from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRunti
 from goblin_king.scheduler import DEFAULT_INTERVAL_SECONDS, Scheduler, next_run_after
 from goblin_king.store import DEFAULT_DB_PATH, SQLiteStore
 from goblin_king.templates import TemplateError, init_package
-from goblin_king.validation import validate_workers
-from goblin_king.workers import WorkerConfigError, WorkerImageMap
+from goblin_king.validation import WorkerValidationResult, validate_workers
+from goblin_king.workers import WorkerConfigError, WorkerImageDefinition, WorkerImageMap
 
 app = typer.Typer(help="Run and inspect Goblin King jobs.")
 api_app = typer.Typer(help="Run the HTTP API control plane.")
@@ -945,13 +946,17 @@ def build_workers(
 def validate_worker_contracts(
     input_path: Annotated[Path, typer.Option("--input", help="JSON input payload path.")],
     registry: Annotated[
-        Path,
+        Path | None,
         typer.Option("--registry", help="Registry JSON path."),
     ] = Path("goblins.json"),
     images: Annotated[
-        Path,
+        Path | None,
         typer.Option("--images", help="Worker image map path."),
     ] = DEFAULT_IMAGES_PATH,
+    project: Annotated[
+        Path | None,
+        typer.Option("--project", help="Project settings path to validate discovered workers."),
+    ] = None,
     kind: Annotated[
         list[str] | None,
         typer.Option("--kind", help="Validate only this goblin kind; repeatable."),
@@ -964,6 +969,10 @@ def validate_worker_contracts(
         bool,
         typer.Option("--require-success", help="Treat failed result envelopes as invalid."),
     ] = False,
+    timeout_seconds: Annotated[
+        int | None,
+        typer.Option("--timeout-seconds", help="Maximum worker execution seconds."),
+    ] = None,
     redis_url: Annotated[
         str,
         typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
@@ -974,17 +983,108 @@ def validate_worker_contracts(
     ] = False,
 ) -> None:
     """Run Docker workers with temp contract mounts and validate result envelopes."""
+    if project is not None:
+        loaded_registry = _load_project_registry(project)
+        loaded_workers = _load_project_workers(ProjectSettings.from_path(project))
+    else:
+        if registry is None or images is None:
+            typer.echo("--registry and --images are required unless --project is used", err=True)
+            raise typer.Exit(1)
+        loaded_registry = _load_registry(registry)
+        loaded_workers = _load_workers(images)
     results = validate_workers(
-        registry=_load_registry(registry),
-        workers=_load_workers(images),
+        registry=loaded_registry,
+        workers=loaded_workers,
         input_payload=_load_input(input_path),
         kinds=kind,
         build=build,
         require_success=require_success,
+        timeout_seconds=timeout_seconds,
         redis_url=redis_url,
     )
+    _print_validation_results(results, json_output=json_output)
+
+
+@workers_app.command("validate-image")
+def validate_worker_image(
+    image: Annotated[str, typer.Option("--image", help="Prebuilt worker image to validate.")],
+    input_path: Annotated[Path, typer.Option("--input", help="JSON input payload path.")],
+    kind: Annotated[
+        str,
+        typer.Option("--kind", help="Temporary goblin kind used for validation."),
+    ] = "adopter.validation",
+    context: Annotated[
+        Path,
+        typer.Option("--context", help="Optional build context when --build is used."),
+    ] = Path("."),
+    dockerfile: Annotated[
+        str,
+        typer.Option("--dockerfile", help="Dockerfile name inside --context."),
+    ] = "Dockerfile",
+    build: Annotated[
+        bool,
+        typer.Option("--build", help="Build the image from --context before validation."),
+    ] = False,
+    require_success: Annotated[
+        bool,
+        typer.Option("--require-success", help="Treat failed result envelopes as invalid."),
+    ] = False,
+    timeout_seconds: Annotated[
+        int | None,
+        typer.Option("--timeout-seconds", help="Maximum worker execution seconds."),
+    ] = None,
+    redis_url: Annotated[
+        str,
+        typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
+    ] = DEFAULT_REDIS_URL,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Print machine-readable validation results."),
+    ] = False,
+) -> None:
+    """Validate a one-off prebuilt worker image against the container contract."""
+    registry = GoblinRegistry.from_definitions(
+        [
+            GoblinDefinition(
+                kind=kind,
+                display_name=kind,
+                module="goblin_king.container_only",
+            )
+        ]
+    )
+    workers = WorkerImageMap.from_definitions(
+        {
+            kind: WorkerImageDefinition(
+                context=context,
+                dockerfile=dockerfile,
+                image=image,
+            )
+        }
+    )
+    results = validate_workers(
+        registry=registry,
+        workers=workers,
+        input_payload=_load_input(input_path),
+        kinds=[kind],
+        build=build,
+        require_success=require_success,
+        prebuilt_image=not build,
+        timeout_seconds=timeout_seconds,
+        redis_url=redis_url,
+    )
+    _print_validation_results(results, json_output=json_output)
+
+
+def _print_validation_results(
+    results: list[WorkerValidationResult],
+    *,
+    json_output: bool,
+) -> None:
+    """Print validation results and exit nonzero when any contract check fails."""
     if json_output:
-        typer.echo(json.dumps([result.model_dump(mode="json") for result in results], indent=2))
+        typer.echo(
+            json.dumps([result.model_dump(mode="json") for result in results], indent=2)
+        )
     else:
         for result in results:
             status = "ok" if result.ok else "failed"

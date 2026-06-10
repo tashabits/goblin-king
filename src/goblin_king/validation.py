@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -25,6 +26,9 @@ class WorkerValidationResult(BaseModel):
     artifact_count: int = 0
     error: str | None = None
     checks: list[str] = Field(default_factory=list)
+    exit_code: int | None = None
+    stdout: str | None = None
+    stderr: str | None = None
 
 
 def validate_workers(
@@ -35,6 +39,8 @@ def validate_workers(
     kinds: list[str] | None = None,
     build: bool = False,
     require_success: bool = False,
+    prebuilt_image: bool = False,
+    timeout_seconds: int | None = None,
     redis_url: str = "redis://localhost:6379/0",
 ) -> list[WorkerValidationResult]:
     """Build/run selected workers and validate their result envelopes."""
@@ -66,6 +72,8 @@ def validate_workers(
                     input_payload=input_payload,
                     build=build,
                     require_success=require_success,
+                    prebuilt_image=prebuilt_image,
+                    timeout_seconds=timeout_seconds,
                 )
             )
     return results
@@ -79,32 +87,46 @@ def _validate_one(
     input_payload: dict[str, Any],
     build: bool,
     require_success: bool,
+    prebuilt_image: bool,
+    timeout_seconds: int | None,
 ) -> WorkerValidationResult:
     checks: list[str] = []
     try:
         worker = workers.get(kind)
-        context_path = workers.resolved_context(worker)
-        dockerfile = context_path / worker.dockerfile
-        if not context_path.is_dir():
-            return WorkerValidationResult(
-                kind=kind,
-                ok=False,
-                image=worker.image,
-                error=f"worker context missing: {context_path}",
-            )
-        checks.append("context")
-        if not dockerfile.is_file():
-            return WorkerValidationResult(
-                kind=kind,
-                ok=False,
-                image=worker.image,
-                error=f"worker Dockerfile missing: {dockerfile}",
-                checks=checks,
-            )
-        checks.append("dockerfile")
-        if build:
-            runtime.build_image(kind)
-            checks.append("build")
+        if prebuilt_image:
+            image_error = _inspect_image(runtime.docker_executable, worker.image)
+            if image_error is not None:
+                return WorkerValidationResult(
+                    kind=kind,
+                    ok=False,
+                    image=worker.image,
+                    error=image_error,
+                    checks=checks,
+                )
+            checks.append("image")
+        else:
+            context_path = workers.resolved_context(worker)
+            dockerfile = context_path / worker.dockerfile
+            if not context_path.is_dir():
+                return WorkerValidationResult(
+                    kind=kind,
+                    ok=False,
+                    image=worker.image,
+                    error=f"worker context missing: {context_path}",
+                )
+            checks.append("context")
+            if not dockerfile.is_file():
+                return WorkerValidationResult(
+                    kind=kind,
+                    ok=False,
+                    image=worker.image,
+                    error=f"worker Dockerfile missing: {dockerfile}",
+                    checks=checks,
+                )
+            checks.append("dockerfile")
+            if build:
+                runtime.build_image(kind)
+                checks.append("build")
     except WorkerConfigError as error:
         return WorkerValidationResult(kind=kind, ok=False, error=str(error), checks=checks)
 
@@ -117,6 +139,7 @@ def _validate_one(
         _entrypoint=None,
         input_payload=input_payload,
         context=context,
+        timeout_seconds=timeout_seconds,
     )
     result_file = runtime.run_root / context.run_id / "result.json"
     if not result_file.is_file():
@@ -142,6 +165,10 @@ def _validate_one(
             checks=checks,
         )
     checks.append("result-envelope")
+    if parsed.metrics:
+        checks.append("metrics")
+    if parsed.handoff:
+        checks.append("handoff")
 
     missing_artifacts = [
         artifact.name
@@ -183,3 +210,19 @@ def _validate_one(
         artifact_count=len(parsed.artifacts),
         checks=checks,
     )
+
+
+def _inspect_image(docker_executable: str, image: str) -> str | None:
+    """Return a clear error when a prebuilt image is unavailable locally."""
+    completed = subprocess.run(
+        [docker_executable, "image", "inspect", image],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if completed.returncode == 0:
+        return None
+    detail = completed.stderr.strip() or completed.stdout.strip()
+    return f"worker image unavailable: {image}; {detail}"

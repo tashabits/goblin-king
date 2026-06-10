@@ -75,6 +75,16 @@ class WorkerImageMap:
         workers.update(extra_workers)
         return cls(workers, loaded._root)
 
+    @classmethod
+    def from_definitions(
+        cls,
+        workers: dict[str, WorkerImageDefinition],
+        *,
+        root: str | Path | None = None,
+    ) -> WorkerImageMap:
+        """Build an image map from already-validated worker definitions."""
+        return cls(workers, Path(root or Path.cwd()).resolve())
+
     def get(self, kind: str) -> WorkerImageDefinition:
         """Return the worker image definition for one goblin kind."""
         try:
