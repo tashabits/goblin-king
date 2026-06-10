@@ -17,8 +17,14 @@ PROJECT_IMAGES ?= $(HOST_PROJECT)/goblin-images.json
 ADMIN_BASE ?= http://127.0.0.1:8080
 ADMIN_TOKEN ?= local-dev-token
 DIST ?= dist
+HELM_RELEASE ?= goblin-king
+HELM_CHART ?= charts/goblin-king
+HELM_NAMESPACE ?= default
+HELM_TIMEOUT ?= 5m
+HELM_ARGS ?=
+HELM_PVC ?= $(HELM_RELEASE)-data
 
-.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel release-check helm-template helm-admin-smoke kind-smoke clean docker-clean
+.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel release-check helm-template helm-admin-smoke kind-smoke clean docker-clean
 
 help:
 	@echo "Targets:"
@@ -37,6 +43,14 @@ help:
 	@echo "  redis-up       Start Redis with Docker Compose"
 	@echo "  redis-down     Stop Redis"
 	@echo "  deploy         Build workers and start Redis"
+	@echo "  docker-up      Build and start the full Docker Compose stack"
+	@echo "  docker-wipe    Stop Docker Compose and delete its volumes/data"
+	@echo "  docker-restart-clean Wipe Docker data, then rebuild and start Compose"
+	@echo "  helm-up        Install/upgrade the Helm stack and wait for readiness"
+	@echo "  helm-wipe      Uninstall Helm release and delete its PVC/data"
+	@echo "  helm-restart-clean Wipe Helm data, then install/upgrade and wait"
+	@echo "  stack-wipe     Wipe both Docker Compose and Helm data"
+	@echo "  stack-restart-clean Wipe and restart both Docker Compose and Helm"
 	@echo "  schedule       Add a due example.echo schedule"
 	@echo "  run-once       Run one Docker scheduler pass"
 	@echo "  simulate       Deploy, schedule, run once, and list jobs"
@@ -111,6 +125,27 @@ deploy: build-workers redis-up
 admin-up:
 	docker compose --profile api --profile admin up -d redis api admin long-hello
 
+docker-up: admin-build build-workers
+	docker compose --profile api --profile admin --profile scheduler up -d --build redis api admin long-hello scheduler
+
+docker-wipe:
+	docker compose down --volumes --remove-orphans
+
+docker-restart-clean: docker-wipe docker-up
+
+helm-up:
+	helm upgrade --install $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE) --create-namespace --wait --timeout $(HELM_TIMEOUT) $(HELM_ARGS)
+
+helm-wipe:
+	-helm uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE) --ignore-not-found
+	-kubectl delete pvc $(HELM_PVC) --namespace $(HELM_NAMESPACE) --ignore-not-found
+
+helm-restart-clean: helm-wipe helm-up
+
+stack-wipe: docker-wipe helm-wipe
+
+stack-restart-clean: docker-restart-clean helm-restart-clean
+
 schedule:
 	$(PYTHON) -m goblin_king.cli schedules add example.echo --cron "* * * * *" --input $(INPUT) --registry $(REGISTRY) --db $(DB) --due-now
 
@@ -165,7 +200,7 @@ release-check: local-ci project-validate helm-template
 	cd admin-ui && npm run build
 
 helm-template:
-	helm template goblin-king charts/goblin-king
+	helm template $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE) $(HELM_ARGS)
 
 helm-admin-smoke:
 	$(PYTHON) -c "import urllib.request; base='http://goblin-king.local'; token='local-dev-token'; print('admin_status=' + str(urllib.request.urlopen(base+'/admin', timeout=10).status)); req=urllib.request.Request(base+'/admin-api/goblins', headers={'Authorization':'Bearer '+token}); print(urllib.request.urlopen(req, timeout=10).read().decode())"
