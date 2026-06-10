@@ -18,7 +18,7 @@ ADMIN_BASE ?= http://127.0.0.1:8080
 ADMIN_TOKEN ?= local-dev-token
 DIST ?= dist
 
-.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit project-validate project-build-workers project-discovery-reload project-admin-proof release-wheel release-check helm-template helm-admin-smoke kind-smoke clean docker-clean
+.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel release-check helm-template helm-admin-smoke kind-smoke clean docker-clean
 
 help:
 	@echo "Targets:"
@@ -51,6 +51,7 @@ help:
 	@echo "  project-build-workers Build host-project worker images"
 	@echo "  project-discovery-reload Reload host-project discovery through admin API"
 	@echo "  project-admin-proof Prove host-project goblins are visible through admin API"
+	@echo "  adopter-smoke  Generate, validate, schedule, run, inspect, and clean adopter goblins"
 	@echo "  release-wheel  Build the internal wheel into DIST"
 	@echo "  release-check  Run local release/adoption proof commands"
 	@echo "  helm-template  Render the optional Helm chart"
@@ -152,6 +153,9 @@ project-discovery-reload:
 
 project-admin-proof:
 	$(PYTHON) -c "import urllib.request; base='$(ADMIN_BASE)'; token='$(ADMIN_TOKEN)'; req=urllib.request.Request(base+'/admin-api/goblins', headers={'Authorization':'Bearer '+token}); print(urllib.request.urlopen(req).read().decode())"
+
+adopter-smoke: redis-up
+	$(PYTHON) -m goblin_king.cli smoke adopter-project --redis-url $(REDIS_URL)
 
 release-wheel:
 	$(PYTHON) -m pip wheel . -w $(DIST)

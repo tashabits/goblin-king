@@ -388,33 +388,74 @@ Proof:
 
 - Branch: `phase-41-adopter-smoke-suite`.
 - PR title: `Phase 41 adopter smoke suite`.
-- Status: planned.
+- Status: implemented.
 
-Add a local smoke suite that proves the adopter path works end to end. It should
-simulate a consuming project defining its own goblins and using Goblin King to
-validate, schedule, and inspect them.
+Adds a local smoke suite that proves the adopter path works end to end. It
+generates a temporary consuming project, defines project goblins, validates
+their container contracts, schedules them through Goblin King, inspects success,
+artifact, and controlled-failure results, and cleans the generated project up.
 
-The smoke suite should cover project config loading, image build/reference,
-goblin validation, scheduling a project-defined goblin, successful result,
-artifact output, failure output, run inspection, and basic cleanup.
+Commands:
 
-Possible command:
-
-```bash
+```shell
 goblin-king smoke adopter-project
+make adopter-smoke
 ```
 
-Docker Compose or local Docker remains the default proof path. Kubernetes proof
-can be optional.
+Implemented proof:
 
-Proof:
-
-- Smoke suite and docs are added.
-- Smoke suite runs successfully locally.
-- Docker proof is included.
-- Non-Docker portions may be suitable for future CI, but local proof remains the
-  required quality gate.
-- Full local CI passes.
+- `goblin-king smoke adopter-project --prefix phase41` passed and removed its
+  temporary generated project. It validated `phase41.hello`,
+  `phase41.artifact`, and `phase41.failure`, scheduled them, recorded successful
+  runs for hello and artifact goblins, recorded an expected failed run for the
+  controlled failure goblin, and proved artifact output.
+- `make adopter-smoke` passed through the same flow for `smoke.hello`,
+  `smoke.artifact`, and `smoke.failure`.
+- Clean-board Docker admin audit removed historical rows before the proof run:
+  19 artifacts, 10 handoffs, 229 runs, 232 jobs, 2 fanouts, 1462 events,
+  70 worker heartbeats, and 16 long services.
+- Docker admin audit passed for every registered goblin type. Representative
+  proof: `example.hello` completed as job
+  `fd4b1513-fa7b-442e-bfd7-3b35b37faba8` / run
+  `549295c3-01b6-47a3-aefd-c233b7740b84`, `example.artifact`
+  completed as job `b57b37e4-ab19-4364-84bc-19555a7aa838` / run
+  `bb83e02d-7839-4f05-a691-264071776aee`,
+  `example.behavior-shell-failure` and `example.controlled-failure` failed
+  readably as expected, and `example.long-hello` probed successfully as service
+  `8eff7f7c-fe02-4874-ae16-7480a05c0867`.
+- Docker WASI proof: `example.wasi-c-hello` completed as job
+  `3b0b34e3-1ffa-4569-8086-cef912bce9e4` / run
+  `4d09a58c-39e1-493b-8faa-ba5539e5956a`, and
+  `example.wasi-rust-hello` completed as job
+  `4150d443-ce36-405b-8461-88d9dbafae57` / run
+  `ee1d32ca-6f67-41c6-830b-b1b1f870fbf7`.
+- Clean-board Helm admin audit removed historical rows before the proof run:
+  26 artifacts, 11 handoffs, 288 runs, 288 jobs, 1788 events,
+  74 worker heartbeats, and 12 long services.
+- Helm admin audit passed for every registered goblin type. Representative
+  proof: `example.hello` completed as job
+  `0dd2157f-03c6-4abb-9c02-d108ef202924` / run
+  `88527bce-97fc-4cbe-8713-4f134f165208`, `example.artifact`
+  completed as job `19af4271-9977-4c1f-a226-445d6a304448` / run
+  `0b3ceaec-4764-4769-a49c-c73badc340f6`,
+  `example.behavior-shell-failure` and `example.controlled-failure` failed
+  readably as expected, and `example.long-hello` probed successfully as service
+  `85405642-c2e7-4c87-89d1-ac9142f94e53`.
+- Helm WASI proof: `example.wasi-c-hello` completed as job
+  `49226ae1-c7c7-44b1-9f2d-78f27d75f91c` / run
+  `ca90b9ae-7278-4e81-a233-8d9ccb0bba99`, and
+  `example.wasi-rust-hello` completed as job
+  `33d495ba-26e6-40c7-abc2-6003328d4fb1` / run
+  `5e087610-47d2-42fa-b2dd-9510996b1109`.
+- Browser admin-console proof launched WASI goblins through the Goblin Lab UI:
+  `example.wasi-c-hello` produced `Hello World from C WASI`, and
+  `example.wasi-rust-hello` produced `Hello World from Rust WASI`.
+- Phase 41 screenshots live at
+  `docs/screenshots/phase-41-docker-admin.png`,
+  `docs/screenshots/phase-41-helm-admin.png`, and
+  `docs/screenshots/phase-41-admin-wasi-ui.png`.
+- Full local CI passed. Local proof remains the required quality gate; GitHub
+  Actions are not required and are not sufficient.
 
 ## Phase 42: Project-Adoptable Alpha Closeout
 

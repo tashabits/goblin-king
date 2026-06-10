@@ -217,6 +217,16 @@ imports, and the React admin reads goblin kinds from the API at runtime after di
 reload. See [Adopter Guide](docs/adopter-guide.md) for the full Docker, Helm,
 validation, result, artifact, and failure inspection path.
 
+To prove the complete adopter path in one local command:
+
+```bash
+goblin-king smoke adopter-project
+```
+
+The smoke command generates a temporary project, adds hello/artifact/controlled-failure
+goblins, validates worker images, schedules them through Docker, inspects results and
+artifacts, and removes its temporary project unless `--keep` is passed.
+
 ## Goblin Container Contract
 
 Every goblin is a contract-compliant OCI/Docker container. Goblin King schedules
