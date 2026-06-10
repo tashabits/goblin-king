@@ -223,6 +223,20 @@ The Helm chart should keep Kubernetes resource policy optional and configurable.
 with existing cluster policy may turn off Goblin King-specific defaults and supply their
 own admission controls, quotas, or network policies.
 
+## Runtime Responsibility Matrix
+
+| Control | Goblin King | Docker runtime | Kubernetes/Helm runtime |
+| --- | --- | --- | --- |
+| Effective policy resolution | Resolves operator defaults, project defaults, and goblin overrides before queueing or launch. | Receives only the resolved effective policy. | Receives only the resolved effective policy. |
+| Worker-visible proof | Persists policy on jobs/runs and emits policy/audit events. | Sets `GOBLIN_EFFECTIVE_RESOURCE_POLICY_JSON` in the worker container. | Sets `GOBLIN_EFFECTIVE_RESOURCE_POLICY_JSON` in the worker container. |
+| CPU/memory | Validates against ceilings. | Maps limits to `--cpus` and `--memory`. | Maps requests/limits to container `resources`. |
+| Process count | Validates against ceilings. | Maps to `--pids-limit`. | Deployment-specific; rely on pod/security policy where available. |
+| Network mode | Validates known policy shape. | Maps explicit mode to `--network`. | Deployment-specific; use NetworkPolicy and service-account controls. |
+| Read-only root and tmpfs | Validates known policy shape. | Maps read-only root and tmpfs paths to Docker flags. | Maps read-only root to `securityContext`; tmpfs-like behavior is deployment-specific. |
+| Timeout and retry | Persists job timeout/retry policy and scheduler outcomes. | Uses Docker stop timeout where applicable. | Maps timeout to Job `activeDeadlineSeconds`. |
+| Artifact/log ceilings | Checks artifact metadata/files after completion where inspectable. | Supplies log max-size options where Docker supports them. | Artifact/log enforcement beyond Job fields is deployment-specific. |
+| Concurrency | Defers over-cap queued jobs and emits events. | No direct runtime mapping. | No direct runtime mapping. |
+
 ## Current Enforcement
 
 The current implementation enforces or records these controls:
@@ -241,6 +255,8 @@ The current implementation enforces or records these controls:
 - Audit and event records for policy validation failures.
 - Docker mappings for CPU, memory, PID, network, read-only root, tmpfs, and log byte
   options where Docker supports those flags.
+- Worker containers receive `GOBLIN_EFFECTIVE_RESOURCE_POLICY_JSON` with the exact
+  resolved policy used for launch.
 - Kubernetes Job mappings for CPU/memory requests/limits, read-only root filesystem, and
   active deadline timeouts.
 - Artifact count and byte ceilings after worker completion when artifact metadata or local
