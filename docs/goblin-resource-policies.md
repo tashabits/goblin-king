@@ -277,6 +277,30 @@ The following remain deployment-specific or future hardening targets:
 - Cloud/provider admission controls, quotas, and policy engines.
 - Object-storage quota enforcement outside the local volume/PVC artifact path.
 
+## Adopter Closeout Checklist
+
+For a project adopting Goblin King, the resource-policy path is:
+
+1. Put operator-wide defaults and ceilings in `goblin-resource-policies.json`.
+2. Put repeated project-owned defaults in `goblin-king-project.json` under
+   `defaults.resources`.
+3. Put only real exceptions in each inline goblin's `resources` block or in
+   `goblins.<kind>` inside the operator policy file.
+4. Run `goblin-king project validate --project goblin-king-project.json` to prove the
+   config, default resources, per-goblin overrides, and ceilings are coherent.
+5. Run `goblin-king resource-policies inspect <kind> --policies <path>` when you need
+   to show the resolved policy and runtime mappings before a deployment.
+6. Validate worker images before scheduling; resource policy validity feeds into the
+   mandatory container validation gate.
+7. Inspect job/run detail, events, audits, and the admin run panels after execution to
+   confirm the effective policy that actually launched.
+
+When a job stays queued with a `resource_policy.concurrency_deferred` event, check
+`concurrency.max_running` first for per-kind pressure and
+`concurrency.max_project_running` second for project-wide pressure. The scheduler does
+not fail those jobs just because a limit is full; it leaves them queued until capacity is
+available.
+
 ## Validation And Proof
 
 Resource-policy proof should include the same local-first evidence used throughout the
