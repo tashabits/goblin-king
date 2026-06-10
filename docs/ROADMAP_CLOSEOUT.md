@@ -44,6 +44,9 @@ hardening into the cleanup and container-first worker roadmap.
 - Phase 25-32: language-agnostic docs, examples, WASI wrappers, runtime proof,
   validation, UI/docs updates, and closeout recorded in
   `docs/language-agnostic-closeout.md`.
-- Phase 33: per-goblin resource policy documentation in
-  `docs/goblin-resource-policies.md`; runtime-level CPU/memory/network/artifact ceiling
-  enforcement remains future hardening work.
+- `roadmap-proof-preflight`: proof-table and roadmap hardening plus the repeatable
+  Docker/Helm admin runtime audit procedure.
+- Phase 34: runtime resource policy enforcement for the gaps documented in
+  `docs/goblin-resource-policies.md`.
+- Phases 35-42: project-adoptable alpha work in
+  `docs/project-adoptable-roadmap.md`.

@@ -105,6 +105,13 @@ kinds after reload:
 
 ![Host project discovery proof](images/admin/admin-project-discovery.png)
 
+## Run The Full Runtime Audit
+
+Before roadmap PRs, run the full Docker and Helm admin runtime audit described in
+[Admin Runtime Audit](admin-runtime-audit.md). The audit uses the browser to spawn every
+registered goblin kind from both admin consoles, captures screenshots, and records the
+job/run IDs needed in the PR body.
+
 ## Promote Images And Record Deployments
 
 Use **Image Promotion & Deploy** to create a cloud-neutral proof trail for releases.

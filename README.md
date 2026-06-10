@@ -17,6 +17,7 @@ needs a cluster deployment.
 - [Quick Start](#quick-start)
 - [Goblin Container Contract](#goblin-container-contract)
 - [Worker Images](#worker-images)
+- [Admin Runtime Audit](#admin-runtime-audit)
 - [Image Promotion And Deployment Proof](#image-promotion-and-deployment-proof)
 - [Capabilities](#capabilities)
 - [Documentation](#documentation)
@@ -325,6 +326,31 @@ make admin-up
 make admin-smoke
 ```
 
+## Admin Runtime Audit
+
+Before release-oriented PRs, run the full admin runtime audit in both Docker and Helm.
+The audit opens the React admin, spawns every registered goblin kind, captures job/run
+IDs, and records screenshots for the PR proof.
+
+Use [Admin Runtime Audit](docs/admin-runtime-audit.md) for the complete browser
+checklist and table helper. The short version:
+
+```bash
+python -m goblin_king.cli workers build --images demo-images.json
+docker compose --profile api --profile admin --profile scheduler up -d --build redis api admin scheduler long-hello
+python scripts/admin_runtime_audit.py --base-url http://127.0.0.1:8080 --token local-dev-token
+```
+
+For Helm, open `http://goblin-king.local/admin`, use the same browser checklist, then
+collect the table with:
+
+```bash
+python scripts/admin_runtime_audit.py \
+  --base-url http://goblin-king.local \
+  --token local-dev-token \
+  --long-service-url http://goblin-king-long-hello
+```
+
 When the API runs in Docker Compose, the long service is reached at
 `http://long-hello:8080` from inside the API container. Override
 `LONG_HELLO_URL=http://localhost:8090` only when probing from a host-run API process.
@@ -507,6 +533,7 @@ Goblin King provides:
 | [Goblin King Scheduler Plan](docs/goblin-king-plan.md) | Architecture notes and roadmap history for maintainers. |
 | [User Guide](docs/USER_GUIDE.md) | End-to-end operator and developer guide for Docker, admin UI, sample goblins, API, scheduler, and optional Helm deployment. |
 | [Admin Guide](docs/ADMIN_GUIDE.md) | Screenshot walkthrough for logging in, spawning goblins, watching tasks, probing long services, reading events, and cleaning old rows. |
+| [Admin Runtime Audit](docs/admin-runtime-audit.md) | Required Docker and Helm browser audit for proving every registered goblin kind works from the admin consoles. |
 | [Goblin Container Contract](docs/goblin-container-contract.md) | Canonical language-agnostic worker container contract. |
 | [What Is A Goblin?](docs/what-is-a-goblin.md) | Plain-language model of goblins as short-lived container tasks. |
 | [Writing Goblins](docs/writing-goblins.md) | Practical steps for building a contract-compliant goblin. |

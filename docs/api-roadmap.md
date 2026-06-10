@@ -119,6 +119,21 @@ target phase below.
 - Documentation and screenshot coverage for Phase 16-21 production proof surfaces.
 - Explicit deferred item list for future phases.
 
+## Planned In Phase 34
+
+- API, CLI, admin, audit, and event visibility for effective per-run resource policies.
+- Resource-policy validation failures surfaced before queueing or launching unsafe work.
+
+## Planned In Phases 35-42
+
+- Project-defined goblin configuration for adopting projects.
+- Project-config validation and bring-your-own-image contract validation.
+- CLI/API/admin scheduling and inspection for goblins defined outside Goblin King
+  internals.
+- `v1alpha1` public contract/config boundaries and project-adoptable alpha closeout.
+- Every PR in this range must include the Docker and Helm browser runtime audit from
+  `docs/admin-runtime-audit.md`.
+
 ## Later Infrastructure Follow-Up
 
 - External webhook callbacks.
