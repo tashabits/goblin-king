@@ -702,8 +702,25 @@ sufficient.
 All Phase 43-50 proof remains local. GitHub Actions are not required and are not
 sufficient.
 
-## Deferred After Phase 50
+### Phase 51: Project And Goblin Concurrency Limits
 
+- Branch: `phase-51-project-goblin-concurrency`.
+- PR title: `Phase 51 project and goblin concurrency limits`.
+- Status: implemented.
+- Keep `concurrency.max_running` as the per-kind active-job cap.
+- Add `concurrency.max_project_running` as a project-wide active-job cap.
+- Defer over-cap jobs by leaving them queued with a visible `last_error` reason.
+- Emit `resource_policy.concurrency_deferred` events with scope, active count, limit, and
+  reason.
+- Expose deferral state through existing CLI/API/admin job detail surfaces.
+
+All Phase 43-51 proof remains local. GitHub Actions are not required and are not
+sufficient.
+
+## Deferred After Phase 51
+
+- After Phase 53 is merged and `main` is synced, create a GitHub release from `main`
+  summarizing the completed layered resource-policy work across Phases 49-53.
 - Public PyPI release hardening.
 - Full production hardening for untrusted multi-tenant execution.
 - Secret allow-lists, provider-specific admission controls, object-storage quota

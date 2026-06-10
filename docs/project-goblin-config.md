@@ -125,6 +125,12 @@ the runtime policy as operator defaults, then project defaults, then the goblin 
 the final effective policy is persisted on jobs/runs and visible in API, CLI, and admin
 run detail. Unknown resource fields fail validation so typos do not silently fall through.
 
+Use `concurrency.max_running` for a per-goblin-kind cap and
+`concurrency.max_project_running` for a project-wide active-job cap. When either cap is
+full, the scheduler leaves the job queued, records a `resource_policy.concurrency_deferred`
+event, and puts the reason in `last_error` so CLI/API/admin views can explain why the job
+has not launched yet.
+
 ## Validate
 
 ```bash
