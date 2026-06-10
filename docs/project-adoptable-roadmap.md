@@ -201,9 +201,9 @@ Proof:
 
 - Branch: `phase-38-external-project-scheduling`.
 - PR title: `Phase 38 external project scheduling and run inspection`.
-- Status: planned.
+- Status: implemented.
 
-Make sure project-defined goblins can be scheduled and inspected cleanly through
+Made sure project-defined goblins can be scheduled and inspected cleanly through
 CLI, API, and admin surfaces.
 
 Goals:
@@ -215,25 +215,51 @@ Goals:
 - Show run status, result JSON, log references, artifacts, and whether the
   goblin came from built-in examples or project config.
 
-Suggested commands, adjusted to existing style:
+Commands:
 
 ```bash
-goblin-king run invoice-renderer --input examples/invoice.json
-goblin-king runs list
-goblin-king runs show <run-id>
-goblin-king runs result <run-id>
-goblin-king artifacts list <run-id>
-goblin-king artifacts download <run-id> invoice.pdf
+python -m goblin_king.cli jobs submit project.inline.hello \
+  --project examples/adopting-project/goblin-king-project.json \
+  --input examples/input.json \
+  --runtime docker
+
+python -m goblin_king.cli schedules add project.inline.hello \
+  --project examples/adopting-project/goblin-king-project.json \
+  --input examples/input.json \
+  --cron "* * * * *" \
+  --due-now
+
+python -m goblin_king.cli scheduler run-once \
+  --project examples/adopting-project/goblin-king-project.json
+
+python -m goblin_king.cli runs show <run-id> --with-job
 ```
 
 Proof:
 
 - A project-defined goblin runs successfully through Docker.
-- Run details show kind and project source.
-- Result JSON and artifacts are inspectable.
-- Failed goblin runs are understandable.
-- API and admin surfaces work where already supported.
-- Full local CI passes.
+- Job metadata records `goblin_source` and the effective `goblin_definition`.
+- `runs show --with-job` displays run data plus source job metadata.
+- Project-defined schedules can be created and materialized by the scheduler.
+- API-created project goblin jobs preserve source metadata.
+- Docker admin audit passed for every registered demo goblin. Representative
+  proof: `example.hello` completed as job
+  `ece9d635-5827-4b01-a834-b11d826ec99a` / run
+  `c05c538d-97a0-440b-b036-f59211f291af`, `example.artifact`
+  completed as job `730b3845-e4d1-459b-ad1e-46bfd563dcc5` / run
+  `b51ab9a6-a0ea-4db1-88eb-3739ac5d1a0c`, controlled failures failed
+  readably as expected, and `example.long-hello` returned changing timestamps
+  for service `ca0b12ea-061d-48aa-99d2-b84f8756752f`.
+- Helm admin audit passed for every registered demo goblin. Representative
+  proof: `example.hello` completed as job
+  `c45fc9a6-4828-4c7b-a427-2ffa2a9d4aa5` / run
+  `8cc170cb-311e-4821-b738-4a9830518d59`, `example.artifact`
+  completed as job `52db4185-a0fe-40bd-ba6e-34a4339b290b` / run
+  `e606cba3-f35d-4505-8cf7-01e40d302fff`, controlled failures failed
+  readably as expected, and `example.long-hello` returned changing timestamps
+  for service `46e94aac-e1e4-4d5a-af92-3c67de18520c`.
+- Phase 38 screenshots live at `docs/screenshots/phase-38-docker-admin.png`
+  and `docs/screenshots/phase-38-helm-admin.png`.
 
 ## Phase 39: Stable v1alpha1 Contract And Public API Boundaries
 

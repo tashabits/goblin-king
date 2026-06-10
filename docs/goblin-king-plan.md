@@ -772,7 +772,7 @@ Phase sequence:
 - Phase 35: project-adoptable goblin configuration. Implemented.
 - Phase 36: bring-your-own-goblin validation. Implemented.
 - Phase 37: project template and golden path quickstart. Implemented.
-- Phase 38: external project scheduling and run inspection.
+- Phase 38: external project scheduling and run inspection. Implemented.
 - Phase 39: stable `v1alpha1` contract and public API boundaries.
 - Phase 40: adopter documentation pass.
 - Phase 41: adopter smoke suite.
@@ -786,11 +786,10 @@ as the quality gate.
 The README is the user manual. This roadmap file is where unfinished or future work is
 tracked.
 
-- Phases 38-42 project-adoptable alpha work remains outstanding until implemented.
+- Phases 39-42 project-adoptable alpha work remains outstanding until implemented.
 - Full browser-proven Docker and Helm admin runtime audit for every roadmap PR.
 - Secret allow-lists, provider-specific admission controls, object-storage quota
   enforcement, and deeper policy engines.
-- CLI/API/admin scheduling and inspection for goblins defined only by project config.
 - Explicit `v1alpha1` stability labels for the container contract and project config.
 - End-to-end adopter smoke suite.
 - Public PyPI/package-publication hardening.

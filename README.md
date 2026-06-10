@@ -151,6 +151,23 @@ python -m goblin_king.cli workers validate --project goblin-king-project.json --
 python -m goblin_king.cli workers validate --project goblin-king-project.json --input inputs/artifact.json --kind myproject.artifact --build --require-success
 ```
 
+Project-defined goblins can also be submitted, scheduled, and inspected from the CLI:
+
+```bash
+python -m goblin_king.cli jobs submit myproject.hello \
+  --project goblin-king-project.json \
+  --input inputs/hello.json \
+  --runtime docker
+
+python -m goblin_king.cli schedules add myproject.artifact \
+  --project goblin-king-project.json \
+  --input inputs/artifact.json \
+  --cron "* * * * *" \
+  --due-now
+
+python -m goblin_king.cli runs show <run-id> --with-job
+```
+
 Project integration settings live in `goblin-king-project.json` and can combine JSON
 registry files with installed Python package entry points from `goblin_king.goblins`.
 After deploying a new project plugin or worker image map, reload discovery through the
