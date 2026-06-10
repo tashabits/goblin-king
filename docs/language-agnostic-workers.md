@@ -17,6 +17,22 @@ Any runtime is acceptable when it can:
 That includes Go, Rust, Node.js, Java, .NET/C#, Ruby, PHP, shell, Python,
 container-wrapped WASI/WebAssembly, and other container-packaged runtimes.
 
+## Minimal Hello Examples
+
+The `examples/goblins/hello-*` folders contain minimal hello-world workers for
+Go, Rust, Node.js, Java, .NET/C#, Ruby, PHP, shell, and Python. Each folder is
+self-contained:
+
+- `Dockerfile` builds the worker image.
+- `README.md` gives the local build command.
+- Worker source reads the mounted input/context JSON paths.
+- Worker source writes a valid Goblin result envelope to `GOBLIN_RESULT_PATH`.
+- Worker source prints a friendly stdout line for local proof.
+
+These examples are intentionally not registered in the main example registry yet.
+Phase 28 wires cross-language workers into Goblin King runtime proof after the
+WASI/container-wrapped examples are in place.
+
 ## Optional Python Helpers
 
 Python helpers are useful for:

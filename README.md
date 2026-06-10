@@ -173,6 +173,11 @@ environment variables, mounted input/context/result/artifact paths, result envel
 stdout/stderr behavior, progress/events, heartbeats, exit codes, timeouts,
 cancellation, security expectations, and the container-wrapped WASI/WebAssembly model.
 
+Minimal contract-only hello goblins live under `examples/goblins/hello-*` for Go,
+Rust, Node.js, Java, .NET/C#, Ruby, PHP, shell, and Python. These are standalone
+container examples first; the Goblin King registry/runtime proof for them lands in
+the later cross-language runtime phase.
+
 For host-project deployment integration, see
 `examples/adopting-project/`. It includes:
 
