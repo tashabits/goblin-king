@@ -105,6 +105,10 @@ kinds after reload:
 
 ![Host project discovery proof](images/admin/admin-project-discovery.png)
 
+For a complete adopter stack flow that starts Compose, mounts project config, validates
+project goblins, submits a CLI job, and inspects the result in admin, see
+[Adopter Admin Dev/Test Stack](adopter-admin-dev-stack.md).
+
 ## Run The Full Runtime Audit
 
 Before roadmap PRs, run the full Docker and Helm admin runtime audit described in

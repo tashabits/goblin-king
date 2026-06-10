@@ -211,6 +211,9 @@ Then open the admin at `http://127.0.0.1:8080/admin`, log in with
 `local-dev-token`, open **Discovery**, and reload. Project goblins should appear in
 Goblin Lab without a frontend rebuild.
 
+For the full local admin test stack flow, including Docker socket warnings and CLI/admin
+proof commands, see [Adopter Admin Dev/Test Stack](adopter-admin-dev-stack.md).
+
 ![Docker admin adopter proof](screenshots/phase-39-docker-admin.png)
 
 ## Run With Helm

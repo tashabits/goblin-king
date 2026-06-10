@@ -769,6 +769,7 @@ Goblin King provides:
 | [Goblin Resource Policies](docs/goblin-resource-policies.md) | Per-goblin resource expectations, defaults, ceilings, and Docker/Kubernetes mapping. |
 | [Using Goblin King As Your Project Scheduler](docs/using-goblin-king-as-a-project-scheduler.md) | Practical guide for defining project background tasks as validated, scheduled goblin containers. |
 | [Using Goblin King From A Vendored Checkout](docs/using-goblin-king-from-a-vendored-checkout.md) | Submodule, subtree, and local path dependency workflow for host projects. |
+| [Adopter Admin Dev/Test Stack](docs/adopter-admin-dev-stack.md) | Local Docker Compose/admin workflow for testing project-defined goblins. |
 | [Project Goblin Config](docs/project-goblin-config.md) | Versioned `GoblinProject` config for defining container goblins without editing Goblin King source. |
 | [Project Template Quickstart](docs/project-template-quickstart.md) | Copy-paste path for generating, validating, and proving a standalone adopter project. |
 | [Language-Agnostic Closeout](docs/language-agnostic-closeout.md) | Audit summary for the container-first worker phases and remaining deferrals. |
