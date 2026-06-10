@@ -10,7 +10,6 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse, urlunparse
 from uuid import uuid4
 
 from redis import Redis
@@ -24,6 +23,15 @@ from goblin_king.events import (
     worker_heartbeat_key,
 )
 from goblin_king.resource_policies import ResourcePolicy
+from goblin_king.runtime_helpers import (
+    artifact_policy_error,
+    container_redis_url,
+    current_kubernetes_namespace,
+    docker_policy_args,
+    kubernetes_clients,
+    kubernetes_name,
+    kubernetes_policy_fields,
+)
 from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
 
@@ -183,7 +191,7 @@ class DockerRuntime:
         self._record_worker_heartbeats(context)
         result = self._load_result(context.run_id, result_path)
         if result is not None:
-            artifact_error = _artifact_policy_error(
+            artifact_error = artifact_policy_error(
                 result,
                 resource_policy,
                 Path(context.artifact_root),
@@ -274,9 +282,9 @@ class DockerRuntime:
             "-e",
             f"GOBLIN_ARTIFACT_ROOT={artifact_container_root}",
             "-e",
-            f"GOBLIN_REDIS_URL={_container_redis_url(self.redis_url)}",
+            f"GOBLIN_REDIS_URL={container_redis_url(self.redis_url)}",
             "-e",
-            f"GOBLIN_HEARTBEAT_REDIS_URL={_container_redis_url(self.redis_url)}",
+            f"GOBLIN_HEARTBEAT_REDIS_URL={container_redis_url(self.redis_url)}",
             "-e",
             f"GOBLIN_HEARTBEAT_CHANNEL={DEFAULT_HEARTBEAT_CHANNEL}",
             "-e",
@@ -285,7 +293,7 @@ class DockerRuntime:
             f"GOBLIN_HEARTBEAT_INTERVAL_SECONDS={self.heartbeat_interval_seconds}",
         ]
         if resource_policy is not None:
-            command.extend(_docker_policy_args(resource_policy))
+            command.extend(docker_policy_args(resource_policy))
         if data_volume:
             data_root = self.run_root.resolve().parent
             run_rel = run_dir.relative_to(data_root).as_posix()
@@ -402,7 +410,7 @@ class KubernetesRuntime:
     ) -> None:
         self.workers = workers
         self.redis_url = redis_url
-        self.namespace = namespace or _current_kubernetes_namespace()
+        self.namespace = namespace or current_kubernetes_namespace()
         self.image_pull_policy = image_pull_policy
         self.result_forwarder_image = result_forwarder_image
         self.event_bus = event_bus
@@ -426,11 +434,11 @@ class KubernetesRuntime:
             return GoblinResult.failed(error=str(error))
 
         try:
-            batch, core = _kubernetes_clients()
+            batch, core = kubernetes_clients()
         except Exception as error:  # pragma: no cover - depends on cluster config
             return GoblinResult.failed(error=f"kubernetes runtime unavailable: {error}")
 
-        name = _kubernetes_name(f"gk-{definition.kind}-{context.run_id}")
+        name = kubernetes_name(f"gk-{definition.kind}-{context.run_id}")
         config_name = f"{name}-input"
         worker_id = f"k8s-worker-{context.run_id}"
         self._emit_worker_event("worker.started", context, worker_id, {"kind": definition.kind})
@@ -541,7 +549,7 @@ class KubernetesRuntime:
             ],
         }
         if resource_policy is not None:
-            worker_container.update(_kubernetes_policy_fields(resource_policy))
+            worker_container.update(kubernetes_policy_fields(resource_policy))
         spec: dict[str, Any] = {
             "backoffLimit": 0,
             "template": {
@@ -720,143 +728,6 @@ class KubernetesRuntime:
             core.delete_namespaced_config_map(name=config_name, namespace=self.namespace)
         except Exception:
             pass
-
-
-def _container_redis_url(redis_url: str) -> str:
-    """Translate host-local Redis URLs into a Docker-container-reachable URL."""
-    parsed = urlparse(redis_url)
-    if parsed.hostname not in {"localhost", "127.0.0.1"}:
-        return redis_url
-    netloc = parsed.netloc.replace(parsed.hostname, "host.docker.internal", 1)
-    return urlunparse(parsed._replace(netloc=netloc))
-
-
-def _docker_policy_args(policy: ResourcePolicy) -> list[str]:
-    """Translate supported policy fields into docker run arguments."""
-    args: list[str] = []
-    if policy.cpu.limit:
-        cpu_limit = (
-            str(float(policy.cpu.limit[:-1]) / 1000)
-            if policy.cpu.limit.endswith("m")
-            else policy.cpu.limit
-        )
-        args.extend(["--cpus", cpu_limit])
-    if policy.memory.limit:
-        args.extend(["--memory", _docker_memory_quantity(policy.memory.limit)])
-    if policy.process.pids_limit is not None:
-        args.extend(["--pids-limit", str(policy.process.pids_limit)])
-    if policy.network.mode:
-        args.extend(["--network", policy.network.mode])
-    if policy.filesystem.read_only_root:
-        args.append("--read-only")
-    for tmpfs_path in policy.filesystem.tmpfs:
-        args.extend(["--tmpfs", tmpfs_path])
-    if policy.logs.max_bytes is not None:
-        args.extend(["--log-opt", f"max-size={policy.logs.max_bytes}"])
-    return args
-
-
-def _docker_memory_quantity(value: str) -> str:
-    """Normalize Kubernetes-style memory units into Docker CLI-friendly units."""
-    replacements = {
-        "Ki": "k",
-        "Mi": "m",
-        "Gi": "g",
-        "Ti": "t",
-    }
-    for suffix, docker_suffix in replacements.items():
-        if value.endswith(suffix):
-            return f"{value.removesuffix(suffix)}{docker_suffix}"
-    return value
-
-
-def _kubernetes_policy_fields(policy: ResourcePolicy) -> dict[str, Any]:
-    """Translate supported policy fields into Kubernetes container fields."""
-    fields: dict[str, Any] = {}
-    requests: dict[str, str] = {}
-    limits: dict[str, str] = {}
-    if policy.cpu.request:
-        requests["cpu"] = policy.cpu.request
-    if policy.memory.request:
-        requests["memory"] = policy.memory.request
-    if policy.cpu.limit:
-        limits["cpu"] = policy.cpu.limit
-    if policy.memory.limit:
-        limits["memory"] = policy.memory.limit
-    if requests or limits:
-        fields["resources"] = {}
-        if requests:
-            fields["resources"]["requests"] = requests
-        if limits:
-            fields["resources"]["limits"] = limits
-    if policy.filesystem.read_only_root:
-        fields["securityContext"] = {"readOnlyRootFilesystem": True}
-    return fields
-
-
-def _artifact_policy_error(
-    result: GoblinResult,
-    policy: ResourcePolicy | None,
-    artifact_root: Path,
-) -> str | None:
-    """Return an artifact policy violation message for result metadata, if any."""
-    if policy is None:
-        return None
-    max_files = policy.filesystem.artifact_max_files
-    if max_files is not None and len(result.artifacts) > max_files:
-        return f"artifact file count exceeds policy: {len(result.artifacts)} > {max_files}"
-    max_bytes = policy.filesystem.artifact_max_bytes
-    if max_bytes is None:
-        return None
-    total = 0
-    for artifact in result.artifacts:
-        size = result.metrics.get(f"artifact.{artifact.name}.bytes")
-        if isinstance(size, int | float):
-            total += int(size)
-            continue
-        if artifact.uri.startswith("file://"):
-            path = Path(artifact.uri.removeprefix("file://"))
-        else:
-            path = Path(artifact.uri)
-        if not path.is_absolute():
-            path = artifact_root / path
-        try:
-            resolved = path.resolve()
-            resolved.relative_to(artifact_root.resolve())
-        except ValueError:
-            continue
-        if resolved.is_file():
-            total += resolved.stat().st_size
-    if total > max_bytes:
-        return f"artifact bytes exceed policy: {total} > {max_bytes}"
-    return None
-
-
-def _current_kubernetes_namespace() -> str:
-    """Return the in-cluster namespace, falling back to default for local tests."""
-    namespace_path = Path("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
-    if namespace_path.exists():
-        return namespace_path.read_text(encoding="utf-8").strip()
-    return os.environ.get("GOBLIN_KING_K8S_NAMESPACE", "default")
-
-
-def _kubernetes_clients() -> tuple[Any, Any]:
-    """Create Kubernetes API clients using in-cluster config or local kubeconfig."""
-    from kubernetes import client, config
-
-    try:
-        config.load_incluster_config()
-    except config.ConfigException:
-        config.load_kube_config()
-    return client.BatchV1Api(), client.CoreV1Api()
-
-
-def _kubernetes_name(value: str) -> str:
-    """Normalize a run-specific value into a valid Kubernetes object name."""
-    lowered = "".join(character if character.isalnum() else "-" for character in value.lower())
-    normalized = "-".join(part for part in lowered.split("-") if part)
-    return normalized[:63].strip("-") or "goblin-worker"
-
 
 def new_run_context(job_id: str, kind: str, attempt: int = 1) -> GoblinContext:
     """Create a run context shared by CLI and scheduler runtime paths."""

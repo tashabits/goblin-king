@@ -29,6 +29,15 @@ work less cramped without moving public adoption boundaries.
 | Row mapping | Row-to-contract conversion helpers lived at the bottom of `store.py`. | `src/goblin_king/store_rows.py` owns deterministic row mapping and datetime coercion. |
 | Public store imports | `SQLiteStore` and `DEFAULT_DB_PATH` were imported from `goblin_king.store`. | The same imports continue to work; the split is internal only. |
 
+## Cleanup 03 API, Runtime, And CLI Split
+
+| Area | Before | After |
+| --- | --- | --- |
+| API artifact helpers | Artifact path safety, storage status, and cleanup logic lived at the bottom of `api.py`. | `src/goblin_king/api_artifacts.py` owns artifact helper logic used by API routes. |
+| API schedule helpers | Schedule create validation and cron/timezone checks lived in `api.py`. | `src/goblin_king/api_schedules.py` owns schedule request conversion and validation. |
+| Runtime policy helpers | Docker/Kubernetes resource translation, artifact policy checking, and Kubernetes naming/client helpers lived in `runtime.py`. | `src/goblin_king/runtime_helpers.py` owns runtime helper logic while runtime adapter classes remain in `runtime.py`. |
+| CLI loading helpers | Registry, worker, project, policy, input, and validation-output helpers lived at the bottom of `cli.py`. | `src/goblin_king/cli_support.py` owns CLI support helpers while command functions stay in `cli.py`. |
+
 ## Stable Boundary
 
 No public imports were changed. Adopting projects should continue using the root

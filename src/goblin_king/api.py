@@ -5,22 +5,26 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
 from pathlib import Path
 from threading import RLock
 from typing import Any
 from urllib import error as urlerror
 from urllib import request as urlrequest
 from uuid import uuid4
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from croniter import CroniterBadCronError, croniter
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, Security, WebSocket
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from redis import Redis
 from redis.exceptions import RedisError
 
+from goblin_king.api_artifacts import (
+    artifact_file_path,
+    artifact_storage_status,
+)
+from goblin_king.api_artifacts import (
+    cleanup_artifact_files as cleanup_artifact_files_for_store,
+)
 from goblin_king.api_models import (
     ArtifactCleanupRequest,
     ArtifactCleanupResponse,
@@ -51,6 +55,11 @@ from goblin_king.api_models import (
     TokenCreateResponse,
     UserCreateRequest,
 )
+from goblin_king.api_schedules import (
+    schedule_from_request,
+    validate_cron,
+    validate_timezone,
+)
 from goblin_king.api_settings import ApiSettings
 from goblin_king.auth import (
     AuthError,
@@ -66,7 +75,6 @@ from goblin_king.auth import (
     require_project_access,
 )
 from goblin_king.contracts import (
-    ArtifactRecord,
     DeploymentRecord,
     HeartbeatRecord,
     ImagePromotionRecord,
@@ -453,7 +461,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         """Return status for the configured volume/PVC artifact root."""
         project_id = project_for_request(principal)
         return ArtifactStorageStatusResponse.model_validate(
-            _artifact_storage_status(state, project_id=project_id)
+            artifact_storage_status(state.store, state.artifact_root, project_id=project_id)
         )
 
     @app.post(
@@ -468,7 +476,12 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     ) -> ArtifactCleanupResponse:
         """Preview or delete artifact files from the configured volume/PVC."""
         project_id = project_for_request(principal, request.project_id)
-        result = _cleanup_artifact_files(state, request, project_id=project_id)
+        result = cleanup_artifact_files_for_store(
+            state.store,
+            state.artifact_root,
+            request,
+            project_id=project_id,
+        )
         action = "artifacts.cleanup.preview" if request.dry_run else "artifacts.cleanup"
         audit(
             state.store,
@@ -1399,7 +1412,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
     ) -> ScheduleRecord:
         """Create one recurring schedule."""
         project_id = project_for_request(principal, request.project_id)
-        schedule = _schedule_from_request(state.registry, request).model_copy(
+        schedule = schedule_from_request(state.registry, request).model_copy(
             update={"project_id": project_id}
         )
         try:
@@ -1457,8 +1470,8 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         project_for_request(principal, schedule.project_id)
 
         update = request.model_dump(exclude_unset=True)
-        _validate_cron(update.get("cron", schedule.cron))
-        _validate_timezone(update.get("timezone", schedule.timezone))
+        validate_cron(update.get("cron", schedule.cron))
+        validate_timezone(update.get("timezone", schedule.timezone))
         changed_timing = any(key in update for key in {"cron", "timezone", "enabled"})
         patched = schedule.model_copy(update=update)
         if changed_timing:
@@ -1654,46 +1667,12 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         artifact = next((item for item in artifacts if item.name == artifact_name), None)
         if artifact is None:
             raise HTTPException(status_code=404, detail=f"artifact not found: {artifact_name}")
-        path = _artifact_file_path(state.artifact_root, artifact)
+        path = artifact_file_path(state.artifact_root, artifact)
         if path is None or not path.exists() or not path.is_file():
             raise HTTPException(status_code=404, detail=f"artifact file not found: {artifact_name}")
         return FileResponse(path, media_type=artifact.media_type, filename=artifact.name)
 
     return app
-
-
-def _schedule_from_request(
-    registry: GoblinRegistry,
-    request: ScheduleCreateRequest,
-) -> ScheduleRecord:
-    """Validate and convert a schedule create body into a persisted record."""
-    try:
-        definition = registry.get(request.kind)
-    except RegistryError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    _validate_cron(request.cron)
-    _validate_timezone(request.timezone)
-    created_at = utc_now()
-    provisional = ScheduleRecord(
-        id=str(uuid4()),
-        kind=definition.kind,
-        input=request.input,
-        cron=request.cron,
-        timezone=request.timezone,
-        enabled=request.enabled,
-        priority=request.priority,
-        created_at=created_at,
-        next_run_at=created_at,
-        max_retries=request.max_retries,
-        timeout_seconds=request.timeout_seconds,
-    )
-    return provisional.model_copy(
-        update={
-            "next_run_at": (
-                created_at if request.due_now else next_run_after(provisional, created_at)
-            )
-        }
-    )
 
 
 def _record_runtime_termination(
@@ -1776,137 +1755,3 @@ def _record_policy_rejection(
         resource_type="resource_policy",
         detail={"kind": kind, "error": error},
     )
-
-
-def _validate_cron(value: str) -> None:
-    """Raise an HTTP 422 for invalid cron expressions."""
-    try:
-        croniter(value)
-    except (CroniterBadCronError, ValueError) as error:
-        raise HTTPException(status_code=422, detail=f"invalid cron expression: {value}") from error
-
-
-def _validate_timezone(value: str) -> None:
-    """Raise an HTTP 422 for unknown timezones."""
-    try:
-        ZoneInfo(value)
-    except ZoneInfoNotFoundError as error:
-        raise HTTPException(status_code=422, detail=f"unknown timezone: {value}") from error
-
-
-def _artifact_file_path(root: Path, artifact: ArtifactRecord) -> Path | None:
-    """Resolve a file artifact only when it stays inside the configured artifact root."""
-    if artifact.uri.startswith("file://"):
-        candidate = Path(artifact.uri.removeprefix("file://"))
-    elif "://" in artifact.uri:
-        return None
-    else:
-        candidate = Path(artifact.uri)
-    if not candidate.is_absolute():
-        candidate = root / candidate
-    try:
-        resolved = candidate.resolve()
-        resolved.relative_to(root)
-    except ValueError:
-        return None
-    return resolved
-
-
-def _artifact_storage_status(
-    state: AppState,
-    *,
-    project_id: str | None,
-) -> dict[str, Any]:
-    """Return volume/PVC artifact root status and scoped metadata counts."""
-    root = state.artifact_root
-    files = _artifact_files_under(root)
-    return {
-        "root": str(root),
-        "exists": root.exists(),
-        "writable": _path_is_writable(root),
-        "file_count": len(files),
-        "total_bytes": sum(path.stat().st_size for path in files),
-        "metadata_count": len(state.store.list_artifacts_for_project(project_id)),
-    }
-
-
-def _cleanup_artifact_files(
-    state: AppState,
-    request: ArtifactCleanupRequest,
-    *,
-    project_id: str | None,
-) -> dict[str, Any]:
-    """Select and optionally delete artifact files from the configured volume/PVC."""
-    candidates = _project_artifact_paths(state, project_id=project_id)
-    selected = _select_artifact_cleanup_candidates(
-        candidates,
-        max_age_seconds=request.max_age_seconds,
-        max_total_bytes=request.max_total_bytes,
-    )
-    bytes_selected = sum(path.stat().st_size for path in selected if path.exists())
-    if not request.dry_run:
-        for path in selected:
-            try:
-                path.unlink()
-            except FileNotFoundError:
-                continue
-    return {
-        "dry_run": request.dry_run,
-        "deleted": not request.dry_run,
-        "root": str(state.artifact_root),
-        "files_selected": len(selected),
-        "bytes_selected": bytes_selected,
-        "files": [str(path.relative_to(state.artifact_root)) for path in selected],
-    }
-
-
-def _project_artifact_paths(state: AppState, *, project_id: str | None) -> list[Path]:
-    """Resolve scoped artifact metadata into safe local files."""
-    paths: list[Path] = []
-    for artifact in state.store.list_artifacts_for_project(project_id):
-        path = _artifact_file_path(state.artifact_root, artifact)
-        if path is not None and path.exists() and path.is_file():
-            paths.append(path)
-    return sorted(set(paths), key=lambda item: item.stat().st_mtime)
-
-
-def _select_artifact_cleanup_candidates(
-    paths: list[Path],
-    *,
-    max_age_seconds: int | None,
-    max_total_bytes: int | None,
-) -> list[Path]:
-    """Apply age and volume-size cleanup policies to artifact files."""
-    selected: set[Path] = set()
-    now = datetime.now().timestamp()
-    if max_age_seconds is not None:
-        selected.update(
-            path for path in paths if now - path.stat().st_mtime >= max_age_seconds
-        )
-    if max_total_bytes is not None:
-        total = sum(path.stat().st_size for path in paths)
-        for path in paths:
-            if total <= max_total_bytes:
-                break
-            selected.add(path)
-            total -= path.stat().st_size
-    return sorted(selected, key=lambda item: item.stat().st_mtime)
-
-
-def _artifact_files_under(root: Path) -> list[Path]:
-    """Return files below the artifact root without following external references."""
-    if not root.exists():
-        return []
-    return [path for path in root.rglob("*") if path.is_file()]
-
-
-def _path_is_writable(root: Path) -> bool:
-    """Return whether the artifact root can accept files."""
-    try:
-        root.mkdir(parents=True, exist_ok=True)
-        probe = root / ".goblin-king-write-probe"
-        probe.write_text("ok", encoding="utf-8")
-        probe.unlink()
-        return True
-    except OSError:
-        return False
