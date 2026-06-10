@@ -46,14 +46,14 @@ receipt, not a user guide.
 | 36 | Bring-your-own-goblin validation | `workers validate --project`, `workers validate-image`, prebuilt image checks, project-config validation dispatch, missing result JSON proof, invalid result JSON proof, missing image proof, tests, docs, Docker/Helm admin audits, and screenshots at `docs/screenshots/phase-36-docker-admin.png` and `docs/screenshots/phase-36-helm-admin.png` were added. | Deeper conformance certification remains deferred beyond practical local validation. |
 | 37 | Project template and quickstart | `goblin-king project init`, standalone adopter project template, hello and artifact worker folders, input files, schemas, quickstart docs, tests, local validation proof, Docker/Helm admin audits, and screenshots at `docs/screenshots/phase-37-docker-admin.png` and `docs/screenshots/phase-37-helm-admin.png` were added. | Later phases still need external project scheduling/run inspection and adopter closeout. |
 | 38 | External project scheduling and run inspection | Project-aware `jobs submit`, project-aware `schedules add`, source metadata on queued/materialized jobs, API source metadata, `runs show --with-job`, scheduler metadata tests, project-defined Docker smoke proof, full Docker/Helm admin audits, and screenshots at `docs/screenshots/phase-38-docker-admin.png` and `docs/screenshots/phase-38-helm-admin.png` were added. | Later phases still need v1alpha1 boundary closeout, adopter docs, smoke suite, and alpha closeout. |
-| 39 | v1alpha1 contract and public boundaries | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: explicit alpha versioning for container contract, project config, and public API boundaries. |
+| 39 | v1alpha1 contract and public boundaries | Public root version constants, `GOBLIN_CONTRACT_VERSION` runtime env for Docker/Kubernetes workers, named `goblin-king/v1alpha1` compatibility matrix entries, contract/config/public API docs, project config validation, focused tests, full Docker/Helm admin audits, and screenshots at `docs/screenshots/phase-39-docker-admin.png` and `docs/screenshots/phase-39-helm-admin.png` were added. | Later phases still need adopter docs, smoke suite, and alpha closeout. |
 | 40 | Adopter documentation pass | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: complete adopter documentation set and README adopter path. |
 | 41 | Adopter smoke suite | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: one-command local smoke proving project config, validation, scheduling, results, artifacts, failures, and cleanup. |
 | 42 | Project-adoptable alpha closeout | Planned in `docs/project-adoptable-roadmap.md`. | Outstanding: clean-checkout audit and project-adoptable alpha status proof. |
 
 ## Outstanding Items
 
-- Phases 39-42 project-adoptable alpha work, as detailed in
+- Phases 40-42 project-adoptable alpha work, as detailed in
   `docs/project-adoptable-roadmap.md`.
 - Secret allow-lists, provider-specific admission controls, object-storage quota
   enforcement, and deeper resource-policy engines.

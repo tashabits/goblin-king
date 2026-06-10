@@ -265,7 +265,7 @@ Proof:
 
 - Branch: `phase-39-v1alpha1-contract-public-boundaries`.
 - PR title: `Phase 39 v1alpha1 contract and public boundaries`.
-- Status: planned.
+- Status: implemented.
 
 Mark the Goblin Container Contract and project config format with explicit
 stability labels:
@@ -284,11 +284,34 @@ the container contract is the worker interface.
 
 Proof:
 
-- Contract and project config docs are versioned.
-- Example project uses versioned config.
-- Invalid/unsupported config versions fail clearly.
-- Public/semi-public/internal module docs are updated.
-- Full local CI passes.
+- Public root exports include version constants for the container contract, project
+  config, registry schema, worker image map, result envelope, heartbeat envelope, and
+  API settings schema.
+- Docker and Kubernetes runtimes pass `GOBLIN_CONTRACT_VERSION=goblin-king/v1alpha1`
+  to worker containers.
+- Contract, project config, public API, compatibility, and README docs now state
+  `goblin-king/v1alpha1` explicitly.
+- The compatibility matrix uses named `v1alpha1` versions instead of bare `1` labels.
+- Example project config and generated project templates use versioned config.
+- Invalid/unsupported project config versions fail clearly.
+- Docker admin audit passed for every registered demo goblin. Representative
+  proof: `example.hello` completed as job
+  `dfc025ba-e749-4d8d-a233-cb49219560c4` / run
+  `b3f09992-630b-4e3c-a9e7-efe250c43b84`, `example.artifact`
+  completed as job `312ce65f-3630-4bed-b31d-3f7f7c466479` / run
+  `2fb671eb-88d4-47b8-a1aa-c46b12b7115b`, controlled failures failed
+  readably as expected, and `example.long-hello` returned changing timestamps
+  for service `c03ab7c3-7509-4c0a-b3fc-dcdb1e717768`.
+- Helm admin audit passed for every registered demo goblin. Representative
+  proof: `example.hello` completed as job
+  `2fab2cf7-39a3-4eba-af42-7f079a9f5c1c` / run
+  `38279770-5ad4-4a87-8206-03d992d05387`, `example.artifact`
+  completed as job `af7b3a69-366e-4040-9ebc-86fe9dded031` / run
+  `1d689edb-0bf4-47e8-a82b-f1b183727815`, controlled failures failed
+  readably as expected, and `example.long-hello` returned changing timestamps
+  for service `69181ce4-8f6a-4d54-ab4d-b66d9f00c93e`.
+- Phase 39 screenshots live at `docs/screenshots/phase-39-docker-admin.png`
+  and `docs/screenshots/phase-39-helm-admin.png`.
 
 ## Phase 40: Adopter Documentation Pass
 

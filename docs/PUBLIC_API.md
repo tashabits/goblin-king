@@ -9,6 +9,11 @@ CLI/API where possible.
 
 Use these imports from `goblin_king` in host projects and generated goblin packages:
 
+- Version constants: `API_SETTINGS_SCHEMA_VERSION`,
+  `GOBLIN_CONTAINER_CONTRACT_VERSION`,
+  `PROJECT_CONFIG_API_VERSION`, `PROJECT_CONFIG_KIND`,
+  `REGISTRY_SCHEMA_VERSION`, `WORKER_IMAGE_MAP_SCHEMA_VERSION`,
+  `WORKER_RESULT_CONTRACT_VERSION`, and `WORKER_HEARTBEAT_CONTRACT_VERSION`.
 - Contracts: `GoblinDefinition`, `GoblinContext`, `GoblinResult`, job/run/schedule,
   fanout, event, heartbeat, artifact, handoff, auth, and project record models.
 - Registry helpers: `GoblinRegistry`, `RegistryError`, `ENTRY_POINT_GROUP`, and
@@ -33,7 +38,12 @@ goblins are still OCI/Docker containers.
 Host-project integration scripts may also use:
 
 ```python
-from goblin_king import ProjectSettings, GoblinRegistry, WorkerImageMap
+from goblin_king import (
+    GOBLIN_CONTAINER_CONTRACT_VERSION,
+    ProjectSettings,
+    GoblinRegistry,
+    WorkerImageMap,
+)
 ```
 
 ## Semi-Public Command Surface

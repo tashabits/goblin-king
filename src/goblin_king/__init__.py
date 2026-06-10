@@ -30,6 +30,16 @@ from goblin_king.registry import (
 from goblin_king.scheduler import Scheduler
 from goblin_king.store import SQLiteStore
 from goblin_king.templates import TemplateError, init_package
+from goblin_king.versions import (
+    API_SETTINGS_SCHEMA_VERSION,
+    GOBLIN_CONTAINER_CONTRACT_VERSION,
+    PROJECT_CONFIG_API_VERSION,
+    PROJECT_CONFIG_KIND,
+    REGISTRY_SCHEMA_VERSION,
+    WORKER_HEARTBEAT_CONTRACT_VERSION,
+    WORKER_IMAGE_MAP_SCHEMA_VERSION,
+    WORKER_RESULT_CONTRACT_VERSION,
+)
 from goblin_king.workers import (
     WorkerConfigError,
     WorkerImageDefinition,
@@ -39,12 +49,14 @@ from goblin_king.workers import (
 __all__ = [
     "ApiSettings",
     "ApiSettingsError",
+    "API_SETTINGS_SCHEMA_VERSION",
     "ApiTokenRecord",
     "ArtifactRecord",
     "AuditLogRecord",
     "ENTRY_POINT_GROUP",
     "EventRecord",
     "FanoutRecord",
+    "GOBLIN_CONTAINER_CONTRACT_VERSION",
     "GoblinContext",
     "GoblinDefinition",
     "GoblinRegistry",
@@ -54,9 +66,12 @@ __all__ = [
     "JobRecord",
     "LongServiceRecord",
     "ProjectRecord",
+    "PROJECT_CONFIG_API_VERSION",
+    "PROJECT_CONFIG_KIND",
     "ProjectSettings",
     "ProjectSettingsError",
     "RegistryError",
+    "REGISTRY_SCHEMA_VERSION",
     "RunRecord",
     "ScheduleRecord",
     "Scheduler",
@@ -64,8 +79,11 @@ __all__ = [
     "TemplateError",
     "UserRecord",
     "WorkerConfigError",
+    "WORKER_HEARTBEAT_CONTRACT_VERSION",
     "WorkerImageDefinition",
     "WorkerImageMap",
+    "WORKER_IMAGE_MAP_SCHEMA_VERSION",
+    "WORKER_RESULT_CONTRACT_VERSION",
     "create_app",
     "discover_entry_point_definitions",
     "init_package",
