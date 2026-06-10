@@ -15,7 +15,9 @@ needs a cluster deployment.
 - [Goblin King](#goblin-king)
 - [Table Of Contents](#table-of-contents)
 - [Quick Start](#quick-start)
+- [Using Goblin King In Your Project](#using-goblin-king-in-your-project)
 - [Goblin Container Contract](#goblin-container-contract)
+  - [Launch Language Goblins In Admin](#launch-language-goblins-in-admin)
 - [Worker Images](#worker-images)
 - [Admin Runtime Audit](#admin-runtime-audit)
 - [Resource Policies](#resource-policies)
@@ -34,6 +36,7 @@ needs a cluster deployment.
   - [API Roadmap](docs/api-roadmap.md)
   - [Scheduler Plan](docs/goblin-king-plan.md)
   - [Adopting Projects](docs/ADOPTING_PROJECTS.md)
+  - [Adopter Guide](docs/adopter-guide.md)
   - [Public API Boundary](docs/PUBLIC_API.md)
   - [Release Checklist](docs/RELEASE_CHECKLIST.md)
   - [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md)
@@ -188,6 +191,31 @@ curl -H "Authorization: Bearer local-dev-token" http://127.0.0.1:8000/admin/disc
 Failed reloads leave the previous valid registry active and report validation errors
 for the Discovery panel. New goblin kinds are read from the API at runtime, so the
 React admin does not need a rebuild when project goblins are added.
+
+## Using Goblin King In Your Project
+
+For a project-owned goblin, start with a standalone project template:
+
+```bash
+goblin-king project init ./my-goblin-project --prefix myproject
+cd ./my-goblin-project
+goblin-king project validate --project goblin-king-project.json
+goblin-king workers validate --project goblin-king-project.json --input inputs/hello.json --kind myproject.hello --build --require-success
+```
+
+Then submit, schedule, and inspect it:
+
+```bash
+goblin-king jobs submit myproject.hello --project goblin-king-project.json --input inputs/hello.json --runtime docker
+goblin-king schedules add myproject.hello --project goblin-king-project.json --input inputs/hello.json --cron "* * * * *" --due-now
+goblin-king scheduler run-once --project goblin-king-project.json --runtime docker
+goblin-king runs show <run-id> --with-job
+```
+
+Project goblins are contract-compliant containers. They do not need Python worker
+imports, and the React admin reads goblin kinds from the API at runtime after discovery
+reload. See [Adopter Guide](docs/adopter-guide.md) for the full Docker, Helm,
+validation, result, artifact, and failure inspection path.
 
 ## Goblin Container Contract
 
@@ -635,6 +663,7 @@ Goblin King provides:
 | [Security Model](docs/security-model.md) | Honest container security expectations and runtime hardening guidance. |
 | [Public API Boundary](docs/PUBLIC_API.md) | Stable root imports, semi-public commands, internal modules, and internal wheel compatibility policy. |
 | [Adopting Projects](docs/ADOPTING_PROJECTS.md) | How another project installs Goblin King, defines goblin plugins, builds workers, and proves the integration. |
+| [Adopter Guide](docs/adopter-guide.md) | Complete project-owned goblin path from template to Docker, Helm, admin, results, artifacts, and failures. |
 | [First Hour Guide](docs/FIRST_HOUR.md) | Fast path from internal install to first project goblin run. |
 | [Release Checklist](docs/RELEASE_CHECKLIST.md) | Internal wheel, Docker image, local CI, Docker adoption, and Helm proof checklist. |
 | [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md) | Maintainer closeout audit and proof surfaces. |
