@@ -1,0 +1,59 @@
+{
+  "workers": {
+    "example.hello-dotnet": {
+      "context": "goblins/hello-dotnet",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-example-hello-dotnet:local"
+    },
+    "example.hello-go": {
+      "context": "goblins/hello-go",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-example-hello-go:local"
+    },
+    "example.hello-java": {
+      "context": "goblins/hello-java",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-example-hello-java:local"
+    },
+    "example.hello-node": {
+      "context": "goblins/hello-node",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-example-hello-node:local"
+    },
+    "example.hello-php": {
+      "context": "goblins/hello-php",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-example-hello-php:local"
+    },
+    "example.hello-python": {
+      "context": "goblins/hello-python",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-example-hello-python:local"
+    },
+    "example.hello-ruby": {
+      "context": "goblins/hello-ruby",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-example-hello-ruby:local"
+    },
+    "example.hello-rust": {
+      "context": "goblins/hello-rust",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-example-hello-rust:local"
+    },
+    "example.hello-shell": {
+      "context": "goblins/hello-shell",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-example-hello-shell:local"
+    },
+    "example.wasi-c-hello": {
+      "context": "goblins/wasi-c-hello",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-example-wasi-c-hello:local"
+    },
+    "example.wasi-rust-hello": {
+      "context": "goblins/wasi-rust-hello",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-example-wasi-rust-hello:local"
+    }
+  }
+}

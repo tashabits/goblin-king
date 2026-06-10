@@ -182,6 +182,16 @@ Container-wrapped WASI examples live under `examples/goblins/wasi-*`. They still
 build and run as normal containers: the container entrypoint invokes Wasmtime and
 the `.wasm` module reads/writes the same contract files.
 
+To run the cross-language and WASI examples through Goblin King's Docker runtime,
+use the dedicated registry/image map:
+
+```bash
+make run-cross-language-proof
+```
+
+That target builds the example images from `examples/cross-language-images.json`
+and submits every kind in `examples/cross-language-goblins.json`.
+
 For host-project deployment integration, see
 `examples/adopting-project/`. It includes:
 
