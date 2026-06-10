@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 import typer
@@ -286,6 +286,10 @@ def submit_job(
         Path,
         typer.Option("--registry", help="Registry JSON path."),
     ] = Path("goblins.json"),
+    project: Annotated[
+        Path | None,
+        typer.Option("--project", help="Optional project settings path."),
+    ] = None,
     db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
     runtime: Annotated[
         RuntimeOption,
@@ -305,7 +309,7 @@ def submit_job(
     ] = DEFAULT_RESOURCE_POLICIES_PATH,
 ) -> None:
     """Submit and immediately execute one job through the selected runtime."""
-    loaded = _load_registry(registry)
+    loaded, worker_map = _load_scheduler_discovery(registry, images, project, runtime)
     input_payload = _load_input(input_path)
     try:
         definition = loaded.get(kind)
@@ -336,7 +340,7 @@ def submit_job(
         created_at=utc_now(),
         timeout_seconds=policy.timeout_seconds if policy else definition.timeout_seconds,
         max_retries=(policy.max_retries or 0) if policy else (definition.max_retries or 0),
-        metadata={"resource_policy": policy.compact()} if policy else {},
+        metadata=_job_metadata(definition, policy),
     )
     store.save_job(job)
     context = new_run_context(job.id, definition.kind)
@@ -349,7 +353,7 @@ def submit_job(
     started_at = utc_now()
     if runtime == "docker":
         result = DockerRuntime(
-            workers=_load_workers(images),
+            workers=worker_map,
             redis_url=redis_url,
         ).run(
             definition,
@@ -361,7 +365,7 @@ def submit_job(
         )
     elif runtime == "kubernetes":
         result = KubernetesRuntime(
-            workers=_load_workers(images),
+            workers=worker_map,
             redis_url=redis_url,
         ).run(
             definition,
@@ -602,6 +606,10 @@ def list_heartbeats(
 def show_run(
     run_id: Annotated[str, typer.Argument(help="Run ID to inspect.")],
     db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+    with_job: Annotated[
+        bool,
+        typer.Option("--with-job", help="Include source job metadata in the output."),
+    ] = False,
 ) -> None:
     """Print a persisted run record as JSON."""
     store = SQLiteStore(db)
@@ -609,7 +617,23 @@ def show_run(
     if run is None:
         typer.echo(f"run not found: {run_id}", err=True)
         raise typer.Exit(1)
-    typer.echo(run.model_dump_json(indent=2))
+    if not with_job:
+        typer.echo(run.model_dump_json(indent=2))
+        return
+    job = store.get_job(run.job_id)
+    typer.echo(
+        json.dumps(
+            {
+                "run": run.model_dump(mode="json"),
+                "job": job.model_dump(mode="json") if job else None,
+                "goblin_source": (job.metadata.get("goblin_source") if job else None),
+                "goblin_definition": (
+                    job.metadata.get("goblin_definition") if job else None
+                ),
+            },
+            indent=2,
+        )
+    )
 
 
 @schedules_app.command("add")
@@ -621,6 +645,10 @@ def add_schedule(
         Path,
         typer.Option("--registry", help="Registry JSON path."),
     ] = Path("goblins.json"),
+    project: Annotated[
+        Path | None,
+        typer.Option("--project", help="Optional project settings path."),
+    ] = None,
     db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
     due_now: Annotated[
         bool,
@@ -638,7 +666,7 @@ def add_schedule(
     ] = DEFAULT_RESOURCE_POLICIES_PATH,
 ) -> None:
     """Persist a recurring goblin schedule."""
-    loaded = _load_registry(registry)
+    loaded = _load_project_registry(project) if project is not None else _load_registry(registry)
     try:
         definition = loaded.get(kind)
     except RegistryError as error:
@@ -1212,6 +1240,17 @@ def _load_input(path: Path) -> dict:
         typer.echo("input JSON must be an object", err=True)
         raise typer.Exit(1)
     return payload
+
+
+def _job_metadata(definition: GoblinDefinition, policy: Any | None = None) -> dict:
+    """Return metadata that explains the effective goblin used for one job."""
+    metadata = {
+        "goblin_source": definition.metadata.get("source", "registry"),
+        "goblin_definition": definition.model_dump(mode="json"),
+    }
+    if policy is not None:
+        metadata["resource_policy"] = policy.compact()
+    return metadata
 
 
 if __name__ == "__main__":

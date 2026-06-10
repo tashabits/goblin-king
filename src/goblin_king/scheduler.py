@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from croniter import croniter
 
 from goblin_king.contracts import (
+    GoblinDefinition,
     GoblinResult,
     JobRecord,
     RunRecord,
@@ -102,9 +103,10 @@ class Scheduler:
         current = _ensure_utc(now or utc_now())
         materialized: list[JobRecord] = []
         for schedule in self.store.list_due_schedules(current):
+            definition = self.registry.get(schedule.kind)
             job = JobRecord(
                 id=str(uuid4()),
-                kind=schedule.kind,
+                kind=definition.kind,
                 input=schedule.input,
                 created_at=current,
                 created_by="scheduler",
@@ -115,6 +117,7 @@ class Scheduler:
                 due_at=current,
                 max_retries=schedule.max_retries,
                 timeout_seconds=schedule.timeout_seconds,
+                metadata=_job_metadata(definition),
             )
             if self.resource_policies is not None:
                 try:
@@ -226,9 +229,21 @@ class Scheduler:
             definition, entrypoint = self.registry.resolve(job.kind)
         context = new_run_context(job.id, job.kind, attempt)
         resource_policy = policy_from_job_metadata(job.metadata)
+        source_metadata = {
+            key: value
+            for key, value in {
+                "goblin_source": job.metadata.get("goblin_source"),
+                "goblin_definition": job.metadata.get("goblin_definition"),
+            }.items()
+            if value is not None
+        }
         if job.project_id is not None:
             context = context.model_copy(
                 update={"metadata": {**context.metadata, "project_id": job.project_id}}
+            )
+        if source_metadata:
+            context = context.model_copy(
+                update={"metadata": {**context.metadata, **source_metadata}}
             )
         if resource_policy is not None:
             context = context.model_copy(
@@ -361,6 +376,15 @@ def _ensure_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def _job_metadata(definition: GoblinDefinition) -> dict:
+    """Return source metadata for scheduler-materialized jobs."""
+    metadata = getattr(definition, "metadata", {}) or {}
+    return {
+        "goblin_source": metadata.get("source", "registry"),
+        "goblin_definition": definition.model_dump(mode="json"),
+    }
 
 
 def sleep_forever() -> None:  # pragma: no cover - manual helper
