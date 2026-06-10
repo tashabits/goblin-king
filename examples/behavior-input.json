@@ -1,0 +1,7 @@
+{
+  "name": "Goblin Court",
+  "steps": 3,
+  "ticks": 3,
+  "items": ["alpha", "bravo", "charlie"],
+  "reason": "controlled failure for proof"
+}
