@@ -24,7 +24,7 @@ HELM_TIMEOUT ?= 5m
 HELM_ARGS ?=
 HELM_PVC ?= $(HELM_RELEASE)-data
 
-.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel release-check helm-template helm-admin-smoke kind-smoke clean docker-clean
+.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel release-check helm-template helm-admin-smoke kind-smoke clean clean-all docker-clean
 
 help:
 	@echo "Targets:"
@@ -72,6 +72,7 @@ help:
 	@echo "  helm-admin-smoke Exercise Helm React admin through goblin-king.local"
 	@echo "  kind-smoke     Render Helm and report whether kind is available"
 	@echo "  clean          Remove local Goblin King runtime state"
+	@echo "  clean-all      Remove ignored untracked files/directories with git clean -fdX"
 	@echo "  docker-clean   Stop Compose services and remove volumes"
 
 install:
@@ -210,6 +211,9 @@ kind-smoke: helm-template
 
 clean:
 	$(PYTHON) -c "import shutil; shutil.rmtree('.goblin-king', ignore_errors=True)"
+
+clean-all:
+	git clean -fdX
 
 docker-clean:
 	docker compose down --volumes --remove-orphans
