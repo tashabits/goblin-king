@@ -782,7 +782,7 @@ Phase sequence:
 - Phase 45: mandatory goblin validation gate. Implemented.
 - Phase 46: Docker resource policy proof. Implemented.
 - Phase 47: project config hero path. Implemented.
-- Phase 48: adoption hardening closeout. Planned.
+- Phase 48: adoption hardening closeout. Implemented.
 
 All Phase 34-48 proof is local. GitHub Actions are not required and are not sufficient
 as the quality gate.

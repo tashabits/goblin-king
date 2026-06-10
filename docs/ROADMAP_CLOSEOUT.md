@@ -1,7 +1,8 @@
 # Production Roadmap Closeout
 
-This closeout records the state after Phases 16-21. It is the handoff from production
-hardening into the cleanup and container-first worker roadmap.
+This closeout records the state after the production, cleanup, container-first worker,
+project-adoptable, and adoption-hardening roadmap passes. It is a proof index, not a
+future-work plan.
 
 ## Implemented Production Items
 
@@ -24,7 +25,11 @@ hardening into the cleanup and container-first worker roadmap.
 - `docs/api-roadmap.md` marks Phases 5-21 as covered and leaves only explicit deferred
   infrastructure items.
 - `docs/goblin-king-plan.md` contains the completed production roadmap, cleanup phase,
-  appended Phases 24-33, and resource-policy follow-up notes.
+  appended language/runtime phases, resource-policy work, and Phase 43-48 adoption
+  hardening notes.
+- `docs/project-adoptable-roadmap.md` records the project config path and confirms that
+  unvalidated goblins are not schedulable by default.
+- `docs/proof_table.md` is the complete phase-by-phase proof ledger.
 
 ## Explicit Deferred Items
 
@@ -35,9 +40,9 @@ hardening into the cleanup and container-first worker roadmap.
 - Identity providers beyond local API tokens and generic OIDC/JWT.
 - Native Kubernetes WASI scheduling.
 - Official SDKs for every language.
-- Deep goblin conformance certification beyond the planned practical validation phase.
+- Deep goblin conformance certification beyond the practical local validator.
 
-## Next Phases
+## Later Closeouts
 
 - Phase 23: repo-wide code cleanup and module/component splitting.
 - Phase 24: formal Goblin Container Contract.
@@ -51,3 +56,7 @@ hardening into the cleanup and container-first worker roadmap.
 - Phase 42: project-adoptable alpha closeout completed in
   `docs/project-adoptable-roadmap.md`, with clean-checkout adopter smoke proof
   and final Docker/Helm admin audit evidence.
+- Phases 43-48: package-root slimming, behavior-preserving cleanup, mandatory
+  scheduling validation, Docker resource-policy proof, project-config hero path, and
+  adoption-hardening closeout completed in `docs/project-adoptable-roadmap.md` and
+  `docs/proof_table.md`.
