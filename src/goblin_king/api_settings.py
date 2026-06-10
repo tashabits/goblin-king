@@ -36,6 +36,7 @@ class ApiSettings(BaseModel):
     db: Path = Path(".goblin-king/goblin-king.sqlite3")
     redis_url: str = "redis://localhost:6379/0"
     artifact_root: Path = Path(".goblin-king/artifacts")
+    resource_policies: Path | None = Path("goblin-resource-policies.json")
     auth_token: str = Field(default="local-dev-token", min_length=1)
     bootstrap_admin_token: str = Field(default="local-dev-token", min_length=1)
     default_project_id: str | None = None
@@ -83,6 +84,9 @@ class ApiSettings(BaseModel):
                 "db": _resolve(root, self.db),
                 "artifact_root": _resolve(root, self.artifact_root),
                 "project": _resolve(root, self.project) if self.project else None,
+                "resource_policies": (
+                    _resolve(root, self.resource_policies) if self.resource_policies else None
+                ),
             }
         )
 

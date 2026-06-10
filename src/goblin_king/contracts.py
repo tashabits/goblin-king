@@ -252,6 +252,7 @@ class RunRecord(BaseModel):
     timeout_seconds: int | None = None
     max_retries: int = 0
     leased_until: datetime | None = None
+    resource_policy: dict[str, Any] | None = None
 
 
 class ScheduleRecord(BaseModel):

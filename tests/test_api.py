@@ -356,6 +356,44 @@ def test_jobs_endpoint_queues_without_running(tmp_path: Path) -> None:
     assert events.json()["items"][0]["event_type"] == "job.queued"
 
 
+def test_jobs_endpoint_rejects_resource_policy_above_ceiling(tmp_path: Path) -> None:
+    """Verify resource policy ceilings reject work before a job is persisted."""
+    policy_path = tmp_path / "policies.json"
+    policy_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "defaults": {"timeout_seconds": 30},
+                "ceilings": {"timeout_seconds": 60},
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = ApiSettings(
+        registry=Path("examples/goblins.json").resolve(),
+        images=Path("goblin-images.json").resolve(),
+        db=tmp_path / "api.sqlite3",
+        redis_url="redis://localhost:6379/0",
+        artifact_root=tmp_path / "artifacts",
+        auth_token="test-token",
+        resource_policies=policy_path,
+    )
+    client = TestClient(create_app(settings))
+    store = SQLiteStore(settings.db)
+
+    rejected = client.post(
+        "/jobs",
+        json={"kind": "example.echo", "input": {}, "timeout_seconds": 120},
+        headers=auth_headers(),
+    )
+
+    assert rejected.status_code == 422
+    assert "resource policy exceeds ceiling" in rejected.json()["detail"]
+    assert store.list_jobs() == []
+    assert store.list_events()[0].event_type == "resource_policy.rejected"
+    assert store.list_audit_logs()[0].action == "resource_policy.rejected"
+
+
 def test_fanout_api_creates_and_reads_batch(tmp_path: Path) -> None:
     """Verify API fanout creates queued jobs and read endpoints derive status."""
     client, _, _ = build_client(tmp_path)

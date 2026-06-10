@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from goblin_king.contracts import FanoutRecord, JobRecord, RunRecord, utc_now
 from goblin_king.registry import GoblinRegistry
+from goblin_king.resource_policies import ResourcePolicySet
 from goblin_king.store import SQLiteStore
 
 TERMINAL_STATUSES = {"completed", "failed", "timed_out", "cancelled"}
@@ -61,9 +62,20 @@ def create_fanout(
     request: FanoutCreateRequest,
     created_by: str,
     project_id: str | None = None,
+    resource_policies: ResourcePolicySet | None = None,
 ) -> FanoutDetail:
     """Validate all fanout items, then create the batch and queued child jobs."""
     definitions = [registry.get(item.kind) for item in request.items]
+    effective_policies = [
+        resource_policies.effective_for(
+            definition.kind,
+            timeout_seconds=item.timeout_seconds,
+            max_retries=item.max_retries,
+        )
+        if resource_policies
+        else None
+        for definition, item in zip(definitions, request.items, strict=True)
+    ]
     now = utc_now()
     fanout = FanoutRecord(
         id=str(uuid4()),
@@ -86,14 +98,17 @@ def create_fanout(
             status="queued",
             priority=item.priority,
             due_at=now,
-            max_retries=item.max_retries,
-            timeout_seconds=item.timeout_seconds,
+            max_retries=(policy.max_retries or 0) if policy else item.max_retries,
+            timeout_seconds=policy.timeout_seconds if policy else item.timeout_seconds,
             metadata={
                 "fanout_item_index": index,
                 "fanout_item": item.model_dump(mode="json"),
+                **({"resource_policy": policy.compact()} if policy else {}),
             },
         )
-        for index, (definition, item) in enumerate(zip(definitions, request.items, strict=True))
+        for index, (definition, item, policy) in enumerate(
+            zip(definitions, request.items, effective_policies, strict=True)
+        )
     ]
     store.save_fanout(fanout)
     for job in jobs:
@@ -107,6 +122,7 @@ def retry_job(
     job_id: str,
     request: RetryCreateRequest,
     created_by: str,
+    resource_policies: ResourcePolicySet | None = None,
 ) -> JobRecord:
     """Create a fresh queued retry job from one terminal source job."""
     source = store.get_job(job_id)
@@ -114,6 +130,19 @@ def retry_job(
         raise KeyError(job_id)
     if source.status not in TERMINAL_STATUSES:
         raise ValueError(f"job is not terminal: {source.status}")
+    timeout_seconds = (
+        source.timeout_seconds if request.timeout_seconds is None else request.timeout_seconds
+    )
+    max_retries = source.max_retries if request.max_retries is None else request.max_retries
+    policy = (
+        resource_policies.effective_for(
+            source.kind,
+            timeout_seconds=timeout_seconds,
+            max_retries=max_retries,
+        )
+        if resource_policies
+        else None
+    )
     retry = JobRecord(
         id=str(uuid4()),
         kind=source.kind,
@@ -126,10 +155,8 @@ def retry_job(
         status="queued",
         priority=source.priority if request.priority is None else request.priority,
         due_at=utc_now(),
-        max_retries=source.max_retries if request.max_retries is None else request.max_retries,
-        timeout_seconds=(
-            source.timeout_seconds if request.timeout_seconds is None else request.timeout_seconds
-        ),
+        max_retries=(policy.max_retries or 0) if policy else max_retries,
+        timeout_seconds=policy.timeout_seconds if policy else timeout_seconds,
         metadata={
             **source.metadata,
             "retry": {
@@ -137,6 +164,7 @@ def retry_job(
                 "source_status": source.status,
                 "reason": request.reason,
             },
+            **({"resource_policy": policy.compact()} if policy else {}),
         },
     )
     store.save_job(retry)

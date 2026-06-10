@@ -23,6 +23,7 @@ from goblin_king.events import (
     EventBus,
     worker_heartbeat_key,
 )
+from goblin_king.resource_policies import ResourcePolicy
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
 
 _KUBERNETES_RESULT_FORWARDER_SCRIPT = r"""
@@ -136,6 +137,7 @@ class DockerRuntime:
         context: GoblinContext,
         *,
         timeout_seconds: int | None = None,
+        resource_policy: ResourcePolicy | None = None,
     ) -> GoblinResult:
         """Run one Docker worker and normalize the result transported through Redis or file."""
         try:
@@ -153,6 +155,7 @@ class DockerRuntime:
             context=context,
             worker_id=worker_id,
             timeout_seconds=timeout_seconds,
+            resource_policy=resource_policy,
         )
         try:
             completed = subprocess.run(
@@ -179,6 +182,13 @@ class DockerRuntime:
         self._record_worker_heartbeats(context)
         result = self._load_result(context.run_id, result_path)
         if result is not None:
+            artifact_error = _artifact_policy_error(
+                result,
+                resource_policy,
+                Path(context.artifact_root),
+            )
+            if artifact_error is not None:
+                return GoblinResult.failed(error=artifact_error, data=result.data)
             self._emit_worker_event(
                 "worker.completed",
                 context,
@@ -222,6 +232,7 @@ class DockerRuntime:
         context: GoblinContext,
         worker_id: str,
         timeout_seconds: int | None,
+        resource_policy: ResourcePolicy | None = None,
     ) -> list[str]:
         """Compose a deterministic docker run command for a worker container."""
         artifact_root = Path(context.artifact_root)
@@ -270,6 +281,8 @@ class DockerRuntime:
             "-e",
             f"GOBLIN_HEARTBEAT_INTERVAL_SECONDS={self.heartbeat_interval_seconds}",
         ]
+        if resource_policy is not None:
+            command.extend(_docker_policy_args(resource_policy))
         if data_volume:
             data_root = self.run_root.resolve().parent
             run_rel = run_dir.relative_to(data_root).as_posix()
@@ -303,7 +316,8 @@ class DockerRuntime:
             )
         docker_network = os.environ.get("GOBLIN_KING_DOCKER_NETWORK")
         if docker_network:
-            command.extend(["--network", docker_network])
+            if resource_policy is None or resource_policy.network.mode is None:
+                command.extend(["--network", docker_network])
         if timeout_seconds is not None:
             command.extend(["--stop-timeout", str(max(timeout_seconds, 1))])
         command.append(image)
@@ -400,6 +414,7 @@ class KubernetesRuntime:
         context: GoblinContext,
         *,
         timeout_seconds: int | None = None,
+        resource_policy: ResourcePolicy | None = None,
     ) -> GoblinResult:
         """Create a Kubernetes Job for one worker and return its result envelope."""
         try:
@@ -438,6 +453,7 @@ class KubernetesRuntime:
                     context=context,
                     worker_id=worker_id,
                     timeout_seconds=timeout_seconds,
+                    resource_policy=resource_policy,
                 ),
             )
             result = self._wait_for_result(
@@ -472,8 +488,53 @@ class KubernetesRuntime:
         context: GoblinContext,
         worker_id: str,
         timeout_seconds: int | None,
+        resource_policy: ResourcePolicy | None = None,
     ) -> dict[str, Any]:
         """Build the Kubernetes Job manifest that mirrors the Docker worker contract."""
+        worker_container: dict[str, Any] = {
+            "name": "worker",
+            "image": image,
+            "imagePullPolicy": self.image_pull_policy,
+            "env": [
+                {"name": "GOBLIN_RUN_ID", "value": context.run_id},
+                {
+                    "name": "GOBLIN_JOB_ID",
+                    "value": str(context.metadata.get("job_id", "")),
+                },
+                {"name": "GOBLIN_WORKER_ID", "value": worker_id},
+                {"name": "GOBLIN_INPUT_PATH", "value": "/goblin-config/input.json"},
+                {
+                    "name": "GOBLIN_CONTEXT_PATH",
+                    "value": "/goblin-config/context.json",
+                },
+                {
+                    "name": "GOBLIN_RESULT_PATH",
+                    "value": "/goblin-result/result.json",
+                },
+                {"name": "GOBLIN_ARTIFACT_ROOT", "value": "/artifacts"},
+                {"name": "GOBLIN_REDIS_URL", "value": self.redis_url},
+                {"name": "GOBLIN_HEARTBEAT_REDIS_URL", "value": self.redis_url},
+                {
+                    "name": "GOBLIN_HEARTBEAT_CHANNEL",
+                    "value": DEFAULT_HEARTBEAT_CHANNEL,
+                },
+                {
+                    "name": "GOBLIN_HEARTBEAT_KEY",
+                    "value": worker_heartbeat_key(context.run_id),
+                },
+                {
+                    "name": "GOBLIN_HEARTBEAT_INTERVAL_SECONDS",
+                    "value": str(self.heartbeat_interval_seconds),
+                },
+            ],
+            "volumeMounts": [
+                {"name": "input", "mountPath": "/goblin-config", "readOnly": True},
+                {"name": "result", "mountPath": "/goblin-result"},
+                {"name": "artifacts", "mountPath": "/artifacts"},
+            ],
+        }
+        if resource_policy is not None:
+            worker_container.update(_kubernetes_policy_fields(resource_policy))
         spec: dict[str, Any] = {
             "backoffLimit": 0,
             "template": {
@@ -487,48 +548,7 @@ class KubernetesRuntime:
                 "spec": {
                     "restartPolicy": "Never",
                     "containers": [
-                        {
-                            "name": "worker",
-                            "image": image,
-                            "imagePullPolicy": self.image_pull_policy,
-                            "env": [
-                                {"name": "GOBLIN_RUN_ID", "value": context.run_id},
-                                {
-                                    "name": "GOBLIN_JOB_ID",
-                                    "value": str(context.metadata.get("job_id", "")),
-                                },
-                                {"name": "GOBLIN_WORKER_ID", "value": worker_id},
-                                {"name": "GOBLIN_INPUT_PATH", "value": "/goblin-config/input.json"},
-                                {
-                                    "name": "GOBLIN_CONTEXT_PATH",
-                                    "value": "/goblin-config/context.json",
-                                },
-                                {
-                                    "name": "GOBLIN_RESULT_PATH",
-                                    "value": "/goblin-result/result.json",
-                                },
-                                {"name": "GOBLIN_ARTIFACT_ROOT", "value": "/artifacts"},
-                                {"name": "GOBLIN_REDIS_URL", "value": self.redis_url},
-                                {"name": "GOBLIN_HEARTBEAT_REDIS_URL", "value": self.redis_url},
-                                {
-                                    "name": "GOBLIN_HEARTBEAT_CHANNEL",
-                                    "value": DEFAULT_HEARTBEAT_CHANNEL,
-                                },
-                                {
-                                    "name": "GOBLIN_HEARTBEAT_KEY",
-                                    "value": worker_heartbeat_key(context.run_id),
-                                },
-                                {
-                                    "name": "GOBLIN_HEARTBEAT_INTERVAL_SECONDS",
-                                    "value": str(self.heartbeat_interval_seconds),
-                                },
-                            ],
-                            "volumeMounts": [
-                                {"name": "input", "mountPath": "/goblin-config", "readOnly": True},
-                                {"name": "result", "mountPath": "/goblin-result"},
-                                {"name": "artifacts", "mountPath": "/artifacts"},
-                            ],
-                        },
+                        worker_container,
                         self._result_forwarder_container(
                             context=context,
                             timeout_seconds=timeout_seconds,
@@ -702,6 +722,107 @@ def _container_redis_url(redis_url: str) -> str:
         return redis_url
     netloc = parsed.netloc.replace(parsed.hostname, "host.docker.internal", 1)
     return urlunparse(parsed._replace(netloc=netloc))
+
+
+def _docker_policy_args(policy: ResourcePolicy) -> list[str]:
+    """Translate supported policy fields into docker run arguments."""
+    args: list[str] = []
+    if policy.cpu.limit:
+        cpu_limit = (
+            str(float(policy.cpu.limit[:-1]) / 1000)
+            if policy.cpu.limit.endswith("m")
+            else policy.cpu.limit
+        )
+        args.extend(["--cpus", cpu_limit])
+    if policy.memory.limit:
+        args.extend(["--memory", _docker_memory_quantity(policy.memory.limit)])
+    if policy.process.pids_limit is not None:
+        args.extend(["--pids-limit", str(policy.process.pids_limit)])
+    if policy.network.mode:
+        args.extend(["--network", policy.network.mode])
+    if policy.filesystem.read_only_root:
+        args.append("--read-only")
+    for tmpfs_path in policy.filesystem.tmpfs:
+        args.extend(["--tmpfs", tmpfs_path])
+    if policy.logs.max_bytes is not None:
+        args.extend(["--log-opt", f"max-size={policy.logs.max_bytes}"])
+    return args
+
+
+def _docker_memory_quantity(value: str) -> str:
+    """Normalize Kubernetes-style memory units into Docker CLI-friendly units."""
+    replacements = {
+        "Ki": "k",
+        "Mi": "m",
+        "Gi": "g",
+        "Ti": "t",
+    }
+    for suffix, docker_suffix in replacements.items():
+        if value.endswith(suffix):
+            return f"{value.removesuffix(suffix)}{docker_suffix}"
+    return value
+
+
+def _kubernetes_policy_fields(policy: ResourcePolicy) -> dict[str, Any]:
+    """Translate supported policy fields into Kubernetes container fields."""
+    fields: dict[str, Any] = {}
+    requests: dict[str, str] = {}
+    limits: dict[str, str] = {}
+    if policy.cpu.request:
+        requests["cpu"] = policy.cpu.request
+    if policy.memory.request:
+        requests["memory"] = policy.memory.request
+    if policy.cpu.limit:
+        limits["cpu"] = policy.cpu.limit
+    if policy.memory.limit:
+        limits["memory"] = policy.memory.limit
+    if requests or limits:
+        fields["resources"] = {}
+        if requests:
+            fields["resources"]["requests"] = requests
+        if limits:
+            fields["resources"]["limits"] = limits
+    if policy.filesystem.read_only_root:
+        fields["securityContext"] = {"readOnlyRootFilesystem": True}
+    return fields
+
+
+def _artifact_policy_error(
+    result: GoblinResult,
+    policy: ResourcePolicy | None,
+    artifact_root: Path,
+) -> str | None:
+    """Return an artifact policy violation message for result metadata, if any."""
+    if policy is None:
+        return None
+    max_files = policy.filesystem.artifact_max_files
+    if max_files is not None and len(result.artifacts) > max_files:
+        return f"artifact file count exceeds policy: {len(result.artifacts)} > {max_files}"
+    max_bytes = policy.filesystem.artifact_max_bytes
+    if max_bytes is None:
+        return None
+    total = 0
+    for artifact in result.artifacts:
+        size = result.metrics.get(f"artifact.{artifact.name}.bytes")
+        if isinstance(size, int | float):
+            total += int(size)
+            continue
+        if artifact.uri.startswith("file://"):
+            path = Path(artifact.uri.removeprefix("file://"))
+        else:
+            path = Path(artifact.uri)
+        if not path.is_absolute():
+            path = artifact_root / path
+        try:
+            resolved = path.resolve()
+            resolved.relative_to(artifact_root.resolve())
+        except ValueError:
+            continue
+        if resolved.is_file():
+            total += resolved.stat().st_size
+    if total > max_bytes:
+        return f"artifact bytes exceed policy: {total} > {max_bytes}"
+    return None
 
 
 def _current_kubernetes_namespace() -> str:
