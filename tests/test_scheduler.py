@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from goblin_king.contracts import GoblinDefinition, ScheduleRecord
+from goblin_king.contracts import GoblinDefinition, JobRecord, ScheduleRecord
 from goblin_king.registry import GoblinRegistry
+from goblin_king.resource_policies import ResourcePolicySet
 from goblin_king.scheduler import Scheduler
 from goblin_king.store import SQLiteStore
 
@@ -158,3 +159,93 @@ def test_scheduler_reload_discovery_swaps_active_registry(tmp_path: Path) -> Non
     assert version == 2
     assert scheduler.discovery_version == 2
     assert scheduler.registry.get("project.reloaded").display_name == "Project Reloaded"
+
+
+def test_scheduler_persists_effective_resource_policy(tmp_path: Path) -> None:
+    """Verify scheduled jobs and runs preserve the resolved resource policy."""
+    now = datetime(2026, 6, 9, 12, 0, tzinfo=UTC)
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    scheduler = Scheduler(
+        registry=GoblinRegistry.from_path("examples/goblins.json"),
+        store=store,
+        worker_id="test-worker",
+        runtime_mode="in-process",
+        resource_policies=ResourcePolicySet.model_validate(
+            {
+                "defaults": {
+                    "timeout_seconds": 45,
+                    "memory": {"limit": "256Mi"},
+                },
+                "ceilings": {
+                    "timeout_seconds": 60,
+                    "max_retries": 2,
+                    "memory": {"limit": "512Mi"},
+                },
+            }
+        ),
+    )
+    store.save_schedule(
+        ScheduleRecord(
+            id="policy-schedule",
+            kind="example.echo",
+            input={"message": "hello"},
+            cron="* * * * *",
+            created_at=now,
+            next_run_at=now,
+        )
+    )
+
+    runs = scheduler.run_once(now)
+    job = store.list_jobs()[0]
+
+    assert job.metadata["resource_policy"]["timeout_seconds"] == 45
+    assert job.timeout_seconds == 45
+    assert job.max_retries == 0
+    assert runs[0].resource_policy == job.metadata["resource_policy"]
+
+
+def test_scheduler_defers_claim_when_concurrency_policy_is_full(tmp_path: Path) -> None:
+    """Verify concurrency caps release extra claims before worker execution."""
+    now = datetime(2026, 6, 9, 12, 0, tzinfo=UTC)
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    scheduler = Scheduler(
+        registry=GoblinRegistry.from_path("examples/goblins.json"),
+        store=store,
+        worker_id="test-worker",
+        runtime_mode="in-process",
+        resource_policies=ResourcePolicySet.model_validate(
+            {
+                "defaults": {"concurrency": {"max_running": 1}},
+                "ceilings": {"concurrency": {"max_running": 2}},
+            }
+        ),
+    )
+    store.save_job(
+        JobRecord(
+            id="already-running",
+            kind="example.echo",
+            input={},
+            created_at=now,
+            status="running",
+        )
+    )
+    store.save_job(
+        JobRecord(
+            id="queued",
+            kind="example.echo",
+            input={},
+            created_at=now,
+            status="queued",
+            metadata={"resource_policy": {"concurrency": {"max_running": 1}}},
+        )
+    )
+
+    claimed = scheduler.claim_due_jobs(now)
+
+    queued = store.get_job("queued")
+    assert claimed == []
+    assert queued is not None
+    assert queued.status == "queued"
+    assert "resource_policy.concurrency_deferred" in [
+        event.event_type for event in store.list_events()
+    ]

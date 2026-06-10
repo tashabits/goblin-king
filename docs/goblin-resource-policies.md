@@ -4,12 +4,12 @@ Resource policies describe the limits and runtime expectations for each goblin k
 They are the bridge between the Goblin Container Contract and the deployment platform
 that actually runs the worker container.
 
-Phase 33 establishes the policy model and the deployment mappings. Phase 34 is planned
-to add runtime enforcement and persisted effective-policy proof. Current runtime
-enforcement already covers job timeouts, retry limits, artifact path safety, scoped hard
-termination, audit records, and events. CPU, memory, process, network, filesystem, log,
-and artifact byte ceilings should be treated as deployment policy until they are wired
-into runtime validation and persisted effective-run metadata.
+Phase 33 established the policy model and deployment mappings. Phase 34 adds runtime
+loading, ceiling validation, queue-time rejection, persisted effective-policy proof,
+Docker option mapping, Kubernetes Job resource mapping, artifact count/byte checks where
+the runtime can inspect artifacts, events, audit records, and admin/API/CLI visibility.
+Secret allow-lists and deeper cluster admission policies remain deployment-specific
+follow-up work.
 
 The King is generous with work. He is not generous with unbounded work.
 
@@ -18,7 +18,7 @@ The King is generous with work. He is not generous with unbounded work.
 - Give each goblin kind explicit resource expectations.
 - Keep worker limits reviewable next to registry and image-map configuration.
 - Map one policy model onto Docker, Docker Compose, and Kubernetes/Helm.
-- Leave room for future enforcement without changing the worker contract.
+- Enforce supported limits without changing the worker contract.
 - Make operator proof clear when a goblin is intentionally constrained.
 
 ## Policy Shape
@@ -125,9 +125,9 @@ Policies should have two layers:
 Defaults keep small examples safe. Ceilings keep a single registry change from turning
 one goblin into the whole kingdom's appetite.
 
-When enforcement is added, Goblin King should reject any effective policy above the
-configured ceiling before it queues or launches work. Rejections should create audit and
-event records so operators can see exactly why the job was refused.
+Goblin King rejects any effective policy above the configured ceiling before it queues or
+launches work. Rejections create audit and event records so operators can see exactly why
+the job was refused.
 
 ## Docker Mapping
 
@@ -174,10 +174,24 @@ own admission controls, quotas, or network policies.
 
 ## Current Enforcement
 
-The current implementation enforces or records these policy-adjacent controls:
+The current implementation enforces or records these controls:
 
+- Loading `goblin-resource-policies.json` for API, CLI, scheduler, Docker, and Helm.
+- Effective policy resolution from global defaults plus per-goblin overrides.
+- Ceiling validation before API queueing, fanout, retry, schedule creation, and scheduler
+  materialization.
 - Job `timeout_seconds` and scheduler/runtime timeout outcomes.
 - Job `max_retries` and retry status transitions.
+- Persisted effective policy metadata on jobs and runs.
+- API, CLI, and admin run-detail visibility for effective policy data.
+- Audit and event records for policy validation failures.
+- Docker mappings for CPU, memory, PID, network, read-only root, tmpfs, and log byte
+  options where Docker supports those flags.
+- Kubernetes Job mappings for CPU/memory requests/limits, read-only root filesystem, and
+  active deadline timeouts.
+- Artifact count and byte ceilings after worker completion when artifact metadata or local
+  artifact files are available.
+- Per-kind scheduler concurrency deferral for leased/running jobs.
 - Scoped hard termination for Docker and Kubernetes runtime objects created and labeled
   by Goblin King.
 - Safe artifact path serving under the configured artifact root.
@@ -185,17 +199,12 @@ The current implementation enforces or records these policy-adjacent controls:
 - Docker/Helm deployment configuration for resource requests, limits, volumes, services,
   ingress, and security settings.
 
-The following are documented policy targets and should be enforced by deployment
-configuration today:
+The following remain deployment-specific or future hardening targets:
 
-- CPU and memory ceilings.
-- PID/process limits.
-- Network egress restrictions.
-- Read-only root filesystem requirements.
-- Artifact byte/file ceilings.
-- Log byte ceilings.
-- Per-kind concurrency ceilings.
 - Secret allow-lists.
+- Network egress allow-lists beyond Docker network mode and Kubernetes NetworkPolicy.
+- Cloud/provider admission controls, quotas, and policy engines.
+- Object-storage quota enforcement outside the local volume/PVC artifact path.
 
 ## Validation And Proof
 
@@ -209,7 +218,7 @@ goblin-king workers validate --registry examples/cross-language-goblins.json --i
 helm template goblin-king deploy/helm/goblin-king
 ```
 
-Future policy-aware validation should also prove:
+Policy-aware validation should also prove:
 
 - A goblin with an allowed policy launches successfully.
 - A goblin above global ceilings is rejected before execution.

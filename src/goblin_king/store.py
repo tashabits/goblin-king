@@ -18,6 +18,7 @@ from sqlalchemy import (
     Text,
     create_engine,
     delete,
+    func,
     inspect,
     or_,
     select,
@@ -122,6 +123,7 @@ runs_table = Table(
     Column("timeout_seconds", Integer, nullable=True),
     Column("max_retries", Integer, nullable=False, default=0),
     Column("leased_until", DateTime(timezone=True), nullable=True),
+    Column("resource_policy_json", Text, nullable=True),
 )
 
 artifacts_table = Table(
@@ -1079,6 +1081,9 @@ class SQLiteStore:
                     timeout_seconds=run.timeout_seconds,
                     max_retries=run.max_retries,
                     leased_until=run.leased_until,
+                    resource_policy_json=(
+                        json.dumps(run.resource_policy) if run.resource_policy else None
+                    ),
                 )
             )
             if run.result is not None:
@@ -1284,6 +1289,17 @@ class SQLiteStore:
                 .values(status="running", attempt_count=attempt_count)
             )
 
+    def count_active_jobs(self, kind: str, *, exclude_job_id: str | None = None) -> int:
+        """Count leased/running jobs for one goblin kind."""
+        with self.engine.connect() as connection:
+            query = select(func.count()).select_from(jobs_table).where(
+                jobs_table.c.kind == kind,
+                jobs_table.c.status.in_(["leased", "running"]),
+            )
+            if exclude_job_id is not None:
+                query = query.where(jobs_table.c.id != exclude_job_id)
+            return int(connection.execute(query).scalar_one())
+
     def finish_job(
         self,
         job_id: str,
@@ -1436,6 +1452,7 @@ class SQLiteStore:
             "timeout_seconds": "INTEGER",
             "max_retries": "INTEGER NOT NULL DEFAULT 0",
             "leased_until": "DATETIME",
+            "resource_policy_json": "TEXT",
         }
         fanout_columns = {column["name"] for column in inspect(self.engine).get_columns("fanouts")}
         schedule_columns = {
@@ -1479,6 +1496,11 @@ def _row_to_run(payload: dict[str, Any]) -> RunRecord:
         max_retries=payload.get("max_retries") or 0,
         leased_until=(
             _coerce_datetime(payload["leased_until"]) if payload.get("leased_until") else None
+        ),
+        resource_policy=(
+            json.loads(payload["resource_policy_json"])
+            if payload.get("resource_policy_json")
+            else None
         ),
     )
 

@@ -119,7 +119,7 @@ target phase below.
 - Documentation and screenshot coverage for Phase 16-21 production proof surfaces.
 - Explicit deferred item list for future phases.
 
-## Planned In Phase 34
+## Covered In Phase 34
 
 - API, CLI, admin, audit, and event visibility for effective per-run resource policies.
 - Resource-policy validation failures surfaced before queueing or launching unsafe work.

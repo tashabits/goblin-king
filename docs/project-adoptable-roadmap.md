@@ -44,8 +44,8 @@ The path should let a user:
 6. Inspect run status, results, logs, and artifacts.
 7. Understand what is stable, alpha, and internal.
 
-Phase 34 is reserved for runtime resource-policy enforcement. The project-adoptable
-alpha work starts after that enforcement pass.
+Phase 34 completed runtime resource-policy enforcement. The project-adoptable alpha work
+starts from that enforced policy baseline.
 
 ## Phase 35: Project-Adoptable Goblin Configuration
 
@@ -415,7 +415,8 @@ No GitHub Actions proof is required or sufficient.
 
 - Public PyPI release hardening.
 - Full production hardening for untrusted multi-tenant execution.
-- Advanced resource policy enforcement beyond the currently planned work.
+- Secret allow-lists, provider-specific admission controls, object-storage quota
+  enforcement, and deeper resource-policy engines.
 - Deep conformance certification.
 - Image signing/scanning.
 - Cloud-provider-specific deployment recipes.

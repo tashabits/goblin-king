@@ -2,7 +2,8 @@
 
 from goblin_king.contracts import GoblinContext
 from goblin_king.registry import GoblinRegistry
-from goblin_king.runtime import InProcessRuntime, KubernetesRuntime
+from goblin_king.resource_policies import ResourcePolicy
+from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRuntime
 from goblin_king.workers import WorkerImageDefinition, WorkerImageMap
 
 
@@ -84,3 +85,93 @@ def test_kubernetes_job_includes_result_forwarder() -> None:
         "env"
     ]
     assert {"name": "result", "mountPath": "/goblin-result"} in forwarder["volumeMounts"]
+
+
+def test_docker_command_includes_resource_policy_flags(tmp_path) -> None:
+    """Verify Docker runtime maps supported resource policy fields to docker run flags."""
+    runtime = DockerRuntime(
+        workers=WorkerImageMap(
+            {"example.hello": WorkerImageDefinition(context=".", image="hello:local")},
+            root=".",
+        )
+    )
+    context = GoblinContext(
+        run_id="run-policy",
+        artifact_root=str(tmp_path / "artifacts"),
+        metadata={"job_id": "job-policy"},
+    )
+    policy = ResourcePolicy.model_validate(
+        {
+            "cpu": {"limit": "500m"},
+            "memory": {"limit": "256Mi"},
+            "process": {"pids_limit": 64},
+            "network": {"mode": "none"},
+            "filesystem": {"read_only_root": True, "tmpfs": ["/tmp:size=16m"]},
+            "logs": {"max_bytes": 2048},
+        }
+    )
+
+    command = runtime._docker_run_command(
+        image="hello:local",
+        run_dir=tmp_path / "run",
+        context=context,
+        worker_id="worker-policy",
+        timeout_seconds=30,
+        resource_policy=policy,
+    )
+
+    assert ["--cpus", "0.5"] == command[command.index("--cpus") : command.index("--cpus") + 2]
+    assert ["--memory", "256m"] == command[
+        command.index("--memory") : command.index("--memory") + 2
+    ]
+    assert ["--pids-limit", "64"] == command[
+        command.index("--pids-limit") : command.index("--pids-limit") + 2
+    ]
+    assert ["--network", "none"] == command[
+        command.index("--network") : command.index("--network") + 2
+    ]
+    assert "--read-only" in command
+    assert ["--tmpfs", "/tmp:size=16m"] == command[
+        command.index("--tmpfs") : command.index("--tmpfs") + 2
+    ]
+    assert ["--log-opt", "max-size=2048"] == command[
+        command.index("--log-opt") : command.index("--log-opt") + 2
+    ]
+
+
+def test_kubernetes_job_includes_resource_policy_fields() -> None:
+    """Verify Kubernetes runtime maps resource policy into container resources."""
+    workers = WorkerImageMap(
+        {"example.hello": WorkerImageDefinition(context=".", image="hello:local")},
+        root=".",
+    )
+    runtime = KubernetesRuntime(workers=workers, redis_url="redis://redis:6379/0")
+    context = GoblinContext(
+        run_id="run-policy",
+        artifact_root=".goblin-king/artifacts/run-policy",
+        metadata={"job_id": "job-policy"},
+    )
+    policy = ResourcePolicy.model_validate(
+        {
+            "cpu": {"request": "100m", "limit": "1"},
+            "memory": {"request": "64Mi", "limit": "512Mi"},
+            "filesystem": {"read_only_root": True},
+        }
+    )
+
+    manifest = runtime._job_manifest(
+        name="gk-example-hello-run-policy",
+        config_name="gk-example-hello-run-policy-input",
+        image="hello:local",
+        context=context,
+        worker_id="k8s-worker-run-policy",
+        timeout_seconds=30,
+        resource_policy=policy,
+    )
+
+    worker = manifest["spec"]["template"]["spec"]["containers"][0]
+    assert worker["resources"] == {
+        "requests": {"cpu": "100m", "memory": "64Mi"},
+        "limits": {"cpu": "1", "memory": "512Mi"},
+    }
+    assert worker["securityContext"] == {"readOnlyRootFilesystem": True}

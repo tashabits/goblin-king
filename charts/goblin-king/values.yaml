@@ -75,6 +75,7 @@ config:
   registryPath: /app/demo-goblins.json
   imagesPath: /app/demo-images.json
   projectSettingsPath: ""
+  resourcePoliciesPath: /config/goblin-resource-policies.json
   dbPath: /data/goblin-king.sqlite3
   artifactRoot: /data/artifacts
   redisUrl: redis://goblin-king-redis:6379/0
@@ -90,6 +91,49 @@ config:
     projectClaim: goblin_king_project_id
     adminRoles:
       - admin
+
+resourcePolicies:
+  version: 1
+  defaults:
+    timeout_seconds: 60
+    max_retries: 0
+    cpu:
+      request: 100m
+      limit: "1"
+    memory:
+      request: 64Mi
+      limit: 512Mi
+    process:
+      pids_limit: 256
+    filesystem:
+      read_only_root: false
+      artifact_max_bytes: 10485760
+      artifact_max_files: 20
+    logs:
+      max_bytes: 1048576
+    concurrency:
+      max_running: 10
+  goblins:
+    example.behavior-python-slow-cancellable:
+      timeout_seconds: 120
+    example.long-hello:
+      timeout_seconds: 120
+  ceilings:
+    timeout_seconds: 3600
+    max_retries: 5
+    cpu:
+      limit: "2"
+    memory:
+      limit: 2Gi
+    process:
+      pids_limit: 512
+    filesystem:
+      artifact_max_bytes: 1073741824
+      artifact_max_files: 1000
+    logs:
+      max_bytes: 10485760
+    concurrency:
+      max_running: 25
 
 project:
   extraVolumes: []

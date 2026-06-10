@@ -37,6 +37,7 @@ def test_sqlite_store_creates_schema_and_round_trips_completed_run(tmp_path: Pat
         timeout_seconds=30,
         max_retries=2,
         leased_until=utc_now() + timedelta(seconds=60),
+        resource_policy={"timeout_seconds": 30, "memory": {"limit": "512Mi"}},
     )
 
     store.save_job(job)
@@ -53,6 +54,10 @@ def test_sqlite_store_creates_schema_and_round_trips_completed_run(tmp_path: Pat
     assert loaded_run.timeout_seconds == 30
     assert loaded_run.max_retries == 2
     assert loaded_run.leased_until is not None
+    assert loaded_run.resource_policy == {
+        "timeout_seconds": 30,
+        "memory": {"limit": "512Mi"},
+    }
 
 
 def test_sqlite_store_round_trips_failed_run(tmp_path: Path) -> None:
@@ -117,6 +122,47 @@ def test_store_creates_and_lists_due_schedules(tmp_path: Path) -> None:
 
     assert [schedule.id for schedule in store.list_due_schedules(now)] == ["schedule-due"]
     assert len(store.list_schedules()) == 3
+
+
+def test_store_counts_active_jobs_by_kind(tmp_path: Path) -> None:
+    """Verify concurrency policy helpers count only leased/running jobs for one kind."""
+    now = utc_now()
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    jobs = [
+        JobRecord(
+            id="leased",
+            kind="example.echo",
+            input={},
+            created_at=now,
+            status="leased",
+        ),
+        JobRecord(
+            id="running",
+            kind="example.echo",
+            input={},
+            created_at=now,
+            status="running",
+        ),
+        JobRecord(
+            id="queued",
+            kind="example.echo",
+            input={},
+            created_at=now,
+            status="queued",
+        ),
+        JobRecord(
+            id="other",
+            kind="example.other",
+            input={},
+            created_at=now,
+            status="running",
+        ),
+    ]
+    for job in jobs:
+        store.save_job(job)
+
+    assert store.count_active_jobs("example.echo") == 2
+    assert store.count_active_jobs("example.echo", exclude_job_id="leased") == 1
 
 
 def test_claim_due_jobs_once_and_reclaim_after_lease_expiry(tmp_path: Path) -> None:

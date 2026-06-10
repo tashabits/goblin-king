@@ -733,13 +733,24 @@ language-specific protocols.
 - Add global resource ceilings so goblins cannot request unsafe limits, plus safe
   defaults for existing goblins.
 - Map policies onto Docker options and Kubernetes Job/Pod specs where supported.
-- Document the current enforcement boundary: timeouts, retries, scoped termination,
-  artifact path safety, auth, audit, and events are implemented now; CPU, memory,
-  process, network, filesystem, log, artifact byte, concurrency, and secret ceilings
-  remain deployment-policy or future runtime-validation work.
-- Future runtime enforcement should persist the effective resource policy used for each
-  run, expose it in API, CLI, and admin surfaces, add audit/event records for validation
-  failures, and prove explicit Docker and Helm/Kubernetes mappings.
+- Document the enforcement boundary later completed by Phase 34.
+
+### Phase 34: Runtime Resource Policy Enforcement
+
+- Status: implemented.
+- Branch: `phase-34-resource-policy-enforcement`.
+- Add `goblin-resource-policies.json` as the default policy source.
+- Load effective policy from defaults plus per-goblin overrides and validate against
+  configured ceilings.
+- Reject above-ceiling jobs, fanouts, retries, schedules, and schedule materialization
+  before launching workers.
+- Persist effective policy metadata on jobs and runs.
+- Expose effective policy through API/CLI run data and the React admin run table.
+- Emit audit and event records for policy validation failures.
+- Map supported fields into Docker flags and Kubernetes Job specs.
+- Enforce artifact count/byte ceilings where worker metadata or local artifact files are
+  inspectable.
+- Defer jobs when per-kind concurrency caps are already full.
 
 ## Runtime Enforcement And Project-Adoptable Alpha Roadmap Extension
 
@@ -753,9 +764,9 @@ The central rule remains: goblins are contract-compliant OCI/Docker containers.
 Goblin King schedules containers, not language runtimes, and Python helpers are optional
 conveniences only.
 
-Planned phases:
+Phase sequence:
 
-- Phase 34: runtime resource policy enforcement.
+- Phase 34: runtime resource policy enforcement. Implemented.
 - Phase 35: project-adoptable goblin configuration.
 - Phase 36: bring-your-own-goblin validation.
 - Phase 37: project template and golden path quickstart.
@@ -773,14 +784,10 @@ as the quality gate.
 The README is the user manual. This roadmap file is where unfinished or future work is
 tracked.
 
-- Phase 34 runtime resource-policy enforcement remains outstanding until implemented.
 - Phases 35-42 project-adoptable alpha work remains outstanding until implemented.
-- Runtime-level enforcement for per-goblin CPU, memory, process, network, filesystem,
-  log, artifact byte, concurrency, and secret ceilings.
-- Persisting the effective resource policy used for each run.
-- API, CLI, and admin display of effective per-run resource policy.
-- Audit/event records for resource-policy validation failures and enforcement outcomes.
 - Full browser-proven Docker and Helm admin runtime audit for every roadmap PR.
+- Secret allow-lists, provider-specific admission controls, object-storage quota
+  enforcement, and deeper policy engines.
 - Project-level goblin configuration for external/adopting projects.
 - Bring-your-own-goblin validation workflows for arbitrary project images.
 - Golden path project templates and adopter quickstart.

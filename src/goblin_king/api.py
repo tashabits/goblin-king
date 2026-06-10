@@ -90,6 +90,7 @@ from goblin_king.fanout import (
 )
 from goblin_king.project import ProjectSettings, ProjectSettingsError
 from goblin_king.registry import GoblinRegistry, RegistryError
+from goblin_king.resource_policies import ResourcePolicyError, ResourcePolicySet
 from goblin_king.scheduler import next_run_after
 from goblin_king.store import SQLiteStore
 from goblin_king.termination import RuntimeTarget, terminate_runtime
@@ -117,6 +118,11 @@ class AppState:
         self.artifact_root = settings.artifact_root.resolve()
         self.artifact_root.mkdir(parents=True, exist_ok=True)
         self.event_bus = EventBus(store=self.store, redis_url=settings.redis_url)
+        self.resource_policies = (
+            ResourcePolicySet.from_path(settings.resource_policies)
+            if settings.resource_policies and settings.resource_policies.exists()
+            else None
+        )
 
     def reload_discovery(self) -> DiscoveryStatusResponse:
         """Reload registry and worker mappings while preserving the last good state on failure."""
@@ -1050,6 +1056,16 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         except RegistryError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         project_id = project_for_request(principal, request.project_id)
+        try:
+            policy = _effective_policy(
+                state,
+                definition.kind,
+                timeout_seconds=request.timeout_seconds,
+                max_retries=request.max_retries,
+            )
+        except ResourcePolicyError as error:
+            _record_policy_rejection(state, principal, project_id, definition.kind, str(error))
+            raise HTTPException(status_code=422, detail=str(error)) from error
         job = JobRecord(
             id=str(uuid4()),
             kind=definition.kind,
@@ -1061,8 +1077,9 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             status="queued",
             priority=request.priority,
             due_at=utc_now(),
-            max_retries=request.max_retries,
-            timeout_seconds=request.timeout_seconds,
+            max_retries=(policy.max_retries or 0) if policy else request.max_retries,
+            timeout_seconds=policy.timeout_seconds if policy else request.timeout_seconds,
+            metadata={"resource_policy": policy.compact()} if policy else {},
         )
         state.store.save_job(job)
         state.event_bus.emit(
@@ -1245,6 +1262,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                 request=request,
                 created_by=principal.user_id,
                 project_id=project_id,
+                resource_policies=state.resource_policies,
             )
             state.event_bus.emit(
                 "fanout.created",
@@ -1318,6 +1336,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                 job_id=job_id,
                 request=request,
                 created_by=principal.user_id,
+                resource_policies=state.resource_policies,
             )
             state.event_bus.emit(
                 "job.retry_queued",
@@ -1343,6 +1362,17 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             return retry
         except KeyError as error:
             raise HTTPException(status_code=404, detail=f"job not found: {job_id}") from error
+        except ResourcePolicyError as error:
+            source_project_id = source.project_id if "source" in locals() and source else None
+            source_kind = source.kind if "source" in locals() and source else job_id
+            _record_policy_rejection(
+                state,
+                principal,
+                source_project_id,
+                source_kind,
+                str(error),
+            )
+            raise HTTPException(status_code=422, detail=str(error)) from error
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
 
@@ -1361,6 +1391,16 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         schedule = _schedule_from_request(state.registry, request).model_copy(
             update={"project_id": project_id}
         )
+        try:
+            _effective_policy(
+                state,
+                schedule.kind,
+                timeout_seconds=schedule.timeout_seconds,
+                max_retries=schedule.max_retries,
+            )
+        except ResourcePolicyError as error:
+            _record_policy_rejection(state, principal, project_id, schedule.kind, str(error))
+            raise HTTPException(status_code=422, detail=str(error)) from error
         state.store.save_schedule(schedule)
         state.event_bus.emit(
             "schedule.created",
@@ -1683,6 +1723,48 @@ def _record_runtime_termination(
         detail=payload,
     )
     return RuntimeTerminationResponse(**payload)
+
+
+def _effective_policy(
+    state: AppState,
+    kind: str,
+    *,
+    timeout_seconds: int | None,
+    max_retries: int | None,
+):
+    """Resolve one effective resource policy when policy enforcement is configured."""
+    if state.resource_policies is None:
+        return None
+    return state.resource_policies.effective_for(
+        kind,
+        timeout_seconds=timeout_seconds,
+        max_retries=max_retries,
+    )
+
+
+def _record_policy_rejection(
+    state: AppState,
+    principal: Principal,
+    project_id: str | None,
+    kind: str,
+    error: str,
+) -> None:
+    """Persist audit/event proof for a queue-time policy rejection."""
+    state.event_bus.emit(
+        "resource_policy.rejected",
+        source="api",
+        project_id=project_id,
+        payload={"kind": kind, "error": error},
+    )
+    audit(
+        state.store,
+        action="resource_policy.rejected",
+        outcome="failure",
+        principal=principal,
+        project_id=project_id,
+        resource_type="resource_policy",
+        detail={"kind": kind, "error": error},
+    )
 
 
 def _validate_cron(value: str) -> None:

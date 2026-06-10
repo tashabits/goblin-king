@@ -10,6 +10,7 @@ data:
       "db": "{{ .Values.config.dbPath }}",
       "redis_url": "{{ .Values.config.redisUrl }}",
       "artifact_root": "{{ .Values.config.artifactRoot }}",
+      "resource_policies": "{{ .Values.config.resourcePoliciesPath }}",
       "bootstrap_admin_token": "{{ .Values.api.bootstrapAdminToken }}",
       "oidc": {
         "enabled": {{ .Values.config.oidc.enabled }},
@@ -27,3 +28,5 @@ data:
       "project": "{{ .Values.config.projectSettingsPath }}"
       {{- end }}
     }
+  goblin-resource-policies.json: |
+{{ .Values.resourcePolicies | toPrettyJson | indent 4 }}

@@ -20,6 +20,7 @@ from goblin_king.contracts import (
 )
 from goblin_king.events import EventBus
 from goblin_king.registry import GoblinRegistry
+from goblin_king.resource_policies import ResourcePolicySet, policy_from_job_metadata
 from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRuntime, new_run_context
 from goblin_king.store import SQLiteStore
 from goblin_king.workers import WorkerImageMap
@@ -45,6 +46,7 @@ class Scheduler:
         workers: WorkerImageMap | None = None,
         redis_url: str = "redis://localhost:6379/0",
         event_bus: EventBus | None = None,
+        resource_policies: ResourcePolicySet | None = None,
     ) -> None:
         self.registry = registry
         self.store = store
@@ -58,6 +60,7 @@ class Scheduler:
         if runtime_mode in {"docker", "kubernetes"} and workers is None:
             raise ValueError(f"workers image map is required when runtime_mode={runtime_mode!r}")
         self.event_bus = event_bus or EventBus(store=store, redis_url=redis_url)
+        self.resource_policies = resource_policies
         self.runtime = self._build_runtime()
 
     def reload_discovery(
@@ -113,6 +116,30 @@ class Scheduler:
                 max_retries=schedule.max_retries,
                 timeout_seconds=schedule.timeout_seconds,
             )
+            if self.resource_policies is not None:
+                try:
+                    policy = self.resource_policies.effective_for(
+                        schedule.kind,
+                        timeout_seconds=schedule.timeout_seconds,
+                        max_retries=schedule.max_retries,
+                    )
+                except ValueError as error:
+                    self.event_bus.emit(
+                        "resource_policy.rejected",
+                        source="scheduler",
+                        project_id=schedule.project_id,
+                        schedule_id=schedule.id,
+                        scheduler_id=self.worker_id,
+                        payload={"kind": schedule.kind, "error": str(error)},
+                    )
+                    continue
+                job = job.model_copy(
+                    update={
+                        "metadata": {**job.metadata, "resource_policy": policy.compact()},
+                        "timeout_seconds": policy.timeout_seconds,
+                        "max_retries": policy.max_retries or 0,
+                    }
+                )
             self.store.save_job(job)
             self.store.update_schedule_after_materialize(
                 schedule.id,
@@ -140,7 +167,29 @@ class Scheduler:
             lease_until=current + timedelta(seconds=self.lease_seconds),
             limit=self.claim_limit,
         )
+        runnable: list[JobRecord] = []
         for job in jobs:
+            policy = policy_from_job_metadata(job.metadata)
+            max_running = policy.concurrency.max_running if policy else None
+            if max_running is not None:
+                active_count = self.store.count_active_jobs(job.kind, exclude_job_id=job.id)
+                if active_count >= max_running:
+                    self.store.finish_job(job.id, status="queued", due_at=current)
+                    self.event_bus.emit(
+                        "resource_policy.concurrency_deferred",
+                        source="scheduler",
+                        project_id=job.project_id,
+                        job_id=job.id,
+                        schedule_id=job.schedule_id,
+                        fanout_id=job.fanout_id,
+                        scheduler_id=self.worker_id,
+                        payload={
+                            "kind": job.kind,
+                            "max_running": max_running,
+                            "active_count": active_count,
+                        },
+                    )
+                    continue
             self.event_bus.emit(
                 "job.leased",
                 source="scheduler",
@@ -151,7 +200,8 @@ class Scheduler:
                 scheduler_id=self.worker_id,
                 payload={"kind": job.kind, "leased_until": job.leased_until.isoformat()},
             )
-        return jobs
+            runnable.append(job)
+        return runnable
 
     def run_claimed_job(self, job: JobRecord, now: datetime | None = None) -> RunRecord:
         """Execute one leased job and persist both run and final job status."""
@@ -175,9 +225,19 @@ class Scheduler:
         else:
             definition, entrypoint = self.registry.resolve(job.kind)
         context = new_run_context(job.id, job.kind, attempt)
+        resource_policy = policy_from_job_metadata(job.metadata)
         if job.project_id is not None:
             context = context.model_copy(
                 update={"metadata": {**context.metadata, "project_id": job.project_id}}
+            )
+        if resource_policy is not None:
+            context = context.model_copy(
+                update={
+                    "metadata": {
+                        **context.metadata,
+                        "resource_policy": resource_policy.compact(),
+                    }
+                }
             )
         if isinstance(self.runtime, DockerRuntime | KubernetesRuntime):
             result = self.runtime.run(
@@ -186,6 +246,7 @@ class Scheduler:
                 job.input,
                 context,
                 timeout_seconds=job.timeout_seconds,
+                resource_policy=resource_policy,
             )
         else:
             result = self.runtime.run(definition, entrypoint, job.input, context)
@@ -210,6 +271,7 @@ class Scheduler:
             timeout_seconds=job.timeout_seconds,
             max_retries=job.max_retries,
             leased_until=job.leased_until,
+            resource_policy=resource_policy.compact() if resource_policy else None,
         )
         self.store.save_run(run)
 

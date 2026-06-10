@@ -38,6 +38,7 @@ from goblin_king.fanout import (
 )
 from goblin_king.project import ProjectSettings, ProjectSettingsError
 from goblin_king.registry import GoblinRegistry, RegistryError
+from goblin_king.resource_policies import ResourcePolicyError, ResourcePolicySet
 from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRuntime, new_run_context
 from goblin_king.scheduler import DEFAULT_INTERVAL_SECONDS, Scheduler, next_run_after
 from goblin_king.store import DEFAULT_DB_PATH, SQLiteStore
@@ -81,6 +82,7 @@ RuntimeOption = Literal["docker", "kubernetes", "in-process"]
 DEFAULT_IMAGES_PATH = Path("goblin-images.json")
 DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 DEFAULT_PROJECT_PATH = Path("goblin-king-project.json")
+DEFAULT_RESOURCE_POLICIES_PATH = Path("goblin-resource-policies.json")
 
 
 @auth_app.command("create-user")
@@ -279,6 +281,10 @@ def submit_job(
         str,
         typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
     ] = DEFAULT_REDIS_URL,
+    resource_policies: Annotated[
+        Path | None,
+        typer.Option("--resource-policies", help="Optional resource policy JSON path."),
+    ] = DEFAULT_RESOURCE_POLICIES_PATH,
 ) -> None:
     """Submit and immediately execute one job through the selected runtime."""
     loaded = _load_registry(registry)
@@ -290,16 +296,38 @@ def submit_job(
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
     store = SQLiteStore(db)
+    policy_set = _load_resource_policies(resource_policies)
+    try:
+        policy = (
+            policy_set.effective_for(
+                definition.kind,
+                timeout_seconds=definition.timeout_seconds,
+                max_retries=definition.max_retries,
+            )
+            if policy_set
+            else None
+        )
+    except ResourcePolicyError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
 
     job = JobRecord(
         id=str(uuid4()),
         kind=definition.kind,
         input=input_payload,
         created_at=utc_now(),
+        timeout_seconds=policy.timeout_seconds if policy else definition.timeout_seconds,
+        max_retries=(policy.max_retries or 0) if policy else (definition.max_retries or 0),
+        metadata={"resource_policy": policy.compact()} if policy else {},
     )
-    context = new_run_context(job.id, definition.kind)
-
     store.save_job(job)
+    context = new_run_context(job.id, definition.kind)
+    if policy is not None:
+        context = context.model_copy(
+            update={
+                "metadata": {**context.metadata, "resource_policy": policy.compact()}
+            }
+        )
     started_at = utc_now()
     if runtime == "docker":
         result = DockerRuntime(
@@ -310,7 +338,8 @@ def submit_job(
             entrypoint,
             input_payload,
             context,
-            timeout_seconds=definition.timeout_seconds,
+            timeout_seconds=job.timeout_seconds,
+            resource_policy=policy,
         )
     elif runtime == "kubernetes":
         result = KubernetesRuntime(
@@ -321,7 +350,8 @@ def submit_job(
             entrypoint,
             input_payload,
             context,
-            timeout_seconds=definition.timeout_seconds,
+            timeout_seconds=job.timeout_seconds,
+            resource_policy=policy,
         )
     else:
         result = InProcessRuntime().run(definition, entrypoint, input_payload, context)
@@ -335,6 +365,9 @@ def submit_job(
         finished_at=finished_at,
         result=result,
         error=result.error,
+        timeout_seconds=job.timeout_seconds,
+        max_retries=job.max_retries,
+        resource_policy=policy.compact() if policy else None,
     )
     store.save_run(run)
     store.finish_job(job.id, status=run.status, last_error=run.error)
@@ -352,6 +385,10 @@ def fanout_jobs(
         typer.Option("--registry", help="Registry JSON path."),
     ] = Path("goblins.json"),
     db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
+    resource_policies: Annotated[
+        Path | None,
+        typer.Option("--resource-policies", help="Optional resource policy JSON path."),
+    ] = DEFAULT_RESOURCE_POLICIES_PATH,
 ) -> None:
     """Create a queued fanout batch from a JSON request."""
     request = FanoutCreateRequest.model_validate(_load_input(input_path))
@@ -360,6 +397,7 @@ def fanout_jobs(
         registry=_load_registry(registry),
         request=request,
         created_by="cli",
+        resource_policies=_load_resource_policies(resource_policies),
     )
     typer.echo(detail.model_dump_json(indent=2))
 
@@ -369,6 +407,10 @@ def retry_cli_job(
     job_id: Annotated[str, typer.Argument(help="Source job ID to retry.")],
     db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
     reason: Annotated[str | None, typer.Option("--reason", help="Retry reason.")] = None,
+    resource_policies: Annotated[
+        Path | None,
+        typer.Option("--resource-policies", help="Optional resource policy JSON path."),
+    ] = DEFAULT_RESOURCE_POLICIES_PATH,
 ) -> None:
     """Create a queued retry job from a terminal source job."""
     try:
@@ -377,6 +419,7 @@ def retry_cli_job(
             job_id=job_id,
             request=RetryCreateRequest(reason=reason),
             created_by="cli-retry",
+            resource_policies=_load_resource_policies(resource_policies),
         )
     except KeyError as error:
         typer.echo(f"job not found: {job_id}", err=True)
@@ -571,6 +614,10 @@ def add_schedule(
         int | None,
         typer.Option("--timeout-seconds", help="Optional timeout in seconds."),
     ] = None,
+    resource_policies: Annotated[
+        Path | None,
+        typer.Option("--resource-policies", help="Optional resource policy JSON path."),
+    ] = DEFAULT_RESOURCE_POLICIES_PATH,
 ) -> None:
     """Persist a recurring goblin schedule."""
     loaded = _load_registry(registry)
@@ -580,6 +627,20 @@ def add_schedule(
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
     input_payload = _load_input(input_path)
+    policy_set = _load_resource_policies(resource_policies)
+    try:
+        policy = (
+            policy_set.effective_for(
+                definition.kind,
+                timeout_seconds=timeout_seconds,
+                max_retries=max_retries,
+            )
+            if policy_set
+            else None
+        )
+    except ResourcePolicyError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
     created_at = utc_now()
     provisional = ScheduleRecord(
         id=str(uuid4()),
@@ -589,8 +650,8 @@ def add_schedule(
         timezone=timezone,
         created_at=created_at,
         next_run_at=created_at,
-        max_retries=max_retries,
-        timeout_seconds=timeout_seconds,
+        max_retries=(policy.max_retries or 0) if policy else max_retries,
+        timeout_seconds=policy.timeout_seconds if policy else timeout_seconds,
     )
     schedule = provisional.model_copy(
         update={
@@ -636,6 +697,10 @@ def scheduler_run_once(
         str,
         typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
     ] = DEFAULT_REDIS_URL,
+    resource_policies: Annotated[
+        Path | None,
+        typer.Option("--resource-policies", help="Optional resource policy JSON path."),
+    ] = DEFAULT_RESOURCE_POLICIES_PATH,
 ) -> None:
     """Run one deterministic scheduler pass and print any created runs."""
     registry, workers = _load_scheduler_discovery(registry, images, project, runtime)
@@ -645,6 +710,7 @@ def scheduler_run_once(
         runtime_mode=runtime,
         workers=workers,
         redis_url=redis_url,
+        resource_policies=_load_resource_policies(resource_policies),
     )
     runs = scheduler.run_once()
     typer.echo(json.dumps([run.model_dump(mode="json") for run in runs], indent=2))
@@ -677,6 +743,10 @@ def scheduler_run(
         str,
         typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
     ] = DEFAULT_REDIS_URL,
+    resource_policies: Annotated[
+        Path | None,
+        typer.Option("--resource-policies", help="Optional resource policy JSON path."),
+    ] = DEFAULT_RESOURCE_POLICIES_PATH,
 ) -> None:
     """Run scheduler passes until interrupted."""
     registry, workers = _load_scheduler_discovery(registry, images, project, runtime)
@@ -686,6 +756,7 @@ def scheduler_run(
         runtime_mode=runtime,
         workers=workers,
         redis_url=redis_url,
+        resource_policies=_load_resource_policies(resource_policies),
     )
     try:
         scheduler.run_loop(interval_seconds=interval_seconds)
@@ -978,6 +1049,19 @@ def _load_scheduler_discovery(
     registry = _load_registry(registry_path)
     workers = _load_workers(images_path) if runtime in {"docker", "kubernetes"} else None
     return registry, workers
+
+
+def _load_resource_policies(path: Path | None) -> ResourcePolicySet | None:
+    """Load optional resource policies; missing default files mean enforcement is off."""
+    if path is None:
+        return None
+    if not path.exists() and path == DEFAULT_RESOURCE_POLICIES_PATH:
+        return None
+    try:
+        return ResourcePolicySet.from_path(path)
+    except ResourcePolicyError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(1) from error
 
 
 def _load_input(path: Path) -> dict:
