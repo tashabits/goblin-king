@@ -7,6 +7,17 @@ import { App } from "./App";
 const fixtures = {
   goblins: [
     {
+      kind: "project.inline.hello",
+      display_name: "Project Inline Hello",
+      source: "project-config",
+      worker_mapped: true,
+      worker_image: "project-inline-hello:local",
+      validation_status: {
+        state: "unknown",
+        message: "No validation proof has been recorded. Validate first, then schedule.",
+      },
+    },
+    {
       kind: "example.hello",
       display_name: "Example Hello",
       worker_mapped: true,
@@ -284,6 +295,9 @@ describe("App", () => {
 
     expect(localStorage.getItem("goblinKingAdminToken")).toBe("test-token");
     expect((await screen.findAllByText("example.hello")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("project.inline.hello").length).toBeGreaterThan(0);
+    expect(screen.getByText("project-config")).toBeInTheDocument();
+    expect(screen.getAllByText(/goblin-king workers validate --project/).length).toBeGreaterThan(0);
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/admin-api/goblins"),
       expect.objectContaining({
