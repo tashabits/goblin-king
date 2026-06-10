@@ -191,6 +191,7 @@ def test_helm_chart_includes_cloud_neutral_production_controls() -> None:
     assert "autoscaling:" in values
     assert "podDisruptionBudget:" in values
     assert "networkPolicy:" in values
+    assert "max_project_running" in values
     assert "accessModes:" in values
     assert "goblin-king.podPlacement" in helpers
     assert "goblin-king.serviceAccountName" in helpers

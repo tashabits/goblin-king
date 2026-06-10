@@ -31,6 +31,7 @@ from goblin_king.runtime_helpers import (
     kubernetes_clients,
     kubernetes_name,
     kubernetes_policy_fields,
+    resource_policy_env,
 )
 from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
@@ -293,6 +294,12 @@ class DockerRuntime:
             f"GOBLIN_HEARTBEAT_INTERVAL_SECONDS={self.heartbeat_interval_seconds}",
         ]
         if resource_policy is not None:
+            command.extend(
+                [
+                    "-e",
+                    f"GOBLIN_EFFECTIVE_RESOURCE_POLICY_JSON={resource_policy_env(resource_policy)}",
+                ]
+            )
             command.extend(docker_policy_args(resource_policy))
         if data_volume:
             data_root = self.run_root.resolve().parent
@@ -549,6 +556,12 @@ class KubernetesRuntime:
             ],
         }
         if resource_policy is not None:
+            worker_container["env"].append(
+                {
+                    "name": "GOBLIN_EFFECTIVE_RESOURCE_POLICY_JSON",
+                    "value": resource_policy_env(resource_policy),
+                }
+            )
             worker_container.update(kubernetes_policy_fields(resource_policy))
         spec: dict[str, Any] = {
             "backoffLimit": 0,

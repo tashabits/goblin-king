@@ -133,6 +133,13 @@ def test_docker_command_includes_resource_policy_flags(tmp_path) -> None:
     assert ["--memory", "256m"] == command[
         command.index("--memory") : command.index("--memory") + 2
     ]
+    assert (
+        'GOBLIN_EFFECTIVE_RESOURCE_POLICY_JSON={"cpu":{"limit":"500m"},'
+        '"filesystem":{"read_only_root":true,"tmpfs":["/tmp:size=16m"]},'
+        '"logs":{"max_bytes":2048},"memory":{"limit":"256Mi"},'
+        '"network":{"mode":"none"},"process":{"pids_limit":64}}'
+        in command
+    )
     assert ["--pids-limit", "64"] == command[
         command.index("--pids-limit") : command.index("--pids-limit") + 2
     ]
@@ -184,3 +191,11 @@ def test_kubernetes_job_includes_resource_policy_fields() -> None:
         "limits": {"cpu": "1", "memory": "512Mi"},
     }
     assert worker["securityContext"] == {"readOnlyRootFilesystem": True}
+    assert {
+        "name": "GOBLIN_EFFECTIVE_RESOURCE_POLICY_JSON",
+        "value": (
+            '{"cpu":{"limit":"1","request":"100m"},'
+            '"filesystem":{"read_only_root":true},'
+            '"memory":{"limit":"512Mi","request":"64Mi"}}'
+        ),
+    } in worker["env"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,11 @@ def docker_policy_args(policy: ResourcePolicy) -> list[str]:
     if policy.logs.max_bytes is not None:
         args.extend(["--log-opt", f"max-size={policy.logs.max_bytes}"])
     return args
+
+
+def resource_policy_env(policy: ResourcePolicy) -> str:
+    """Return the compact effective policy as stable worker-visible JSON."""
+    return json.dumps(policy.compact(), sort_keys=True, separators=(",", ":"))
 
 
 def docker_memory_quantity(value: str) -> str:

@@ -113,6 +113,7 @@ resourcePolicies:
       max_bytes: 1048576
     concurrency:
       max_running: 10
+      max_project_running: 20
   goblins:
     example.behavior-python-slow-cancellable:
       timeout_seconds: 120
@@ -134,6 +135,7 @@ resourcePolicies:
       max_bytes: 10485760
     concurrency:
       max_running: 25
+      max_project_running: 50
 
 project:
   extraVolumes: []
