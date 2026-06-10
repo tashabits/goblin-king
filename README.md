@@ -36,6 +36,7 @@ intended for untrusted third-party container execution.
 - [Resource Policies](#resource-policies)
 - [Image Promotion And Deployment Proof](#image-promotion-and-deployment-proof)
 - [Capabilities](#capabilities)
+- [Future Work](#future-work)
 - [Documentation](#documentation)
 - Deeper manuals:
   - [User Guide](docs/USER_GUIDE.md)
@@ -760,6 +761,16 @@ Goblin King provides:
 - A default demo registry, `demo-goblins.json`, that exposes core samples,
   cross-language hello workers, WASI wrappers, and behavior examples.
 
+## Future Work
+
+Planned future work is tracked outside the user-guide flow so setup and operator
+instructions stay focused on features that exist today.
+
+- [Goblin Designer Roadmap](docs/goblin-editor-roadmap.md): phased plan for a
+  separate React admin Designer page where users can design project goblins,
+  validate them, promote validated goblins into the existing admin goblin list,
+  and hand them off to the tester/operator page.
+
 ## Documentation
 
 | Document | Purpose |
@@ -793,6 +804,7 @@ Goblin King provides:
 | [Release Checklist](docs/RELEASE_CHECKLIST.md) | Internal wheel, Docker image, local CI, Docker adoption, and Helm proof checklist. |
 | [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md) | Maintainer closeout audit and proof surfaces. |
 | [Code Cleanup Notes](docs/CODE_CLEANUP.md) | Refactor notes and helper-module rules. |
+| [Goblin Designer Roadmap](docs/goblin-editor-roadmap.md) | Future-work plan for a separate admin Designer page that validates newly designed goblins before they appear in the runnable admin list. |
 | [Compatibility Matrix](docs/COMPATIBILITY.md) | Contract and schema compatibility versions for project-ready adoption. |
 | [Upgrade Guide](docs/UPGRADING.md) | Host-project upgrade procedure and compatibility fixture policy. |
 | [Migration Guide](docs/MIGRATION_GUIDE.md) | How to move existing scripts and workers into project goblins. |
