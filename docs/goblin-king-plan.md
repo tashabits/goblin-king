@@ -754,8 +754,9 @@ language-specific protocols.
 
 ## Runtime Enforcement And Project-Adoptable Alpha Roadmap Extension
 
-Phase 34 closes the resource-policy enforcement gap from Phase 33. Phases 35-42 are
-planned in [Project-Adoptable Goblin King Roadmap](project-adoptable-roadmap.md). They
+Phase 34 closes the resource-policy enforcement gap from Phase 33. Phase 35 adds
+project-defined goblin configuration. Phases 36-42 are planned in
+[Project-Adoptable Goblin King Roadmap](project-adoptable-roadmap.md). They
 carry Goblin King from the current container-contract and cross-language demo state into
 a project-adoptable alpha where another codebase can define, validate, schedule, and
 inspect its own goblins without modifying Goblin King internals.
@@ -767,7 +768,7 @@ conveniences only.
 Phase sequence:
 
 - Phase 34: runtime resource policy enforcement. Implemented.
-- Phase 35: project-adoptable goblin configuration.
+- Phase 35: project-adoptable goblin configuration. Implemented.
 - Phase 36: bring-your-own-goblin validation.
 - Phase 37: project template and golden path quickstart.
 - Phase 38: external project scheduling and run inspection.
@@ -784,11 +785,10 @@ as the quality gate.
 The README is the user manual. This roadmap file is where unfinished or future work is
 tracked.
 
-- Phases 35-42 project-adoptable alpha work remains outstanding until implemented.
+- Phases 36-42 project-adoptable alpha work remains outstanding until implemented.
 - Full browser-proven Docker and Helm admin runtime audit for every roadmap PR.
 - Secret allow-lists, provider-specific admission controls, object-storage quota
   enforcement, and deeper policy engines.
-- Project-level goblin configuration for external/adopting projects.
 - Bring-your-own-goblin validation workflows for arbitrary project images.
 - Golden path project templates and adopter quickstart.
 - CLI/API/admin scheduling and inspection for goblins defined only by project config.
