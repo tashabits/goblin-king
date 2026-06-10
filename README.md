@@ -162,8 +162,11 @@ Python package entry points:
 goblin-king project init ./my-goblin-project --prefix myproject
 cd ./my-goblin-project
 python -m goblin_king.cli project validate --project goblin-king-project.json
+python -m goblin_king.cli project goblins list --project goblin-king-project.json
 python -m goblin_king.cli workers validate --project goblin-king-project.json --input inputs/hello.json --kind myproject.hello --build --require-success
 python -m goblin_king.cli workers validate --project goblin-king-project.json --input inputs/artifact.json --kind myproject.artifact --build --require-success
+python -m goblin_king.cli workers validation-status --kind myproject.hello
+python -m goblin_king.cli workers validation-status --kind myproject.artifact
 ```
 
 Project-defined goblins can also be submitted, scheduled, and inspected from the CLI:
@@ -246,7 +249,9 @@ For a project-owned goblin, start with a standalone project template:
 goblin-king project init ./my-goblin-project --prefix myproject
 cd ./my-goblin-project
 goblin-king project validate --project goblin-king-project.json
+goblin-king project goblins list --project goblin-king-project.json
 goblin-king workers validate --project goblin-king-project.json --input inputs/hello.json --kind myproject.hello --build --require-success
+goblin-king workers validation-status --kind myproject.hello
 ```
 
 Then submit, schedule, and inspect it:

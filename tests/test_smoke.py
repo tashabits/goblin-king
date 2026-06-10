@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 from goblin_king.cli import app
 from goblin_king.contracts import GoblinResult, RunRecord
 from goblin_king.smoke import AdopterSmokeResult, run_adopter_project_smoke
+from goblin_king.store import SQLiteStore
 from goblin_king.validation import WorkerValidationResult
 
 runner = CliRunner()
@@ -98,6 +99,14 @@ def test_adopter_project_smoke_summarizes_success_artifact_and_failure(
     }
     assert result.artifact_count == 1
     assert result.failure_error == "expected adopter smoke failure"
+    records = SQLiteStore(
+        tmp_path / "adopter-project" / ".goblin-king" / "smoke.sqlite3"
+    ).list_worker_validations()
+    assert {record.kind for record in records} == {
+        "acme.hello",
+        "acme.artifact",
+        "acme.failure",
+    }
 
 
 def test_smoke_adopter_project_cli_prints_json(monkeypatch) -> None:

@@ -18,7 +18,7 @@ from goblin_king.registry import GoblinRegistry
 from goblin_king.scheduler import Scheduler
 from goblin_king.store import SQLiteStore
 from goblin_king.templates import init_project
-from goblin_king.validation import WorkerValidationResult, validate_workers
+from goblin_king.validation import WorkerValidationResult, validate_workers, validation_record
 from goblin_king.workers import WorkerImageMap
 
 
@@ -94,6 +94,8 @@ def run_adopter_project_smoke(
 
     db_path = project_dir / ".goblin-king" / "smoke.sqlite3"
     store = SQLiteStore(db_path)
+    for validation_result in validation:
+        store.save_worker_validation(validation_record(validation_result))
     now = datetime.now(UTC)
     schedule_inputs = {
         f"{prefix}.hello": read_json_object(project_dir / "inputs" / "hello.json"),

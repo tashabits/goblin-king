@@ -100,6 +100,16 @@ Expected output:
 myproject.hello ok success context,dockerfile,build,result-file,result-envelope,metrics,artifacts
 ```
 
+Confirm the persisted validation proof before scheduling:
+
+```bash
+goblin-king workers validation-status --kind myproject.hello
+```
+
+Re-run validation whenever the worker image digest changes. By default, Goblin King does
+not schedule project goblins whose resolved image digest has not passed the container
+contract validator for the declared contract version.
+
 ## Run Through Docker
 
 Submit one project goblin through Docker:
@@ -123,6 +133,9 @@ Expected proof:
 - `result_json.status` is `success`.
 - `goblin_source` is `project-config`.
 - `goblin_definition.kind` is the project goblin kind.
+
+For artifact-producing goblins, submit the artifact worker and inspect the same run
+detail. Artifact metadata appears in the result envelope.
 
 ## Schedule Work
 

@@ -752,6 +752,7 @@ Goblin King source code.
 
 ```bash
 python -m goblin_king.cli project validate --project goblin-king-project.json
+python -m goblin_king.cli project goblins list --project goblin-king-project.json
 
 python -m goblin_king.cli workers validate \\
   --project goblin-king-project.json \\
@@ -766,6 +767,33 @@ python -m goblin_king.cli workers validate \\
   --kind {artifact_kind} \\
   --build \\
   --require-success
+
+python -m goblin_king.cli workers validation-status --kind {hello_kind}
+python -m goblin_king.cli workers validation-status --kind {artifact_kind}
+
+python -m goblin_king.cli jobs submit {hello_kind} \\
+  --project goblin-king-project.json \\
+  --input inputs/hello.json \\
+  --runtime docker
+
+python -m goblin_king.cli runs show <run-id> --with-job
+
+python -m goblin_king.cli jobs submit {artifact_kind} \\
+  --project goblin-king-project.json \\
+  --input inputs/artifact.json \\
+  --runtime docker
+
+python -m goblin_king.cli runs show <artifact-run-id> --with-job
+
+python -m goblin_king.cli schedules add {hello_kind} \\
+  --project goblin-king-project.json \\
+  --input inputs/hello.json \\
+  --cron "* * * * *" \\
+  --due-now
+
+python -m goblin_king.cli scheduler run-once \\
+  --project goblin-king-project.json \\
+  --runtime docker
 ```
 
 To run through the scheduler/API stack, mount or bake this project config into the

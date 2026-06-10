@@ -25,6 +25,7 @@ The generated project includes:
 
 ```bash
 python -m goblin_king.cli project validate --project goblin-king-project.json
+python -m goblin_king.cli project goblins list --project goblin-king-project.json
 
 python -m goblin_king.cli workers validate \
   --project goblin-king-project.json \
@@ -39,7 +40,13 @@ python -m goblin_king.cli workers validate \
   --kind myproject.artifact \
   --build \
   --require-success
+
+python -m goblin_king.cli workers validation-status --kind myproject.hello
+python -m goblin_king.cli workers validation-status --kind myproject.artifact
 ```
+
+Re-run the worker validation commands whenever an image digest changes. Goblin King will
+not schedule an unvalidated project image by default.
 
 ## Adopt
 
@@ -54,6 +61,11 @@ After discovery, submit or schedule the project goblins from CLI/API/admin:
 python -m goblin_king.cli jobs submit myproject.hello \
   --project goblin-king-project.json \
   --input inputs/hello.json \
+  --runtime docker
+
+python -m goblin_king.cli jobs submit myproject.artifact \
+  --project goblin-king-project.json \
+  --input inputs/artifact.json \
   --runtime docker
 
 python -m goblin_king.cli schedules add myproject.artifact \
