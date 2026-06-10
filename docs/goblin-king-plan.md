@@ -658,11 +658,13 @@ language-specific protocols.
 
 ### Phase 27: Add Container-Wrapped WASI/WebAssembly Goblins
 
-- Status: planned.
+- Status: implemented.
 - Branch: `phase-27-container-wrapped-wasi-goblins`.
 - Add at least two WASI/WebAssembly hello goblins wrapped in normal container images,
   including Rust WASI and one additional boring/reliable WASI sample.
 - Do not add native WASI scheduling support; Goblin King still launches containers.
+- Added Rust/WASI and C/WASI examples under `examples/goblins/wasi-*`; both are
+  normal OCI images that run Wasmtime internally.
 
 ### Phase 28: Register And Run Cross-Language Goblins Through Goblin King
 

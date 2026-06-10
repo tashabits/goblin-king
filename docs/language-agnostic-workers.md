@@ -33,6 +33,11 @@ These examples are intentionally not registered in the main example registry yet
 Phase 28 wires cross-language workers into Goblin King runtime proof after the
 WASI/container-wrapped examples are in place.
 
+The `examples/goblins/wasi-*` folders contain the same idea for WebAssembly:
+Rust/WASI and C/WASI modules wrapped in regular container images with Wasmtime.
+They are examples of the supported container-wrapped model, not native WASI
+scheduling.
+
 ## Optional Python Helpers
 
 Python helpers are useful for:
