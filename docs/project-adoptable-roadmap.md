@@ -743,15 +743,15 @@ sufficient.
 - Confirm the proof table and roadmap accurately describe project defaults,
   per-goblin overrides, project-wide concurrency, runtime mapping, and the remaining
   deployment-specific gaps.
-- Keep the release note explicit: after this phase is merged and `main` is synced,
-  create a GitHub release from `main` summarizing the completed layered resource-policy
-  work across Phases 49-53.
+- Release `v0.1.0-alpha.2` was created from synced `main` after this phase merged,
+  summarizing the completed layered resource-policy work across Phases 49-53.
 
 All Phase 43-53 proof remains local. GitHub Actions are not required and are not
 sufficient.
 
 ## Deferred After Phase 53
 
+- Current release: `v0.1.0-alpha.2`.
 - Public PyPI release hardening.
 - Full production hardening for untrusted multi-tenant execution.
 - Secret allow-lists, provider-specific admission controls, object-storage quota

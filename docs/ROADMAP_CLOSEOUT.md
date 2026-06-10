@@ -64,4 +64,5 @@ future-work plan.
   per-goblin overrides, persisted effective policy proof, project-wide concurrency,
   runtime policy mapping, and documentation closeout in
   `docs/goblin-resource-policies.md`, `docs/project-adoptable-roadmap.md`, and
-  `docs/proof_table.md`.
+  `docs/proof_table.md`. Release `v0.1.0-alpha.2` records this closeout from synced
+  `main`.
