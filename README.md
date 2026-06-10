@@ -770,6 +770,20 @@ instructions stay focused on features that exist today.
   separate React admin Designer page where users can design project goblins,
   validate them, promote validated goblins into the existing admin goblin list,
   and hand them off to the tester/operator page.
+- [Adoption And Onboarding Roadmap](docs/adoption-onboarding-roadmap.md): future
+  path for getting from clone or vendored checkout to validated admin proof in
+  under 15 minutes.
+- [Demo And Doctor Roadmap](docs/demo-and-doctor-roadmap.md): future one-command
+  demo and diagnostic flows for local setup, project config, validation, API,
+  admin, Redis, Docker, Compose, and optional Helm checks.
+- [Goblin Scaffolding Roadmap](docs/goblin-scaffolding-roadmap.md): future CLI
+  and Goblin Designer starter-folder templates for contract-compliant container
+  goblins.
+- [Example Recipes Roadmap](docs/example-recipes-roadmap.md): future practical
+  recipes beyond hello-world, including artifact, utility, and trusted
+  network-aware examples.
+- [Release Packaging Roadmap](docs/release-packaging-roadmap.md): future
+  packaging, install, image, Helm chart, docs-site, and provenance work.
 
 ## Documentation
 
@@ -805,6 +819,11 @@ instructions stay focused on features that exist today.
 | [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md) | Maintainer closeout audit and proof surfaces. |
 | [Code Cleanup Notes](docs/CODE_CLEANUP.md) | Refactor notes and helper-module rules. |
 | [Goblin Designer Roadmap](docs/goblin-editor-roadmap.md) | Future-work plan for a separate admin Designer page that validates newly designed goblins before they appear in the runnable admin list. |
+| [Adoption And Onboarding Roadmap](docs/adoption-onboarding-roadmap.md) | Future-work plan for getting new adopters from clone/vendor to validated admin proof quickly. |
+| [Demo And Doctor Roadmap](docs/demo-and-doctor-roadmap.md) | Future-work plan for one-command demo and local diagnostic flows. |
+| [Goblin Scaffolding Roadmap](docs/goblin-scaffolding-roadmap.md) | Future-work plan for shared CLI and Goblin Designer starter templates. |
+| [Example Recipes Roadmap](docs/example-recipes-roadmap.md) | Future-work plan for practical recipe examples beyond hello-world. |
+| [Release Packaging Roadmap](docs/release-packaging-roadmap.md) | Future-work plan for packaging, publishing, install, chart, docs-site, and provenance work. |
 | [Compatibility Matrix](docs/COMPATIBILITY.md) | Contract and schema compatibility versions for project-ready adoption. |
 | [Upgrade Guide](docs/UPGRADING.md) | Host-project upgrade procedure and compatibility fixture policy. |
 | [Migration Guide](docs/MIGRATION_GUIDE.md) | How to move existing scripts and workers into project goblins. |
