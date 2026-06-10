@@ -45,7 +45,7 @@ The path should let a user:
 7. Understand what is stable, alpha, and internal.
 
 Phase 34 completed runtime resource-policy enforcement. The project-adoptable alpha work
-started from that enforced policy baseline and is now closed out through Phase 42.
+started from that enforced policy baseline and is now adoption-hardened through Phase 48.
 
 ## Phase 35: Project-Adoptable Goblin Configuration
 
@@ -649,6 +649,7 @@ added.
 
 - Branch: `phase-48-adoption-hardening-closeout`.
 - PR title: `Phase 48 adoption hardening closeout`.
+- Status: implemented.
 - Re-audit the complete adoption path.
 - Update README, proof table, roadmap, outstanding/deferred items, screenshots, and
   validation docs.
@@ -658,7 +659,7 @@ added.
 All Phase 43-48 proof remains local. GitHub Actions are not required and are not
 sufficient.
 
-## Deferred After Phase 42
+## Deferred After Phase 48
 
 - Public PyPI release hardening.
 - Full production hardening for untrusted multi-tenant execution.
