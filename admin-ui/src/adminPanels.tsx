@@ -15,7 +15,7 @@ import {
 import type { FormEvent, ReactNode } from "react";
 
 import { quoteFor } from "./adminData";
-import { Stat, Table } from "./components";
+import { EffectivePolicy, Stat, Table } from "./components";
 import type { Goblin, Job } from "./types";
 
 type Counts = {
@@ -35,6 +35,13 @@ function validationBadge(goblin: Goblin) {
       {status.state}
     </span>
   );
+}
+
+function jobResourcePolicy(job: Job) {
+  const policy = job.metadata?.resource_policy;
+  return policy && typeof policy === "object" && !Array.isArray(policy)
+    ? (policy as Record<string, unknown>)
+    : null;
 }
 
 export function LoginScreen({
@@ -237,6 +244,7 @@ export function TaskBoardPanel({
             <h4>{job.kind}</h4>
             <code>{job.id}</code>
             <p>{job.last_error || quoteFor(job.id.length)}</p>
+            <EffectivePolicy policy={jobResourcePolicy(job)} />
             {!["completed", "failed", "timed_out", "cancelled"].includes(job.status) && (
               <div className="button-row">
                 <button className="danger" onClick={() => onCancelJob(job.id)}>

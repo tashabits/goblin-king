@@ -35,3 +35,24 @@ export function Table({ title, rows }: { title: string; rows: TableRow[] }) {
     </div>
   );
 }
+
+export function EffectivePolicy({
+  policy,
+  emptyLabel = "No effective policy recorded.",
+}: {
+  policy?: Record<string, unknown> | null;
+  emptyLabel?: string;
+}) {
+  const hasPolicy = policy && Object.keys(policy).length > 0;
+
+  return (
+    <div className="effective-policy" aria-label="Effective policy">
+      <h4>Effective policy</h4>
+      {hasPolicy ? (
+        <pre>{JSON.stringify(policy, null, 2)}</pre>
+      ) : (
+        <p className="muted">{emptyLabel}</p>
+      )}
+    </div>
+  );
+}

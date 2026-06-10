@@ -28,7 +28,7 @@ import {
   readJson,
   usefulServicesFirst,
 } from "./adminData";
-import { Table } from "./components";
+import { EffectivePolicy, Table } from "./components";
 import type {
   AdminConfig,
   ArtifactCleanupResponse,
@@ -521,7 +521,7 @@ export function App() {
               run.status,
               run.id,
               run.error || JSON.stringify(run.result || {}),
-              JSON.stringify(run.resource_policy || {}),
+              <EffectivePolicy key={run.id} policy={run.resource_policy} />,
             ])}
           />
           <div>
