@@ -47,6 +47,14 @@ work less cramped without moving public adoption boundaries.
 | Task Board | Job cards and cancel/hard-kill controls lived inline in `App.tsx`. | `TaskBoardPanel` renders job cards while `App.tsx` keeps orchestration state and API actions. |
 | Admin behavior | The app file handled both state and all visible panel rendering. | State and API orchestration stay in `App.tsx`; reusable panel rendering moved into focused components. |
 
+## Cleanup 05 Tests, Docs, And Style Closeout
+
+| Area | Before | After |
+| --- | --- | --- |
+| API test setup | API tests repeated local `TestClient`, `ApiSettings`, `SQLiteStore`, artifact root, and auth-header setup. | `tests/api_helpers.py` provides shared local API client and bearer-header helpers. |
+| Proof table | Phase 23 referred broadly to cleanup work without the staged release/audit details. | `docs/proof_table.md` records the staged cleanup, baseline release, completion release, and audit proof expectations. |
+| Public boundary docs | Internal module guidance named older large modules but not the new helper boundaries. | `docs/PUBLIC_API.md` describes the new helper modules as internal implementation details. |
+
 ## Stable Boundary
 
 No public imports were changed. Adopting projects should continue using the root
