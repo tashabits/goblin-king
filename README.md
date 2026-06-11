@@ -821,6 +821,7 @@ instructions stay focused on features that exist today.
 | [Release Checklist](docs/RELEASE_CHECKLIST.md) | Internal wheel, Docker image, local CI, Docker adoption, and Helm proof checklist. |
 | [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md) | Maintainer closeout audit and proof surfaces. |
 | [Code Cleanup Notes](docs/CODE_CLEANUP.md) | Refactor notes and helper-module rules. |
+| [Code Documentation Audit](docs/code-documentation-audit.md) | Maintainer audit plan for file-level comments, docstrings, and useful code documentation. |
 | [Goblin Designer Roadmap](docs/goblin-editor-roadmap.md) | Future-work plan for a separate admin Designer page that validates newly designed goblins before they appear in the runnable admin list. |
 | [Adoption And Onboarding Roadmap](docs/adoption-onboarding-roadmap.md) | Future-work plan for getting new adopters from clone/vendor to validated admin proof quickly. |
 | [Demo And Doctor Roadmap](docs/demo-and-doctor-roadmap.md) | Future-work plan for one-command demo and local diagnostic flows. |
