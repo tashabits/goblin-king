@@ -285,9 +285,30 @@ Do not build host-project code against `goblin_king.runtime`, `goblin_king.store
 or other non-root internals unless the needed behavior is promoted to the public
 boundary first.
 
+## Local Demo And Doctor
+
+Use the human-facing local onboarding path when you want the included adopter fixture
+visible through the React admin:
+
+```bash
+goblin-king doctor
+goblin-king demo up
+```
+
+`doctor` reports pass/warn/fail checks with repair commands. `demo up` starts the
+trusted Docker Compose admin stack, validates the project goblin before scheduling,
+reloads discovery, submits a Docker-backed job, waits for the scheduler run, and prints
+the admin URL plus cleanup command.
+
+Stop the stack when finished:
+
+```bash
+goblin-king demo down
+```
+
 ## One-Command Smoke
 
-Run the complete local adopter proof:
+Run the temporary-project smoke proof when you want automation without the admin stack:
 
 ```bash
 goblin-king smoke adopter-project

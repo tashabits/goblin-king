@@ -24,7 +24,7 @@ HELM_TIMEOUT ?= 5m
 HELM_ARGS ?=
 HELM_PVC ?= $(HELM_RELEASE)-data
 
-.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel release-check helm-template helm-admin-smoke kind-smoke clean clean-all docker-clean
+.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit doctor demo demo-down project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel release-check helm-template helm-admin-smoke kind-smoke clean clean-all docker-clean
 
 help:
 	@echo "Targets:"
@@ -61,6 +61,9 @@ help:
 	@echo "  admin-up       Start the React admin, API, Redis, and long service"
 	@echo "  admin-smoke    Exercise Docker React admin API proof flow"
 	@echo "  admin-runtime-audit Collect Docker admin runtime audit table"
+	@echo "  doctor         Diagnose local demo/adopter prerequisites"
+	@echo "  demo           Start local demo stack and prove a validated admin-visible run"
+	@echo "  demo-down      Stop the local demo stack"
 	@echo "  project-validate Validate host-project discovery settings"
 	@echo "  project-build-workers Build host-project worker images"
 	@echo "  project-discovery-reload Reload host-project discovery through admin API"
@@ -177,6 +180,15 @@ admin-smoke:
 
 admin-runtime-audit:
 	$(PYTHON) scripts/admin_runtime_audit.py --base-url $(ADMIN_BASE) --token $(ADMIN_TOKEN) --long-service-url $(LONG_HELLO_URL)
+
+doctor:
+	$(PYTHON) -m goblin_king.cli doctor
+
+demo:
+	$(PYTHON) -m goblin_king.cli demo up
+
+demo-down:
+	$(PYTHON) -m goblin_king.cli demo down
 
 project-validate:
 	$(PYTHON) -m goblin_king.cli project validate --project $(PROJECT)
