@@ -58,7 +58,19 @@ from goblin_king.contracts import (
     ScheduleRecord,
     utc_now,
 )
+from goblin_king.demo import (
+    DEFAULT_ADMIN_TOKEN,
+    DEFAULT_ADMIN_URL,
+    DEFAULT_DEMO_INPUT,
+    DEFAULT_DEMO_KIND,
+    DEFAULT_DEMO_PROJECT,
+    DEFAULT_POLL_SECONDS,
+    DEFAULT_TIMEOUT_SECONDS,
+    run_demo_down,
+    run_demo_up,
+)
 from goblin_king.deployment import helm_template_command, image_push_command, run_command
+from goblin_king.doctor import run_doctor
 from goblin_king.events import (
     DEFAULT_EVENT_CHANNEL,
     DEFAULT_EVENT_STREAM,
@@ -97,6 +109,7 @@ events_app = typer.Typer(help="Inspect and watch durable events.")
 heartbeats_app = typer.Typer(help="Inspect scheduler and worker heartbeats.")
 deploy_app = typer.Typer(help="Record image promotion and deployment proof.")
 deploy_promotions_app = typer.Typer(help="Plan and inspect worker image promotions.")
+demo_app = typer.Typer(help="Run the local Docker admin onboarding demo.")
 project_app = typer.Typer(help="Inspect and scaffold reusable Goblin King projects.")
 project_goblins_app = typer.Typer(help="Inspect project-discovered goblins.")
 runs_app = typer.Typer(help="Inspect goblin runs.")
@@ -114,6 +127,7 @@ app.add_typer(events_app, name="events")
 app.add_typer(heartbeats_app, name="heartbeats")
 deploy_app.add_typer(deploy_promotions_app, name="promotions")
 app.add_typer(deploy_app, name="deploy")
+app.add_typer(demo_app, name="demo")
 project_app.add_typer(project_goblins_app, name="goblins")
 app.add_typer(project_app, name="project")
 app.add_typer(runs_app, name="runs")
@@ -187,6 +201,129 @@ def run_api(
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
     uvicorn.run(create_app(loaded_settings), host=host, port=port)
+
+
+@demo_app.command("up")
+def demo_up(
+    project: Annotated[
+        Path,
+        typer.Option("--project", help="Goblin King project settings path for the demo."),
+    ] = DEFAULT_DEMO_PROJECT,
+    kind: Annotated[
+        str,
+        typer.Option("--kind", help="Project goblin kind to validate and submit."),
+    ] = DEFAULT_DEMO_KIND,
+    input_path: Annotated[
+        Path,
+        typer.Option("--input", help="JSON input payload for the demo goblin."),
+    ] = DEFAULT_DEMO_INPUT,
+    admin_url: Annotated[
+        str,
+        typer.Option("--admin-url", help="Local React admin URL."),
+    ] = DEFAULT_ADMIN_URL,
+    token: Annotated[
+        str,
+        typer.Option("--token", help="Local admin/API bearer token."),
+    ] = DEFAULT_ADMIN_TOKEN,
+    redis_url: Annotated[
+        str,
+        typer.Option("--redis-url", help="Redis URL used by validation and Docker runtime."),
+    ] = DEFAULT_REDIS_URL,
+    timeout_seconds: Annotated[
+        int,
+        typer.Option("--timeout-seconds", help="Seconds to wait for API and run proof."),
+    ] = DEFAULT_TIMEOUT_SECONDS,
+    poll_seconds: Annotated[
+        float,
+        typer.Option("--poll-seconds", help="Seconds between job/run polling attempts."),
+    ] = DEFAULT_POLL_SECONDS,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Print machine-readable demo proof."),
+    ] = False,
+) -> None:
+    """Start the local admin stack and prove one validated project goblin run."""
+    result = run_demo_up(
+        project=project,
+        kind=kind,
+        input_path=input_path,
+        admin_url=admin_url,
+        token=token,
+        redis_url=redis_url,
+        timeout_seconds=timeout_seconds,
+        poll_seconds=poll_seconds,
+    )
+    if json_output:
+        typer.echo(result.model_dump_json(indent=2))
+    else:
+        _print_demo_up_result(result)
+    if not result.ok:
+        raise typer.Exit(1)
+
+
+@demo_app.command("down")
+def demo_down(
+    project: Annotated[
+        Path,
+        typer.Option("--project", help="Goblin King project settings path used for Compose env."),
+    ] = DEFAULT_DEMO_PROJECT,
+) -> None:
+    """Stop the local Docker Compose demo stack."""
+    result = run_demo_down(project=project)
+    typer.echo(f"cleanup\t{result.cleanup}")
+    typer.echo(f"compose\t{'ok' if result.ok else 'failed'}")
+    if result.error:
+        typer.echo(result.error, err=True)
+    if not result.ok:
+        raise typer.Exit(1)
+
+
+@app.command("doctor")
+def doctor(
+    project: Annotated[
+        Path,
+        typer.Option("--project", help="Goblin King project settings path to diagnose."),
+    ] = DEFAULT_DEMO_PROJECT,
+    kind: Annotated[
+        str,
+        typer.Option("--kind", help="Project goblin kind whose validation status is checked."),
+    ] = DEFAULT_DEMO_KIND,
+    admin_url: Annotated[
+        str,
+        typer.Option("--admin-url", help="Local React admin URL."),
+    ] = DEFAULT_ADMIN_URL,
+    token: Annotated[
+        str,
+        typer.Option("--token", help="Local admin/API bearer token."),
+    ] = DEFAULT_ADMIN_TOKEN,
+    redis_url: Annotated[
+        str,
+        typer.Option("--redis-url", help="Redis URL checked by diagnostics."),
+    ] = DEFAULT_REDIS_URL,
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Print machine-readable diagnostic checks."),
+    ] = False,
+) -> None:
+    """Diagnose local prerequisites for the demo/adopter onboarding path."""
+    result = run_doctor(
+        project=project,
+        kind=kind,
+        admin_url=admin_url,
+        token=token,
+        redis_url=redis_url,
+    )
+    if json_output:
+        typer.echo(result.model_dump_json(indent=2))
+    else:
+        for check in result.checks:
+            typer.echo(f"{check.status}\t{check.name}\t{check.message}")
+            if check.repair_command:
+                typer.echo(f"repair\t{check.repair_command}")
+            if check.doc_link:
+                typer.echo(f"docs\t{check.doc_link}")
+    if not result.ok:
+        raise typer.Exit(1)
 
 
 @goblins_app.command("list")
@@ -1263,6 +1400,29 @@ def inspect_resource_policy(
         "log_policy": {"max_bytes": policy.logs.max_bytes},
     }
     typer.echo(pretty_json(payload))
+
+
+def _print_demo_up_result(result) -> None:
+    """Print a compact human-readable demo proof receipt."""
+    typer.echo(f"ok\t{str(result.ok).lower()}")
+    typer.echo(f"stage\t{result.stage}")
+    typer.echo(f"admin_url\t{result.admin_url}")
+    typer.echo(f"project\t{result.project}")
+    typer.echo(f"kind\t{result.kind}")
+    if result.validation is not None:
+        validation_status = "passed" if result.validation.ok else "failed"
+        typer.echo(f"validation\t{validation_status}\t{result.validation.image_digest or '-'}")
+    if result.discovery is not None:
+        active = result.discovery.get("active_goblin_count", "-")
+        version = result.discovery.get("discovery_version", "-")
+        typer.echo(f"discovery\tactive={active}\tversion={version}")
+    if result.job is not None:
+        typer.echo(f"job\t{result.job.get('id', '-')}\t{result.job.get('status', '-')}")
+    if result.run is not None:
+        typer.echo(f"run\t{result.run.get('id', '-')}\t{result.run.get('status', '-')}")
+    if result.error:
+        typer.echo(f"error\t{result.error}")
+    typer.echo(f"cleanup\t{result.cleanup}")
 
 
 if __name__ == "__main__":

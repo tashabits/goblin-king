@@ -21,6 +21,24 @@ start stack -> validate -> reload discovery -> submit job -> inspect run -> shut
 Project goblins are containers. They do not need Python worker imports, and goblin task
 containers must not receive the Docker socket.
 
+## Shortcut: Included Demo
+
+From the Goblin King repository root, the included adopter fixture can be diagnosed and
+proved through the admin in two commands:
+
+```bash
+goblin-king doctor
+goblin-king demo up
+```
+
+`demo up` starts the trusted Docker Compose admin stack, validates
+`project.inline.hello`, reloads discovery, submits a Docker-backed job, waits for the
+scheduler run, and prints the admin URL. Stop the stack with:
+
+```bash
+goblin-king demo down
+```
+
 ## Step 1: Start The Local Stack
 
 From the Goblin King repository root, start the adopter stack:

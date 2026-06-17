@@ -22,6 +22,7 @@ DEFAULT_INPUT = {
     "value": "Audit",
 }
 EXPECTED_FAILURE_KINDS = {"example.controlled-failure", "example.behavior-shell-failure"}
+LONG_SERVICE_KINDS = {"example.long-hello"}
 
 
 @dataclass
@@ -49,7 +50,7 @@ def main() -> None:
     rows: list[AuditRow] = []
     for goblin in client.get("/admin-api/goblins"):
         kind = goblin["kind"]
-        if kind == "example.long-hello":
+        if is_long_service_kind(kind):
             rows.append(client.audit_long_service(kind))
             continue
         rows.append(client.audit_job(kind, timeout_seconds=args.poll_seconds))
@@ -72,6 +73,11 @@ def main() -> None:
             "unexpected audit failures: "
             + ", ".join(f"{row.kind}={row.status}:{row.note}" for row in unexpected)
         )
+
+
+def is_long_service_kind(kind: str) -> bool:
+    """Return true for bundled or project-defined long-running service goblins."""
+    return kind in LONG_SERVICE_KINDS or kind.endswith(".long-service")
 
 
 class AdminClient:

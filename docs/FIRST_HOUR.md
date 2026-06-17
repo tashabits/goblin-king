@@ -15,7 +15,27 @@ For local development, an editable install is fine:
 python -m pip install -e ../goblin-king[dev]
 ```
 
-## 2. Generate A Project Goblin Package
+## 2. Prove The Included Local Demo
+
+From the Goblin King repository root, diagnose the local machine and run the trusted
+Docker/admin demo:
+
+```bash
+goblin-king doctor
+goblin-king demo up
+```
+
+The demo uses `examples/adopting-project/goblin-king-project.json`, validates
+`project.inline.hello`, reloads admin discovery, submits a Docker-backed job, waits for
+the scheduler run, and prints `http://127.0.0.1:8080/admin`.
+
+When finished:
+
+```bash
+goblin-king demo down
+```
+
+## 3. Generate A Project Goblin Package
 
 This command creates a starter project package with a self-contained goblin container
 folder. The Python package metadata is optional integration glue; the worker itself is
@@ -28,33 +48,33 @@ goblin-king project init-package ./my-goblins \
   --image project-hello:local
 ```
 
-## 3. Validate Discovery
+## 4. Validate Discovery
 
 ```bash
 goblin-king project validate --project ./my-goblins/goblin-king-project.json
 goblin-king project goblins list --project ./my-goblins/goblin-king-project.json
 ```
 
-## 4. Build The Goblin Container
+## 5. Build The Goblin Container
 
 ```bash
 goblin-king workers build --images ./my-goblins/goblin-images.json
 ```
 
-## 5. Start The Stack
+## 6. Start The Stack
 
 Use Docker Compose for the first run. The fixture in
 `examples/adopting-project/docker-compose.host-project.yml` shows how to mount project
 settings and worker images.
 
-## 6. Reload Discovery
+## 7. Reload Discovery
 
 ```bash
 curl -X POST http://127.0.0.1:8080/admin-api/admin/discovery/reload \
   -H "Authorization: Bearer local-dev-token"
 ```
 
-## 7. Spawn And Inspect
+## 8. Spawn And Inspect
 
 Open `http://127.0.0.1:8080/admin`, log in with `local-dev-token`, choose the new
 goblin kind in **Goblin Lab**, submit it, then inspect **Task Board**, **Runs**,

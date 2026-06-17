@@ -1,7 +1,8 @@
 # Demo And Doctor Roadmap
 
-This roadmap describes future one-command demo and diagnostic flows for Goblin
-King. It is a planning document, not an implemented feature.
+This roadmap describes one-command demo and diagnostic flows for Goblin King.
+The first local Docker/admin slice is implemented; deeper diagnostic categories
+remain planned follow-up work.
 
 Mental model:
 
@@ -11,17 +12,18 @@ Demo proves the happy path. Doctor explains why the happy path is blocked.
 
 ## Goals
 
-- Plan a future demo flow that starts a trusted local stack and proves a sample
+- Provide a demo flow that starts a trusted local stack and proves a sample
   goblin run.
-- Plan a future doctor flow that diagnoses environment, project, validation,
-  API, admin, storage, Redis, Docker, Compose, and optional Helm issues.
+- Provide a doctor flow that diagnoses environment, project, validation, API,
+  admin, Redis, Docker, and Compose issues.
 - Keep diagnostics actionable and safe.
 - Preserve the rule that goblins are contract-compliant OCI/Docker containers.
 
 ## Additional Guardrails
 
-- Future demo commands such as `make demo` or `goblin-king demo up` are examples
-  only until implemented.
+- `make demo`, `make doctor`, `make demo-down`, `goblin-king demo up`,
+  `goblin-king demo down`, and `goblin-king doctor` are implemented local
+  onboarding commands.
 - Demo and doctor flows must not mount the Docker socket into goblin task
   containers.
 - Doctor output must not treat validation as image trust or security scanning.
@@ -30,42 +32,47 @@ Demo proves the happy path. Doctor explains why the happy path is blocked.
 
 ## Demo Phase 1: One-Command Demo
 
-Plan a future command that can build or prepare sample workers, start the local
-stack, validate the sample goblin, run it, and print the admin URL plus a short
-proof summary.
+Implemented by `goblin-king demo up`.
+
+The command builds/prepares the included adopter stack, starts Docker Compose,
+validates `project.inline.hello`, reloads discovery, submits a job through the
+admin-proxied API, waits for the scheduler run, and prints the admin URL plus a
+short proof summary.
 
 The command should be safe for a trusted local developer machine and should make
 cleanup instructions visible.
 
 ## Demo Phase 2: Demo Project And Sample Goblin
 
-Plan a future demo project that uses the same `GoblinProject` model as adopter
-projects. The demo should include a small success goblin, an artifact-producing
-goblin, and a controlled-failure goblin.
+Partially implemented through `examples/adopting-project`, which uses the same
+`GoblinProject` model as adopter projects and proves a small success goblin.
+Artifact-producing and controlled-failure admin demo variants remain future
+follow-up.
 
 The demo must validate generated or referenced images before scheduling them.
 
 ## Doctor Phase 1: Environment Checks
 
-Plan future checks for Docker availability, Docker socket posture, Docker
-Compose, required ports, Python environment, npm/admin build prerequisites,
-Redis reachability, filesystem storage, and optional Helm tools.
+Implemented for Python import, Docker availability, Docker daemon, Docker
+Compose, Redis reachability, and admin/API readiness. Docker socket posture,
+npm/admin build prerequisites, filesystem storage, and optional Helm tool checks
+remain future follow-up.
 
 Checks should report pass, warning, or failure with repair guidance.
 
 ## Doctor Phase 2: Project And Validation Checks
 
-Plan future checks for project config shape, image map coverage, resolved image
-identity, contract version, validation status, stale validation proof, effective
-resource policy, and schedule readiness.
+Implemented for project config shape, image map coverage, Dockerfile presence,
+and validation status. Resolved image identity freshness, effective resource
+policy detail, and schedule readiness remain future follow-up.
 
 Doctor should explain that validation proves contract compliance, not whether an
 image is safe to trust.
 
 ## Doctor Phase 3: Actionable Repair Messages
 
-Plan repair messages that show the likely next command, relevant doc link, and
-expected successful outcome.
+Implemented repair messages show the likely next command and relevant doc link
+for each warning or failure.
 
 Repair messages should avoid vague "check your setup" language and should not
 invent commands before they exist.
@@ -80,7 +87,6 @@ one intentionally broken environment or project setting.
 
 ## Non-Goals
 
-- No current implementation of demo or doctor commands in this roadmap.
 - No security scanning or trust certification.
 - No untrusted third-party container execution.
 - No production hardening claim.
@@ -89,8 +95,10 @@ one intentionally broken environment or project setting.
 
 ## Acceptance Criteria
 
-- Future demo work has a clear happy-path proof target.
-- Future doctor work has clear diagnostic categories and repair-output goals.
-- Planned commands are clearly labeled as future examples.
+- Demo work has a clear happy-path proof target.
+- Doctor work has clear diagnostic categories and repair-output goals.
+- Implemented commands are documented as available, while follow-up checks remain
+  explicitly future work.
 - Docker socket and validation limitations remain explicit.
-- The roadmap stays concise and does not change CLI/API/admin behavior.
+- The roadmap stays concise and records CLI behavior separately from future
+  follow-up diagnostics.

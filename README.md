@@ -258,6 +258,23 @@ for the practical path from project config to validated, scheduled container gob
 When you want to prove those goblins in the React admin, use
 [Testing Your Project With The Admin Panel](docs/testing-your-project-with-the-admin-panel.md).
 
+For the fastest local proof with the included adopter fixture, run the doctor first,
+then start the demo:
+
+```bash
+goblin-king doctor
+goblin-king demo up
+```
+
+`doctor` checks Docker, Compose, Redis, project config, admin/API reachability, and
+validation status with repair commands. `demo up` starts the trusted Docker Compose
+admin stack, validates `project.inline.hello`, reloads discovery, submits a job, waits
+for the scheduler run, and prints the admin URL plus cleanup command:
+
+```bash
+goblin-king demo down
+```
+
 For a project-owned goblin, start with a standalone project template:
 
 ```bash
@@ -297,15 +314,16 @@ queue time the resolved policy is layered as: Goblin King/operator policy defaul
 project `defaults.resources`, then the goblin-specific override. The resulting effective
 policy is what appears on the job, run, API response, and admin detail panels.
 
-To prove the complete adopter path in one local command:
+To prove the generated temporary-project path without the admin stack:
 
 ```bash
 goblin-king smoke adopter-project
 ```
 
-The smoke command generates a temporary project, adds hello/artifact/controlled-failure
-goblins, validates worker images, schedules them through Docker, inspects results and
-artifacts, and removes its temporary project unless `--keep` is passed.
+The smoke command remains useful for automation: it generates a temporary project, adds
+hello/artifact/controlled-failure goblins, validates worker images, schedules them
+through Docker, inspects results and artifacts, and removes its temporary project unless
+`--keep` is passed.
 
 ## Goblin Container Contract
 
@@ -770,12 +788,11 @@ instructions stay focused on features that exist today.
   separate React admin Designer page where users can design project goblins,
   validate them, promote validated goblins into the existing admin goblin list,
   and hand them off to the tester/operator page.
-- [Adoption And Onboarding Roadmap](docs/adoption-onboarding-roadmap.md): future
-  path for getting from clone or vendored checkout to validated admin proof in
-  under 15 minutes.
-- [Demo And Doctor Roadmap](docs/demo-and-doctor-roadmap.md): future one-command
-  demo and diagnostic flows for local setup, project config, validation, API,
-  admin, Redis, Docker, Compose, and optional Helm checks.
+- [Adoption And Onboarding Roadmap](docs/adoption-onboarding-roadmap.md):
+  implemented local demo/doctor slice plus remaining path from clone or vendored
+  checkout to validated admin proof in under 15 minutes.
+- [Demo And Doctor Roadmap](docs/demo-and-doctor-roadmap.md): implemented
+  one-command Docker/admin demo and diagnostics plus future follow-up checks.
 - [Goblin Scaffolding Roadmap](docs/goblin-scaffolding-roadmap.md): future CLI
   and Goblin Designer starter-folder templates for contract-compliant container
   goblins.
