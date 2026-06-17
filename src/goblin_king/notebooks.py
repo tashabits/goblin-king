@@ -19,6 +19,8 @@ from goblin_king.contracts import GoblinDefinition, NotebookGoblinRecord
 from goblin_king.workers import WorkerImageDefinition, WorkerImageMap
 
 NOTEBOOK_WORKER_MODULE = "goblin_king.container_only"
+TERMINAL_JOB_STATUSES = {"completed", "failed", "timed_out", "cancelled"}
+ProgressCallback = Callable[[dict[str, Any]], None]
 
 
 def notebook_source_hash(source: str, function_name: str) -> str:
@@ -109,6 +111,9 @@ class NotebookFunctionGoblin:
         wait: bool = True,
         timeout_seconds: int = 120,
         poll_seconds: float = 1.0,
+        progress: bool = False,
+        progress_interval_seconds: float = 5.0,
+        on_progress: ProgressCallback | None = None,
     ) -> dict[str, Any]:
         """Submit this function goblin and optionally wait for its run result."""
         return self.client.run(
@@ -117,6 +122,9 @@ class NotebookFunctionGoblin:
             wait=wait,
             timeout_seconds=timeout_seconds,
             poll_seconds=poll_seconds,
+            progress=progress,
+            progress_interval_seconds=progress_interval_seconds,
+            on_progress=on_progress,
         )
 
 
@@ -127,10 +135,12 @@ class GoblinKingNotebookClient:
         self,
         api_url: str | None = None,
         token: str | None = None,
+        request_timeout_seconds: float = 120.0,
     ) -> None:
         self.api_url = (api_url or os.environ.get("GOBLIN_KING_API_URL") or "").rstrip("/")
         if not self.api_url:
             self.api_url = "http://127.0.0.1:8000"
+        self.request_timeout_seconds = request_timeout_seconds
         self.token = (
             token
             or os.environ.get("GOBLIN_KING_API_TOKEN")
@@ -200,21 +210,89 @@ class GoblinKingNotebookClient:
         wait: bool = True,
         timeout_seconds: int = 120,
         poll_seconds: float = 1.0,
+        progress: bool = False,
+        progress_interval_seconds: float = 5.0,
+        on_progress: ProgressCallback | None = None,
     ) -> dict[str, Any]:
         """Submit a declared notebook goblin and optionally wait for completion."""
         job = self._request("POST", "/jobs", {"kind": kind, "input": payload})
+        start = time.monotonic()
+        self._emit_progress(
+            phase="submitted",
+            kind=kind,
+            job=job,
+            run=None,
+            elapsed_seconds=0.0,
+            progress=progress,
+            on_progress=on_progress,
+        )
         if not wait:
             return {"job": job, "run": None}
-        deadline = time.monotonic() + timeout_seconds
+        deadline = start + timeout_seconds
+        next_progress = start + progress_interval_seconds
         latest_job = job
         latest_run = None
         while time.monotonic() < deadline:
             latest_job = self._request("GET", f"/jobs/{job['id']}")
             latest_run = self._run_for_job(job["id"], kind)
-            if latest_job.get("status") in {"completed", "failed", "timed_out", "cancelled"}:
+            now = time.monotonic()
+            job_status = str(latest_job.get("status", ""))
+            if job_status in TERMINAL_JOB_STATUSES:
+                self._emit_progress(
+                    phase=job_status,
+                    kind=kind,
+                    job=latest_job,
+                    run=latest_run,
+                    elapsed_seconds=now - start,
+                    progress=progress,
+                    on_progress=on_progress,
+                )
                 return {"job": latest_job, "run": latest_run}
+            if now >= next_progress:
+                self._emit_progress(
+                    phase="polling",
+                    kind=kind,
+                    job=latest_job,
+                    run=latest_run,
+                    elapsed_seconds=now - start,
+                    progress=progress,
+                    on_progress=on_progress,
+                )
+                next_progress = now + progress_interval_seconds
             time.sleep(poll_seconds)
         raise TimeoutError(f"timed out waiting for notebook goblin job {job['id']}")
+
+    def _emit_progress(
+        self,
+        *,
+        phase: str,
+        kind: str,
+        job: dict[str, Any],
+        run: dict[str, Any] | None,
+        elapsed_seconds: float,
+        progress: bool,
+        on_progress: ProgressCallback | None,
+    ) -> None:
+        """Emit one optional notebook-friendly progress update."""
+        if not progress and on_progress is None:
+            return
+        payload = {
+            "phase": phase,
+            "kind": kind,
+            "job_id": job.get("id"),
+            "job_status": job.get("status"),
+            "run_id": run.get("id") if run else None,
+            "run_status": run.get("status") if run else None,
+            "elapsed_seconds": round(elapsed_seconds, 1),
+        }
+        if on_progress is not None:
+            on_progress(payload)
+        elif progress:
+            run_status = payload["run_status"] or "none"
+            print(
+                f"[{payload['elapsed_seconds']}s] {kind} "
+                f"job={payload['job_status']} run={run_status}"
+            )
 
     def _run_for_job(self, job_id: str, kind: str) -> dict[str, Any] | None:
         runs = self._request(
@@ -246,7 +324,7 @@ class GoblinKingNotebookClient:
             method=method,
         )
         try:
-            with urlrequest.urlopen(request, timeout=30) as response:
+            with urlrequest.urlopen(request, timeout=self.request_timeout_seconds) as response:
                 raw = response.read().decode("utf-8")
         except urlerror.HTTPError as error:
             body = error.read().decode("utf-8", errors="replace")

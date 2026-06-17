@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from goblin_king.contracts import GoblinResult, JobRecord, NotebookGoblinRecord, utc_now
@@ -17,6 +18,52 @@ from goblin_king.store import SQLiteStore
 from goblin_king.validation import WorkerValidationResult
 from goblin_king.workers import WorkerImageMap
 from tests.api_helpers import auth_headers, build_api_client
+
+
+def test_branch_workbook_is_valid_and_branch_pinned() -> None:
+    """Verify the uploadable branch workbook installs the PR branch explicitly."""
+    path = Path("examples/jupyterhub-goblin-king/workbook-launch-branch.ipynb")
+    workbook = json.loads(path.read_text(encoding="utf-8"))
+    source = "\n".join(
+        "".join(cell.get("source", []))
+        for cell in workbook["cells"]
+        if cell.get("cell_type") == "code"
+    )
+
+    branch_package = (
+        "git+https://github.com/tashabits/goblin-king.git@service-workloads-jupyterhub-auth"
+    )
+
+    assert branch_package in source
+    assert "--force-reinstall" in source
+    assert "--no-deps" in source
+    assert "site.getusersitepackages()" in source
+    assert "Path(goblin_king.__file__).resolve()" in source
+    assert "JUPYTERHUB_API_TOKEN is required" in source
+    assert "from goblin_king.notebooks import GoblinKingNotebookClient" in source
+    assert "progress=True" in source
+    assert "/services/long-running/{service['id']}/stop" in source
+
+
+def test_default_workbook_uses_progress_without_branch_pin() -> None:
+    """Verify the stable workbook stays default-branch oriented but shows progress."""
+    path = Path("examples/jupyterhub-goblin-king/workbook-launch.ipynb")
+    workbook = json.loads(path.read_text(encoding="utf-8"))
+    source = "\n".join(
+        "".join(cell.get("source", []))
+        for cell in workbook["cells"]
+        if cell.get("cell_type") == "code"
+    )
+
+    branch_package = (
+        "git+https://github.com/tashabits/goblin-king.git@service-workloads-jupyterhub-auth"
+    )
+
+    assert branch_package not in source
+    assert "git+https://github.com/tashabits/goblin-king.git" in source
+    assert "--no-deps" in source
+    assert "progress=True" in source
+    assert "site.getusersitepackages()" in source
 
 
 def test_notebook_client_declare_posts_function_source(monkeypatch) -> None:
@@ -44,6 +91,132 @@ def test_notebook_client_declare_posts_function_source(monkeypatch) -> None:
     assert requests[0][1] == "/notebooks/goblins"
     assert "def hello(payload):" in requests[0][2]["source"]
     assert requests[0][2]["function_name"] == "hello"
+
+
+def test_notebook_client_request_uses_configured_timeout(monkeypatch) -> None:
+    """Verify notebook HTTP calls use the client-level request timeout."""
+    seen = {}
+
+    class FakeResponse:
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps({"ok": True}).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        seen["url"] = request.full_url
+        seen["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setenv("GOBLIN_KING_API_TOKEN", "token")
+    monkeypatch.setattr("goblin_king.notebooks.urlrequest.urlopen", fake_urlopen)
+
+    client = GoblinKingNotebookClient(
+        api_url="http://goblin.local",
+        request_timeout_seconds=321,
+    )
+    assert client._request("GET", "/health") == {"ok": True}
+
+    assert seen == {"url": "http://goblin.local/health", "timeout": 321}
+
+
+def test_notebook_client_run_is_silent_by_default(monkeypatch, capsys) -> None:
+    """Verify existing notebook run behavior remains quiet unless progress is requested."""
+    client = GoblinKingNotebookClient(api_url="http://goblin.local", token="token")
+
+    def fake_request(_method, path, _payload=None):
+        if path == "/jobs":
+            return {"id": "job-1", "status": "queued"}
+        if path == "/jobs/job-1":
+            return {"id": "job-1", "status": "completed"}
+        if path.startswith("/runs"):
+            return {"items": [{"id": "run-1", "job_id": "job-1", "status": "completed"}]}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    result = client.run("notebook.hello", {}, poll_seconds=0)
+
+    assert result["run"]["id"] == "run-1"
+    assert capsys.readouterr().out == ""
+
+
+def test_notebook_client_run_prints_progress(monkeypatch, capsys) -> None:
+    """Verify opt-in notebook progress prints compact polling updates."""
+    client = GoblinKingNotebookClient(api_url="http://goblin.local", token="token")
+    job_statuses = iter(["leased", "completed"])
+    current_status = {"value": "queued"}
+
+    def fake_request(_method, path, _payload=None):
+        if path == "/jobs":
+            return {"id": "job-1", "status": "queued"}
+        if path == "/jobs/job-1":
+            current_status["value"] = next(job_statuses)
+            return {"id": "job-1", "status": current_status["value"]}
+        if path.startswith("/runs"):
+            run_status = "completed" if current_status["value"] == "completed" else "running"
+            return {"items": [{"id": "run-1", "job_id": "job-1", "status": run_status}]}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    client.run(
+        "notebook.hello",
+        {},
+        poll_seconds=0,
+        progress=True,
+        progress_interval_seconds=0,
+    )
+
+    output = capsys.readouterr().out
+    assert "notebook.hello job=queued run=none" in output
+    assert "notebook.hello job=leased run=running" in output
+    assert "notebook.hello job=completed run=completed" in output
+
+
+def test_notebook_client_run_progress_callback_does_not_print(monkeypatch, capsys) -> None:
+    """Verify callbacks receive progress payloads without enabling printed output."""
+    client = GoblinKingNotebookClient(api_url="http://goblin.local", token="token")
+    job_statuses = iter(["leased", "completed"])
+    current_status = {"value": "queued"}
+    events = []
+
+    def fake_request(_method, path, _payload=None):
+        if path == "/jobs":
+            return {"id": "job-1", "status": "queued"}
+        if path == "/jobs/job-1":
+            current_status["value"] = next(job_statuses)
+            return {"id": "job-1", "status": current_status["value"]}
+        if path.startswith("/runs"):
+            run_status = "completed" if current_status["value"] == "completed" else "running"
+            return {"items": [{"id": "run-1", "job_id": "job-1", "status": run_status}]}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    client.run(
+        "notebook.hello",
+        {},
+        poll_seconds=0,
+        progress_interval_seconds=0,
+        on_progress=events.append,
+    )
+
+    assert capsys.readouterr().out == ""
+    assert [event["phase"] for event in events] == ["submitted", "polling", "completed"]
+    assert events[-1] == {
+        "phase": "completed",
+        "kind": "notebook.hello",
+        "job_id": "job-1",
+        "job_status": "completed",
+        "run_id": "run-1",
+        "run_status": "completed",
+        "elapsed_seconds": 0.0,
+    }
 
 
 def test_api_builds_lists_and_submits_notebook_goblin(tmp_path: Path) -> None:

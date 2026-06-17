@@ -174,12 +174,15 @@ For local Kubernetes proof, Goblin King includes a default editable stack config
 - `examples/jupyterhub-goblin-king/zero-to-jupyterhub.values.yaml`
 - `examples/jupyterhub-goblin-king/goblin-king.values.yaml`
 - `examples/jupyterhub-goblin-king/workbook-launch.ipynb`
+- `examples/jupyterhub-goblin-king/workbook-launch-branch.ipynb`
 
 The default zero-to-jupyterhub values use JupyterHub's dummy authenticator, register
 Goblin King as a service, create a starter `goblin-users` group containing `alice` and
 `bob`, and set `GOBLIN_KING_API_URL` plus `GOBLIN_KING_NOTEBOOK_PACKAGE` in notebook
-servers. The workbook installs the helper package if the notebook image does not
-already include it.
+servers. The default workbook installs the helper package if the notebook image does
+not already include it. The branch workbook is for pre-merge testing and pins the
+package install to `service-workloads-jupyterhub-auth` with `--no-deps` so it does not
+reinstall the notebook server's dependency graph.
 
 Install the default Hub and Goblin King together:
 
@@ -248,6 +251,7 @@ Browser flow:
 1. User logs in to JupyterHub.
 2. User opens the Goblin King service route, such as `/services/goblin-king/`.
 3. User opens `examples/jupyterhub-goblin-king/workbook-launch.ipynb` in a notebook.
+   Before the branch merges, use `workbook-launch-branch.ipynb` instead.
 4. The workbook reads `JUPYTERHUB_API_TOKEN` and `GOBLIN_KING_API_URL`.
 5. Goblin King validates the token with the Hub and applies group/project mapping.
 6. The workbook declares a Python function goblin, validates it, runs it, registers/probes
@@ -256,7 +260,7 @@ Browser flow:
 Notebook function flow:
 
 ```python
-from goblin_king import GoblinKingNotebookClient
+from goblin_king.notebooks import GoblinKingNotebookClient
 
 client = GoblinKingNotebookClient()
 
@@ -275,7 +279,7 @@ goblin = client.declare(
 )
 
 validation = goblin.validate({"values": [1, 2, 3]})
-run = goblin.run({"values": [5, 8, 13]})
+run = goblin.run({"values": [5, 8, 13]}, progress=True)
 run["run"]["result"]
 ```
 
@@ -317,5 +321,7 @@ curl -X POST http://goblin-king.default.example/services/long-running \
 | `JupyterHub is unavailable for token validation` | Hub API URL or cluster DNS is wrong. | Confirm `config.jupyterhub.apiUrl` from inside the API pod. |
 | Project access denied | Hub group did not map to the service project. | Add the group to `projectGroups` or set `defaultProjectId`. |
 | `ModuleNotFoundError: goblin_king` in a notebook | The single-user image does not include the helper package and cannot install it. | Set `GOBLIN_KING_NOTEBOOK_PACKAGE`, preinstall the package in the notebook image, or use the workbook install cell. |
+| Notebook install/import cell stays at `[*]` for a long time | The notebook is installing from GitHub in the running kernel. | Use `workbook-launch-branch.ipynb`, which installs quietly with `--no-deps`; restart the kernel once after a failed install/import attempt. |
+| `kubectl port-forward` reports `lost connection to pod` while browsing JupyterHub | The local tunnel to the Hub proxy was reset or the proxy pod restarted. | Start the port-forward again with `kubectl port-forward -n default svc/proxy-public 8080:http`, then refresh JupyterLab. |
 | Notebook validation says runner image is unavailable | `config.notebookFunctionImage` is not present on the scheduler node or registry. | Build/push/load `goblin-king-notebook-python-function:local` or point `config.notebookFunctionImage` to a pullable image. |
 | Service proxy returns 502 | Service base URL is unreachable from the API pod. | Probe the service URL from the API pod and fix Service/DNS/port config. |
