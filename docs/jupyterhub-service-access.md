@@ -166,6 +166,11 @@ api:
     hub.jupyter.org/network-access-hub: "true"
 ```
 
+Notebook servers also need egress to the Goblin King API service so workbook users can
+declare, validate, and run goblins from inside JupyterHub. The included
+`zero-to-jupyterhub.values.yaml` adds a single-user network policy egress rule for
+Goblin King API pods on port `8000`.
+
 ## Local Kubernetes Default Hub
 
 For local Kubernetes proof, Goblin King includes a default editable stack config at

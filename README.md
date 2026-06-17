@@ -150,6 +150,8 @@ map Hub groups to Goblin King roles/projects, and gate access to registered serv
 through `/services/long-running/<service-id>/proxy/...`. For same-cluster Kubernetes,
 the chart accepts `config.jupyterhub.*` settings and `make jupyterhub-stack-up`
 installs a default zero-to-jupyterhub proof stack with an authenticated workbook.
+The default Hub values include notebook-pod egress to the Goblin King API service so
+users can launch goblins from inside JupyterHub.
 `make jupyterhub-workbook-proof` brings up that stack, uses a Hub user token, declares
 and validates a short Python function goblin from workbook-style source, generates a
 long-running hello service at proof time, registers/probes/proxies it, then tears the

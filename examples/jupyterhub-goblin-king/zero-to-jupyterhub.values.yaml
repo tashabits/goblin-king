@@ -61,5 +61,16 @@ singleuser:
   extraEnv:
     GOBLIN_KING_API_URL: http://goblin-king-api.default.svc.cluster.local:8000
     GOBLIN_KING_NOTEBOOK_PACKAGE: git+https://github.com/tashabits/goblin-king.git
+  networkPolicy:
+    egress:
+      - ports:
+          - port: 8000
+            protocol: TCP
+        to:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/component: api
+                app.kubernetes.io/instance: goblin-king
+                app.kubernetes.io/name: goblin-king
   storage:
     type: none
