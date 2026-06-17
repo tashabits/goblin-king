@@ -35,6 +35,8 @@ def test_branch_workbook_is_valid_and_branch_pinned() -> None:
     )
 
     assert branch_package in source
+    assert "GOBLIN_KING_BRANCH_NOTEBOOK_PACKAGE" in source
+    assert "GOBLIN_KING_NOTEBOOK_PACKAGE" not in source
     assert "--force-reinstall" in source
     assert "--no-deps" in source
     assert "site.getusersitepackages()" in source
