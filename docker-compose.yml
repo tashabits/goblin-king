@@ -146,6 +146,14 @@ services:
       dockerfile: Dockerfile
     command: ["python", "-c", "print('example.progress worker image built')"]
 
+  worker-notebook-python-function:
+    image: goblin-king-notebook-python-function:local
+    profiles: ["workers"]
+    build:
+      context: workers/notebook.python-function
+      dockerfile: Dockerfile
+    command: ["python", "-c", "print('notebook.python-function worker image built')"]
+
   long-hello:
     image: goblin-king-example-long-hello:local
     profiles: ["admin"]

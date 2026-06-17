@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from goblin_king.api import create_app
-from goblin_king.api_settings import ApiSettings, OidcSettings
+from goblin_king.api_settings import ApiSettings, JupyterHubSettings, OidcSettings
 from goblin_king.auth import AuthError, authenticate_token
 from goblin_king.store import SQLiteStore
 
@@ -80,6 +80,89 @@ def test_local_token_precedence_over_oidc(tmp_path: Path, monkeypatch) -> None:
         "local-dev-token",
         bootstrap_token="local-dev-token",
         oidc=oidc,
+    )
+
+    assert principal.bootstrap is True
+    assert principal.auth_provider == "local"
+
+
+def test_jupyterhub_token_maps_user_groups_to_principal(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Verify JupyterHub user tokens map through allowlists, roles, and project groups."""
+    hub = JupyterHubSettings(
+        enabled=True,
+        api_url="http://hub.example/hub/api",
+        service_token="hub-service-token",
+        allowed_groups=["research"],
+        admin_groups=["hub-admins"],
+        project_groups={"research": "project-1"},
+    )
+    monkeypatch.setattr(
+        "goblin_king.auth._identify_jupyterhub_token",
+        lambda _token, _hub: {
+            "kind": "user",
+            "name": "alice",
+            "groups": [{"name": "research"}],
+        },
+    )
+
+    principal = authenticate_token(
+        SQLiteStore(tmp_path / "auth.sqlite3"),
+        "hub-user-token",
+        bootstrap_token="local-dev-token",
+        jupyterhub=hub,
+    )
+
+    assert principal.auth_provider == "jupyterhub"
+    assert principal.user_id == "alice"
+    assert principal.token_id.startswith("jupyterhub:")
+    assert "hub-user-token" not in principal.token_id
+    assert principal.role == "member"
+    assert principal.project_id == "project-1"
+
+
+def test_jupyterhub_disallowed_user_fails(tmp_path: Path, monkeypatch) -> None:
+    """Verify Hub users outside configured users/groups are denied."""
+    hub = JupyterHubSettings(
+        enabled=True,
+        api_url="http://hub.example/hub/api",
+        service_token="hub-service-token",
+        allowed_groups=["research"],
+    )
+    monkeypatch.setattr(
+        "goblin_king.auth._identify_jupyterhub_token",
+        lambda _token, _hub: {"kind": "user", "name": "mallory", "groups": ["other"]},
+    )
+
+    with pytest.raises(AuthError, match="not authorized"):
+        authenticate_token(
+            SQLiteStore(tmp_path / "auth.sqlite3"),
+            "hub-user-token",
+            bootstrap_token="local-dev-token",
+            jupyterhub=hub,
+        )
+
+
+def test_local_token_precedence_over_jupyterhub(tmp_path: Path, monkeypatch) -> None:
+    """Verify local bootstrap tokens win before JupyterHub validation is attempted."""
+    hub = JupyterHubSettings(
+        enabled=True,
+        api_url="http://hub.example/hub/api",
+        service_token="hub-service-token",
+    )
+
+    def fail_if_called(_token: str, _hub: JupyterHubSettings) -> dict:
+        raise AssertionError("JupyterHub should not validate bootstrap tokens")
+
+    monkeypatch.setattr("goblin_king.auth._identify_jupyterhub_token", fail_if_called)
+
+    principal = authenticate_token(
+        SQLiteStore(tmp_path / "auth.sqlite3"),
+        "local-dev-token",
+        bootstrap_token="local-dev-token",
+        jupyterhub=hub,
     )
 
     assert principal.bootstrap is True

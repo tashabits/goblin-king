@@ -17,6 +17,9 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: api
         app.kubernetes.io/name: {{ include "goblin-king.name" . }}
+        {{- with .Values.api.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       serviceAccountName: {{ include "goblin-king.serviceAccountName" (dict "root" . "component" "api") }}
       {{- include "goblin-king.imagePullSecrets" . | nindent 6 }}
@@ -38,6 +41,13 @@ spec:
               {{- else }}
               value: {{ .Values.api.bootstrapAdminToken | quote }}
               {{- end }}
+            {{- if and .Values.config.jupyterhub.enabled .Values.config.jupyterhub.serviceTokenSecret.name }}
+            - name: {{ .Values.config.jupyterhub.serviceTokenEnv }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.jupyterhub.serviceTokenSecret.name }}
+                  key: {{ .Values.config.jupyterhub.serviceTokenSecret.key }}
+            {{- end }}
           {{- with .Values.api.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

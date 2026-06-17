@@ -398,6 +398,7 @@ def validate_project(
     typer.echo(f"registries\t{len(settings.registries)}")
     typer.echo(f"entry_points\t{settings.entry_points}")
     typer.echo(f"goblins\t{len(registry.list())}")
+    typer.echo(f"services\t{len(settings.services)}")
     typer.echo(f"workers\t{len(workers.items())}")
     typer.echo(f"worker_coverage\t{len(registry.list())}/{len(registry.list())}")
     default_resources = _load_project_default_resources(project)

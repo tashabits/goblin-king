@@ -23,8 +23,23 @@ HELM_NAMESPACE ?= default
 HELM_TIMEOUT ?= 5m
 HELM_ARGS ?=
 HELM_PVC ?= $(HELM_RELEASE)-data
+HELM_WITH_JUPYTERHUB ?= 0
+JUPYTERHUB_STACK_CONFIG ?= examples/jupyterhub-goblin-king/local-stack.mk
+JUPYTERHUB_RELEASE ?= jupyterhub
+JUPYTERHUB_CHART ?= jupyterhub/jupyterhub
+JUPYTERHUB_VALUES ?= examples/jupyterhub-goblin-king/zero-to-jupyterhub.values.yaml
+JUPYTERHUB_SERVICE_TOKEN_SECRET ?= goblin-king-jupyterhub-auth
+JUPYTERHUB_SERVICE_TOKEN_KEY ?= service-token
+JUPYTERHUB_SERVICE_TOKEN ?= local-goblin-king-hub-token
+JUPYTERHUB_WORKBOOK_USER_TOKEN_KEY ?= workbook-user-token
+JUPYTERHUB_WORKBOOK_USER_TOKEN ?= local-goblin-king-workbook-token
+JUPYTERHUB_WORKBOOK_PROOF ?= examples/jupyterhub-goblin-king/workbook_proof.py
+JUPYTERHUB_FULL_STACK_PROOF ?= examples/jupyterhub-goblin-king/full_stack_workbook_proof.py
+JUPYTERHUB_WORKBOOK_API_URL ?= http://127.0.0.1:18000
+JUPYTERHUB_WORKBOOK_KIND ?= notebook.workbook-short-hello
+HELM_JUPYTERHUB_ARGS ?= --set config.jupyterhub.enabled=true --set config.jupyterhub.apiUrl=http://$(JUPYTERHUB_RELEASE)-hub.$(HELM_NAMESPACE).svc.cluster.local:8081/hub/api --set config.jupyterhub.hubUrl=http://$(JUPYTERHUB_RELEASE).$(HELM_NAMESPACE).svc.cluster.local --set config.jupyterhub.serviceTokenSecret.name=$(JUPYTERHUB_SERVICE_TOKEN_SECRET) --set config.jupyterhub.serviceTokenSecret.key=$(JUPYTERHUB_SERVICE_TOKEN_KEY) --set config.jupyterhub.allowedGroups[0]=goblin-users --set config.jupyterhub.projectGroups.goblin-users=default
 
-.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit doctor demo demo-down project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel release-check helm-template helm-admin-smoke kind-smoke clean clean-all docker-clean
+.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean jupyterhub-stack-up jupyterhub-stack-down jupyterhub-up jupyterhub-down jupyterhub-workbook-proof helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit doctor demo demo-down project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel release-check helm-template helm-admin-smoke kind-smoke clean clean-all docker-clean
 
 help:
 	@echo "Targets:"
@@ -47,6 +62,11 @@ help:
 	@echo "  docker-wipe    Stop Docker Compose and delete its volumes/data"
 	@echo "  docker-restart-clean Wipe Docker data, then rebuild and start Compose"
 	@echo "  helm-up        Install/upgrade the Helm stack and wait for readiness"
+	@echo "  jupyterhub-stack-up Install local Kubernetes stack with JupyterHub auth"
+	@echo "  jupyterhub-stack-down Remove local Kubernetes stack with JupyterHub auth"
+	@echo "  jupyterhub-up  Install default zero-to-jupyterhub for local auth proof"
+	@echo "  jupyterhub-down Uninstall the default local JupyterHub release"
+	@echo "  jupyterhub-workbook-proof Run full Hub workbook declare/validate/run/service proof"
 	@echo "  helm-wipe      Uninstall Helm release and delete its PVC/data"
 	@echo "  helm-restart-clean Wipe Helm data, then install/upgrade and wait"
 	@echo "  stack-wipe     Wipe both Docker Compose and Helm data"
@@ -137,8 +157,28 @@ docker-wipe:
 
 docker-restart-clean: docker-wipe docker-up
 
-helm-up:
-	helm upgrade --install $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE) --create-namespace --wait --timeout $(HELM_TIMEOUT) $(HELM_ARGS)
+jupyterhub-stack-up:
+	$(MAKE) -f Makefile -f $(JUPYTERHUB_STACK_CONFIG) helm-up HELM_WITH_JUPYTERHUB=1
+
+jupyterhub-stack-down:
+	$(MAKE) -f Makefile -f $(JUPYTERHUB_STACK_CONFIG) helm-wipe jupyterhub-down
+
+jupyterhub-up:
+	kubectl create namespace $(HELM_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
+	kubectl create secret generic $(JUPYTERHUB_SERVICE_TOKEN_SECRET) --namespace $(HELM_NAMESPACE) --from-literal=$(JUPYTERHUB_SERVICE_TOKEN_KEY)=$(JUPYTERHUB_SERVICE_TOKEN) --from-literal=$(JUPYTERHUB_WORKBOOK_USER_TOKEN_KEY)=$(JUPYTERHUB_WORKBOOK_USER_TOKEN) --dry-run=client -o yaml | kubectl apply -f -
+	helm repo add jupyterhub https://hub.jupyter.org/helm-chart/
+	helm repo update jupyterhub
+	helm upgrade --install $(JUPYTERHUB_RELEASE) $(JUPYTERHUB_CHART) --namespace $(HELM_NAMESPACE) --create-namespace --wait --timeout $(HELM_TIMEOUT) -f $(JUPYTERHUB_VALUES)
+
+jupyterhub-down:
+	-helm uninstall $(JUPYTERHUB_RELEASE) --namespace $(HELM_NAMESPACE) --ignore-not-found
+	-kubectl delete secret $(JUPYTERHUB_SERVICE_TOKEN_SECRET) --namespace $(HELM_NAMESPACE) --ignore-not-found
+
+jupyterhub-workbook-proof:
+	$(PYTHON) $(JUPYTERHUB_FULL_STACK_PROOF) --stack-config $(JUPYTERHUB_STACK_CONFIG) --namespace $(HELM_NAMESPACE) --release $(HELM_RELEASE) --token $(JUPYTERHUB_WORKBOOK_USER_TOKEN) --kind $(JUPYTERHUB_WORKBOOK_KIND) --workbook-proof $(JUPYTERHUB_WORKBOOK_PROOF)
+
+helm-up: $(if $(filter 1 true yes,$(HELM_WITH_JUPYTERHUB)),jupyterhub-up)
+	helm upgrade --install $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE) --create-namespace --wait --timeout $(HELM_TIMEOUT) $(HELM_ARGS) $(if $(filter 1 true yes,$(HELM_WITH_JUPYTERHUB)),$(HELM_JUPYTERHUB_ARGS),)
 
 helm-wipe:
 	-helm uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE) --ignore-not-found

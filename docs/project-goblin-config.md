@@ -11,7 +11,8 @@ discover, validate, queue, schedule, and display them.
 ## File Shape
 
 The existing `goblin-king-project.json` file now also accepts a versioned project config
-header and an inline `goblins` map:
+header, an inline `goblins` map for one-shot jobs, and an inline `services` map for
+long-running HTTP workloads:
 
 ```json
 {
@@ -47,6 +48,25 @@ header and an inline `goblins` map:
       "env": {"MODE": "local"},
       "secretRefs": ["invoice-renderer-api-token"],
       "schedule": {"cron": "0 * * * *", "enabled": false}
+    }
+  },
+  "services": {
+    "project.table-api": {
+      "displayName": "Project Table API",
+      "description": "Long-running project-owned HTTP service",
+      "image": "my-project/table-api:local",
+      "context": "services/table-api",
+      "dockerfile": "Dockerfile",
+      "port": 8080,
+      "probePath": "/healthz",
+      "resources": {
+        "timeout_seconds": 120,
+        "memory": {"limit": "512Mi"}
+      },
+      "labels": {"team": "data"},
+      "tags": ["service", "http"],
+      "env": {"MODE": "local"},
+      "secretRefs": ["table-api-token"]
     }
   }
 }
@@ -87,6 +107,7 @@ source during smoke proof.
 | `defaults` | Optional project-wide defaults for inline goblin definitions. |
 | `defaults.resources` | Resource policy fields deep-merged into every inline goblin's `resources` before validation and discovery. |
 | `goblins` | Inline project-owned container goblin definitions. |
+| `services` | Inline project-owned long-running HTTP service workload definitions. |
 | `displayName` | Optional admin/API display name. |
 | `description` | Human-facing description stored in goblin metadata. |
 | `image` | Worker image tag used by Docker/Kubernetes runtime. |
@@ -99,13 +120,22 @@ source during smoke proof.
 | `env` | Safe non-secret environment metadata. |
 | `secretRefs` | Secret names only; values are rejected. |
 | `schedule` | Optional schedule metadata used by later adopter workflows. |
+| `baseUrl` | Optional service URL to register directly for a service workload. |
+| `port` | Optional service container port. Service workloads must set `baseUrl` or `port`. |
+| `probePath` | HTTP path used by service probes. Defaults to `/hello` and must start with `/`. |
 
 ## Discovery Behavior
 
-Inline goblins are converted into normal `GoblinDefinition` entries with the placeholder
-module `goblin_king.container_only`. Docker and Kubernetes execution do not import that
-module; they use the configured worker image. If someone tries to run an inline goblin
-with the in-process runtime, the placeholder fails clearly.
+Inline goblins and services are converted into normal `GoblinDefinition` entries with
+the placeholder module `goblin_king.container_only`. Docker and Kubernetes execution do
+not import that module; they use the configured worker image. If someone tries to run an
+inline project definition with the in-process runtime, the placeholder fails clearly.
+
+Service definitions carry `metadata.workload_type=service`, `probe_path`, `port`, and
+optional `base_url`. They use the same image mapping and Dockerfile validation as other
+project-owned workloads, then register and probe through the `/services/long-running`
+API. Access to running service URLs should go through
+`/services/long-running/<service-id>/proxy/<path>` when project-scoped auth is needed.
 
 Inline worker image definitions are merged with the project image map. Duplicate worker
 image mappings are rejected so deployment proof cannot silently point a kind at two

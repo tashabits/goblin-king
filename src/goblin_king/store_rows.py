@@ -17,6 +17,7 @@ from goblin_king.contracts import (
     ImagePromotionRecord,
     JobRecord,
     LongServiceRecord,
+    NotebookGoblinRecord,
     ProjectRecord,
     RunRecord,
     ScheduleRecord,
@@ -207,6 +208,7 @@ def _row_to_long_service(payload: dict[str, Any]) -> LongServiceRecord:
         project_id=payload.get("project_id"),
         image=payload.get("image"),
         base_url=payload["base_url"],
+        probe_path=payload.get("probe_path") or "/hello",
         status=payload["status"],
         created_at=_coerce_datetime(payload["created_at"]),
         created_by=payload["created_by"],
@@ -216,6 +218,25 @@ def _row_to_long_service(payload: dict[str, Any]) -> LongServiceRecord:
         last_probe_json=(
             json.loads(payload["last_probe_json"]) if payload.get("last_probe_json") else None
         ),
+    )
+
+
+def _row_to_notebook_goblin(payload: dict[str, Any]) -> NotebookGoblinRecord:
+    """Convert a SQLAlchemy row mapping into a NotebookGoblinRecord."""
+    return NotebookGoblinRecord(
+        kind=payload["kind"],
+        project_id=payload.get("project_id"),
+        display_name=payload["display_name"],
+        image=payload["image"],
+        source=payload["source"],
+        source_hash=payload["source_hash"],
+        function_name=payload["function_name"],
+        timeout_seconds=payload.get("timeout_seconds"),
+        max_retries=payload.get("max_retries") or 0,
+        created_at=_coerce_datetime(payload["created_at"]),
+        updated_at=_coerce_datetime(payload["updated_at"]),
+        created_by=payload["created_by"],
+        metadata=json.loads(payload.get("metadata_json") or "{}"),
     )
 
 

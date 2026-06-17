@@ -208,11 +208,38 @@ class LongServiceRecord(BaseModel):
     project_id: str | None = None
     image: str | None = None
     base_url: str = Field(min_length=1)
+    probe_path: str = Field(default="/hello", min_length=1)
     status: LongServiceStatus = "registered"
     created_at: datetime
     created_by: str = "api"
     last_probe_at: datetime | None = None
     last_probe_json: dict[str, Any] | None = None
+
+
+class NotebookGoblinRecord(BaseModel):
+    """Track a notebook-defined Python function goblin bundle."""
+
+    kind: str
+    project_id: str | None = None
+    display_name: str
+    image: str
+    source: str
+    source_hash: str
+    function_name: str = "run"
+    timeout_seconds: int | None = Field(default=None, gt=0)
+    max_retries: int = Field(default=0, ge=0)
+    created_at: datetime
+    updated_at: datetime
+    created_by: str = "api"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("kind")
+    @classmethod
+    def validate_kind(cls, value: str) -> str:
+        """Use the same kind format as registry-backed goblins."""
+        if not GOBLIN_KIND_PATTERN.match(value):
+            raise ValueError("kind must use lowercase letters, digits, dots, or dashes")
+        return value
 
 
 class ImagePromotionRecord(BaseModel):

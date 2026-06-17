@@ -6,7 +6,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from goblin_king.contracts import GoblinDefinition
 from goblin_king.jsonio import read_json_file
@@ -60,6 +67,50 @@ class ProjectGoblinSpec(BaseModel):
         return value
 
 
+class ProjectServiceSpec(BaseModel):
+    """Describe a project-owned long-running HTTP service workload."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    image: str = Field(min_length=1)
+    description: str | None = None
+    display_name: str | None = Field(default=None, alias="displayName")
+    context: Path = Path(".")
+    dockerfile: str = "Dockerfile"
+    base_url: str | None = Field(default=None, alias="baseUrl")
+    port: int | None = Field(default=None, gt=0, le=65535)
+    probe_path: str = Field(default="/hello", alias="probePath", min_length=1)
+    resources: dict[str, Any] = Field(default_factory=dict)
+    labels: dict[str, str] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+    secret_refs: list[str] = Field(default_factory=list, alias="secretRefs")
+
+    @field_validator("probe_path")
+    @classmethod
+    def validate_probe_path(cls, value: str) -> str:
+        """Keep service probes scoped to an absolute path on the registered base URL."""
+        if not value.startswith("/"):
+            raise ValueError("probePath must start with /")
+        return value
+
+    @field_validator("secret_refs")
+    @classmethod
+    def validate_secret_refs(cls, value: list[str]) -> list[str]:
+        """Keep secret references symbolic; secret values never live in project config."""
+        for item in value:
+            if "=" in item:
+                raise ValueError("secretRefs must name secrets, not contain secret values")
+        return value
+
+    @model_validator(mode="after")
+    def validate_endpoint(self) -> ProjectServiceSpec:
+        """Require enough endpoint metadata to register or expose the service."""
+        if self.base_url is None and self.port is None:
+            raise ValueError("service workloads must set either baseUrl or port")
+        return self
+
+
 class ProjectSettings(BaseModel):
     """Describe registry, worker image, and API settings for an adopting project."""
 
@@ -73,6 +124,17 @@ class ProjectSettings(BaseModel):
     api_settings: Path = Path("goblin-king-api.json")
     defaults: ProjectDefaults = Field(default_factory=ProjectDefaults)
     goblins: dict[str, ProjectGoblinSpec] = Field(default_factory=dict)
+    services: dict[str, ProjectServiceSpec] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_unique_workload_kinds(self) -> ProjectSettings:
+        """Prevent one kind from being both a job goblin and a service workload."""
+        duplicates = sorted(set(self.goblins).intersection(self.services))
+        if duplicates:
+            raise ValueError(
+                "project service kind also defined as goblin: " + ", ".join(duplicates)
+            )
+        return self
 
     @field_validator("api_version")
     @classmethod
@@ -130,7 +192,12 @@ class ProjectSettings(BaseModel):
             resources = _deep_merge(defaults, spec.resources)
             _validate_resource_policy(kind, resources, resource_ceilings)
             goblins[kind] = spec.model_copy(update={"resources": resources})
-        return self.model_copy(update={"goblins": goblins})
+        services = {}
+        for kind, spec in self.services.items():
+            resources = _deep_merge(defaults, spec.resources)
+            _validate_resource_policy(kind, resources, resource_ceilings)
+            services[kind] = spec.model_copy(update={"resources": resources})
+        return self.model_copy(update={"goblins": goblins, "services": services})
 
     def resolve_relative_to(self, root: Path) -> ProjectSettings:
         """Resolve path fields relative to the settings file directory."""
@@ -145,12 +212,17 @@ class ProjectSettings(BaseModel):
             )
             for kind, spec in self.goblins.items()
         }
+        services = {
+            kind: spec.model_copy(update={"context": _resolve(root, spec.context)})
+            for kind, spec in self.services.items()
+        }
         return self.model_copy(
             update={
                 "registries": [_resolve(root, path) for path in self.registries],
                 "images": _resolve(root, self.images),
                 "api_settings": _resolve(root, self.api_settings),
                 "goblins": goblins,
+                "services": services,
             }
         )
 
@@ -169,11 +241,20 @@ class ProjectSettings(BaseModel):
                     metadata=metadata,
                 )
             )
+        for kind, spec in self.services.items():
+            definitions.append(
+                GoblinDefinition(
+                    kind=kind,
+                    display_name=spec.display_name or _display_name(kind),
+                    module="goblin_king.container_only",
+                    metadata=_project_service_metadata(spec),
+                )
+            )
         return definitions
 
     def worker_definitions(self) -> dict[str, WorkerImageDefinition]:
         """Convert inline project goblins into worker image definitions."""
-        return {
+        definitions = {
             kind: WorkerImageDefinition(
                 context=spec.context,
                 dockerfile=spec.dockerfile,
@@ -181,6 +262,17 @@ class ProjectSettings(BaseModel):
             )
             for kind, spec in self.goblins.items()
         }
+        definitions.update(
+            {
+                kind: WorkerImageDefinition(
+                    context=spec.context,
+                    dockerfile=spec.dockerfile,
+                    image=spec.image,
+                )
+                for kind, spec in self.services.items()
+            }
+        )
+        return definitions
 
     def resource_policy_set(
         self,
@@ -191,7 +283,11 @@ class ProjectSettings(BaseModel):
         project_goblins = {
             kind: spec.resources for kind, spec in self.goblins.items() if spec.resources
         }
-        if not project_defaults and not project_goblins and operator_policies is None:
+        project_services = {
+            kind: spec.resources for kind, spec in self.services.items() if spec.resources
+        }
+        project_workloads = {**project_goblins, **project_services}
+        if not project_defaults and not project_workloads and operator_policies is None:
             return None
 
         base = operator_policies or ResourcePolicySet()
@@ -199,7 +295,7 @@ class ProjectSettings(BaseModel):
             _deep_merge(base.defaults.compact(), project_defaults)
         )
         goblins = dict(base.goblins)
-        for kind, resources in project_goblins.items():
+        for kind, resources in project_workloads.items():
             base_resources = goblins.get(kind, ResourcePolicy()).compact()
             goblins[kind] = ResourcePolicy.model_validate(
                 _deep_merge(base_resources, resources)
@@ -211,7 +307,7 @@ class ProjectSettings(BaseModel):
             ceilings=base.ceilings,
         )
         merged.validate_within_ceilings("<project defaults>", defaults)
-        for kind in project_goblins:
+        for kind in project_workloads:
             merged.validate_within_ceilings(kind, merged.effective_for(kind))
         return merged
 
@@ -242,6 +338,23 @@ def _project_metadata(spec: ProjectGoblinSpec) -> dict[str, Any]:
         "env": spec.env,
         "secret_refs": spec.secret_refs,
         "schedule": spec.schedule,
+    }
+
+
+def _project_service_metadata(spec: ProjectServiceSpec) -> dict[str, Any]:
+    """Return metadata for project-config service workload discovery."""
+    return {
+        "source": "project-config",
+        "workload_type": "service",
+        "description": spec.description,
+        "base_url": spec.base_url,
+        "port": spec.port,
+        "probe_path": spec.probe_path,
+        "resources": spec.resources,
+        "labels": spec.labels,
+        "tags": spec.tags,
+        "env": spec.env,
+        "secret_refs": spec.secret_refs,
     }
 
 

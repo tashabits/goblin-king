@@ -86,6 +86,73 @@ def test_project_settings_load_inline_goblin_config(tmp_path: Path) -> None:
     ).resolve()
 
 
+def test_project_settings_load_service_workloads(tmp_path: Path) -> None:
+    """Verify project config can declare generic long-running service workloads."""
+    project_path = tmp_path / "project" / "goblin-king-project.json"
+    project_path.parent.mkdir()
+    project_path.write_text(
+        json.dumps(
+            {
+                "apiVersion": PROJECT_CONFIG_API_VERSION,
+                "kind": PROJECT_CONFIG_KIND,
+                "registries": [],
+                "entry_points": False,
+                "services": {
+                    "project.table.service": {
+                        "displayName": "Project Table Service",
+                        "description": "Project-owned HTTP service",
+                        "image": "project-table-service:local",
+                        "context": "services/table",
+                        "port": 8080,
+                        "probePath": "/healthz",
+                        "resources": {"timeout_seconds": 30},
+                        "labels": {"owner": "project"},
+                        "tags": ["service"],
+                        "env": {"MODE": "service"},
+                        "secretRefs": ["table-token"],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    settings = ProjectSettings.from_path(project_path)
+    definitions = settings.registry_definitions()
+    workers = settings.worker_definitions()
+
+    assert definitions[0].kind == "project.table.service"
+    assert definitions[0].metadata["workload_type"] == "service"
+    assert definitions[0].metadata["probe_path"] == "/healthz"
+    assert definitions[0].metadata["port"] == 8080
+    assert workers["project.table.service"].image == "project-table-service:local"
+    assert workers["project.table.service"].context == (
+        project_path.parent / "services" / "table"
+    ).resolve()
+
+
+def test_project_settings_reject_service_without_endpoint(tmp_path: Path) -> None:
+    """Verify services must declare enough endpoint metadata for registration."""
+    project_path = tmp_path / "goblin-king-project.json"
+    project_path.write_text(
+        json.dumps(
+            {
+                "apiVersion": PROJECT_CONFIG_API_VERSION,
+                "kind": PROJECT_CONFIG_KIND,
+                "services": {
+                    "project.bad.service": {
+                        "image": "bad-service:local",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProjectSettingsError, match="baseUrl or port"):
+        ProjectSettings.from_path(project_path)
+
+
 def test_project_settings_apply_default_resources_to_inline_goblins(
     tmp_path: Path,
 ) -> None:

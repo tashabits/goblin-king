@@ -69,10 +69,21 @@ Pass secrets only through the deployment mechanism chosen by the project, such a
 secrets, Kubernetes Secrets, or externally managed secret injection. Goblins should read
 only the specific secret values they need and should never echo them into proof output.
 
+JupyterHub service tokens are deployment secrets. When Hub-backed auth is enabled, put
+the Hub service token in a Docker/Kubernetes Secret or environment source and reference
+it with `jupyterhub.service_token_env`; do not store it in `goblin-king-api.json`, Helm
+ConfigMaps, audit logs, probe results, or worker output.
+
 ## Network
 
 Network access should be deliberate. Some goblins need APIs; many do not. Resource
 policies should make network mode or egress intent explicit per goblin.
+
+Long-running service workloads expose HTTP endpoints. Register only trusted project
+service URLs, prefer cluster-local DNS, and route user access through Goblin King's
+service proxy when project-scoped auth is required. The proxy strips standard auth and
+cookie headers before forwarding so user bearer tokens are not handed to service
+containers by default.
 
 The King can run chaos. He should not hand chaos the master key.
 

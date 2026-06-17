@@ -13,9 +13,11 @@ from goblin_king.contracts import (
     EventRecord,
     JobRecord,
     LongServiceRecord,
+    NotebookGoblinRecord,
     RunRecord,
 )
 from goblin_king.termination import RuntimeTarget
+from goblin_king.validation import WorkerValidationResult
 
 
 class ErrorEnvelope(BaseModel):
@@ -144,7 +146,9 @@ class LongServiceCreateRequest(BaseModel):
     """Request body for registering a long-running service goblin."""
 
     kind: str = "example.long-hello"
-    base_url: str = "http://localhost:8090"
+    image: str | None = None
+    base_url: str | None = None
+    probe_path: str | None = None
     project_id: str | None = None
 
 
@@ -154,6 +158,35 @@ class LongServiceProbeResponse(BaseModel):
     service: LongServiceRecord
     request: dict[str, Any]
     response: dict[str, Any]
+
+
+class NotebookGoblinCreateRequest(BaseModel):
+    """Request body for building a notebook-defined Python function goblin."""
+
+    kind: str
+    source: str = Field(min_length=1)
+    function_name: str = Field(default="run", min_length=1)
+    display_name: str | None = None
+    image: str | None = None
+    project_id: str | None = None
+    timeout_seconds: int | None = Field(default=None, gt=0)
+    max_retries: int = Field(default=0, ge=0)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class NotebookGoblinValidateRequest(BaseModel):
+    """Request body for validating one notebook-defined function goblin."""
+
+    input: dict[str, Any] = Field(default_factory=dict)
+    require_success: bool = True
+    timeout_seconds: int | None = Field(default=None, gt=0)
+
+
+class NotebookGoblinValidateResponse(BaseModel):
+    """Validation proof for a notebook-defined function goblin."""
+
+    goblin: NotebookGoblinRecord
+    validation: WorkerValidationResult
 
 
 class RuntimeCleanupRequest(BaseModel):

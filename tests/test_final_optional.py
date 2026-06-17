@@ -155,6 +155,10 @@ def test_helm_chart_includes_optional_default_on_ingress() -> None:
     assert '"project": "{{ .Values.config.projectSettingsPath }}"' in config
     assert '"oidc"' in config
     assert "jwks_url" in config
+    assert '"jupyterhub"' in config
+    assert "serviceTokenSecret" in values
+    assert ".Values.config.jupyterhub.serviceTokenEnv" in api
+    assert "zero-to-jupyterhub.values.yaml" in Path("Makefile").read_text(encoding="utf-8")
     assert "--project" in scheduler
     assert "extraVolumeMounts" in api
     assert "extraLongServices" in long_hello

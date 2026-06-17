@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import UTC, datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -1002,6 +1004,198 @@ def test_admin_runtime_kill_service_marks_stopped(tmp_path: Path) -> None:
     assert response.json()["killed"] == ["registered-service:svc-kill"]
     assert store.get_long_service("svc-kill").status == "stopped"  # type: ignore[union-attr]
     assert store.list_events(event_type="runtime.terminated")
+
+
+def test_long_running_service_uses_configurable_probe_path(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Verify service probes use the registered probe path instead of hard-coded /hello."""
+    client, store, _ = build_client(tmp_path)
+    seen: dict[str, str] = {}
+
+    class FakeResponse:
+        status = 200
+        headers = {"Content-Type": "application/json"}
+
+        def __enter__(self) -> FakeResponse:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"ok": true}'
+
+    def fake_urlopen(url: str, timeout: int) -> FakeResponse:
+        seen["url"] = url
+        seen["timeout"] = str(timeout)
+        return FakeResponse()
+
+    monkeypatch.setattr("goblin_king.api.urlrequest.urlopen", fake_urlopen)
+
+    created = client.post(
+        "/services/long-running",
+        json={
+            "kind": "example.long-hello",
+            "base_url": "http://service.example",
+            "probe_path": "/healthz",
+        },
+        headers=auth_headers(),
+    )
+    service_id = created.json()["id"]
+    probed = client.post(f"/services/long-running/{service_id}/probe", headers=auth_headers())
+
+    assert created.status_code == 200
+    assert created.json()["probe_path"] == "/healthz"
+    assert probed.status_code == 200
+    assert seen["url"] == "http://service.example/healthz"
+    assert store.get_long_service(service_id).last_probe_json == {  # type: ignore[union-attr]
+        "status_code": 200,
+        "headers": {"Content-Type": "application/json"},
+        "json": {"ok": True},
+    }
+
+
+def test_long_running_service_can_register_external_generated_kind(tmp_path: Path) -> None:
+    """Verify generated services can be registered by explicit base URL without static registry."""
+    client, store, _ = build_client(tmp_path)
+
+    created = client.post(
+        "/services/long-running",
+        json={
+            "kind": "notebook.generated-long-hello",
+            "image": "goblin-king-workbook-hello-service:test",
+            "base_url": "http://generated-service.default.svc.cluster.local:8080",
+            "probe_path": "/healthz",
+        },
+        headers=auth_headers(),
+    )
+    missing_base_url = client.post(
+        "/services/long-running",
+        json={"kind": "notebook.generated-long-hello"},
+        headers=auth_headers(),
+    )
+
+    assert created.status_code == 200
+    assert created.json()["kind"] == "notebook.generated-long-hello"
+    assert created.json()["image"] == "goblin-king-workbook-hello-service:test"
+    assert created.json()["probe_path"] == "/healthz"
+    assert missing_base_url.status_code == 404
+    saved = store.get_long_service(created.json()["id"])
+    assert saved is not None
+    assert saved.base_url == "http://generated-service.default.svc.cluster.local:8080"
+
+
+def test_service_proxy_gates_project_access_and_strips_auth_headers(
+    tmp_path: Path,
+) -> None:
+    """Verify project-scoped callers can reach services without leaking auth headers."""
+    seen: dict[str, str | None] = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            seen["path"] = self.path
+            seen["authorization"] = self.headers.get("Authorization")
+            seen["cookie"] = self.headers.get("Cookie")
+            seen["api_key"] = self.headers.get("X-Api-Key")
+            body = json.dumps(
+                {
+                    "path": self.path,
+                    "authorization": seen["authorization"],
+                    "api_key": seen["api_key"],
+                }
+            ).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, _format: str, *args: object) -> None:
+            return None
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    client, store, _ = build_client(tmp_path)
+
+    try:
+        user = client.post(
+            "/admin/users",
+            json={"email": "svc@example.test", "display_name": "Service User"},
+            headers=auth_headers(),
+        ).json()
+        project_a = client.post(
+            "/admin/projects",
+            json={"name": "Project A"},
+            headers=auth_headers(),
+        ).json()
+        project_b = client.post(
+            "/admin/projects",
+            json={"name": "Project B"},
+            headers=auth_headers(),
+        ).json()
+        token_a = client.post(
+            "/admin/tokens",
+            json={
+                "name": "token-a",
+                "user_id": user["id"],
+                "project_id": project_a["id"],
+                "role": "member",
+            },
+            headers=auth_headers(),
+        ).json()["raw_token"]
+        token_b = client.post(
+            "/admin/tokens",
+            json={
+                "name": "token-b",
+                "user_id": user["id"],
+                "project_id": project_b["id"],
+                "role": "member",
+            },
+            headers=auth_headers(),
+        ).json()["raw_token"]
+        created = client.post(
+            "/services/long-running",
+            json={
+                "kind": "example.long-hello",
+                "base_url": f"http://127.0.0.1:{server.server_port}",
+                "project_id": project_a["id"],
+            },
+            headers=auth_headers(),
+        )
+        service_id = created.json()["id"]
+
+        allowed = client.get(
+            f"/services/long-running/{service_id}/proxy/v1/items?limit=1",
+            headers={
+                "Authorization": f"Bearer {token_a}",
+                "Cookie": "session=secret",
+                "X-Api-Key": "secret",
+            },
+        )
+        denied = client.get(
+            f"/services/long-running/{service_id}/proxy/v1/items",
+            headers={"Authorization": f"Bearer {token_b}"},
+        )
+    finally:
+        server.shutdown()
+
+    assert created.status_code == 200
+    assert allowed.status_code == 200
+    assert allowed.json()["path"] == "/v1/items?limit=1"
+    assert seen == {
+        "path": "/v1/items?limit=1",
+        "authorization": None,
+        "cookie": None,
+        "api_key": None,
+    }
+    assert denied.status_code == 403
+    proxy_logs = [log for log in store.list_audit_logs() if log.action == "service.proxy"]
+    assert proxy_logs
+    assert proxy_logs[0].detail["method"] == "GET"
+    assert proxy_logs[0].project_id == project_a["id"]
 
 
 def test_admin_creates_user_project_and_hashed_token(tmp_path: Path) -> None:

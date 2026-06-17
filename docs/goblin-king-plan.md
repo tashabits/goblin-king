@@ -314,7 +314,7 @@ Add a contribution guide before implementation work starts. It should live at `d
 
 Required standards:
 
-- All code work happens on feature branches. Use the `codex/` prefix by default for agent-created branches unless a maintainer asks for another naming scheme.
+- All code work happens on feature branches. Use descriptive branch names that match the work unless a maintainer asks for another naming scheme.
 - Changes are submitted through pull requests into `main`. Do not commit directly to `main`.
 - PRs should include a short summary, local CI test evidence, phase objective proof, and any known follow-up work.
 - Keep implementation PRs scoped to one coherent change. Avoid mixing unrelated refactors with feature work.

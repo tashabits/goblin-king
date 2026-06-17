@@ -225,6 +225,12 @@ tokens are checked first, then OIDC validation runs when no local token matches:
 The role claim maps configured admin roles to `admin`; otherwise callers become
 project-scoped `member` or `viewer` principals according to their claims.
 
+JupyterHub can be enabled as an optional auth provider for same-cluster service access.
+Local API tokens still win first; when no local token matches, Goblin King can validate
+a Hub user API token, map Hub groups to roles/projects, and authorize service proxy
+requests. See [JupyterHub Service Access](jupyterhub-service-access.md) for the
+zero-to-jupyterhub values file, Helm flag, and exact Hub service config.
+
 ## Prove The Long-Running Service
 
 Start the sample long-running service:
@@ -250,6 +256,17 @@ In Docker Compose, register `http://long-hello:8080` from the admin UI because t
 container resolves that service name. In Helm, register `http://goblin-king-long-hello`.
 The React admin preloads the correct default from `/admin/config.json` for each
 deployment.
+
+Authenticated callers can access registered HTTP services through Goblin King instead
+of reaching the service URL directly:
+
+```bash
+curl -H "Authorization: Bearer local-dev-token" \
+  http://127.0.0.1:8000/services/long-running/<service-id>/proxy/hello
+```
+
+The proxy only targets registered service base URLs, enforces project scope, audits the
+request, and strips standard auth/cookie headers before forwarding.
 
 ## Deploy-Time Discovery Reload
 

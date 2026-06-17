@@ -1,0 +1,65 @@
+hub:
+  extraEnv:
+    GOBLIN_KING_JUPYTERHUB_SERVICE_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: goblin-king-jupyterhub-auth
+          key: service-token
+    GOBLIN_KING_WORKBOOK_USER_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: goblin-king-jupyterhub-auth
+          key: workbook-user-token
+  config:
+    JupyterHub:
+      authenticator_class: dummy
+    DummyAuthenticator:
+      password: goblin
+  extraConfig:
+    00-goblin-king-service: |
+      import os
+
+      service_token = os.environ["GOBLIN_KING_JUPYTERHUB_SERVICE_TOKEN"]
+      workbook_user_token = os.environ["GOBLIN_KING_WORKBOOK_USER_TOKEN"]
+      c.JupyterHub.api_tokens = {
+          workbook_user_token: "alice",
+      }
+      c.JupyterHub.services = [
+          {
+              "name": "goblin-king",
+              "url": "http://goblin-king-admin.default.svc.cluster.local:8080",
+              "api_token": service_token,
+          }
+      ]
+      c.JupyterHub.load_groups = {
+          "goblin-users": ["alice", "bob"],
+      }
+      c.JupyterHub.load_roles = [
+          {
+              "name": "goblin-king-service-auth",
+              "services": ["goblin-king"],
+              "scopes": [
+                  "read:users",
+                  "read:users:name",
+                  "read:users:groups",
+              ],
+          },
+          {
+              "name": "goblin-king-user-access",
+              "groups": ["goblin-users"],
+              "scopes": [
+                  "access:services!service=goblin-king",
+              ],
+          },
+      ]
+
+proxy:
+  service:
+    type: ClusterIP
+
+singleuser:
+  extraEnv:
+    GOBLIN_KING_API_URL: http://goblin-king-api.default.svc.cluster.local:8000
+    GOBLIN_KING_NOTEBOOK_PACKAGE: git+https://github.com/tashabits/goblin-king.git
+  storage:
+    type: none

@@ -37,6 +37,9 @@ def ensure_schema_columns(engine: Engine) -> None:
         column["name"] for column in inspect(engine).get_columns("schedules")
     }
     event_columns = {column["name"] for column in inspect(engine).get_columns("events")}
+    long_service_columns = {
+        column["name"] for column in inspect(engine).get_columns("long_services")
+    }
     with engine.begin() as connection:
         for column_name, ddl in job_additions.items():
             if column_name not in job_columns:
@@ -50,3 +53,10 @@ def ensure_schema_columns(engine: Engine) -> None:
             connection.execute(text("ALTER TABLE schedules ADD COLUMN project_id TEXT"))
         if "project_id" not in event_columns:
             connection.execute(text("ALTER TABLE events ADD COLUMN project_id TEXT"))
+        if "probe_path" not in long_service_columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE long_services "
+                    "ADD COLUMN probe_path TEXT NOT NULL DEFAULT '/hello'"
+                )
+            )
