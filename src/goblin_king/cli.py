@@ -69,8 +69,8 @@ from goblin_king.demo import (
     run_demo_down,
     run_demo_up,
 )
-from goblin_king.doctor import run_doctor
 from goblin_king.deployment import helm_template_command, image_push_command, run_command
+from goblin_king.doctor import run_doctor
 from goblin_king.events import (
     DEFAULT_EVENT_CHANNEL,
     DEFAULT_EVENT_STREAM,

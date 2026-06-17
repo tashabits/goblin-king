@@ -788,12 +788,11 @@ instructions stay focused on features that exist today.
   separate React admin Designer page where users can design project goblins,
   validate them, promote validated goblins into the existing admin goblin list,
   and hand them off to the tester/operator page.
-- [Adoption And Onboarding Roadmap](docs/adoption-onboarding-roadmap.md): future
-  path for getting from clone or vendored checkout to validated admin proof in
-  under 15 minutes.
-- [Demo And Doctor Roadmap](docs/demo-and-doctor-roadmap.md): future one-command
-  demo and diagnostic flows for local setup, project config, validation, API,
-  admin, Redis, Docker, Compose, and optional Helm checks.
+- [Adoption And Onboarding Roadmap](docs/adoption-onboarding-roadmap.md):
+  implemented local demo/doctor slice plus remaining path from clone or vendored
+  checkout to validated admin proof in under 15 minutes.
+- [Demo And Doctor Roadmap](docs/demo-and-doctor-roadmap.md): implemented
+  one-command Docker/admin demo and diagnostics plus future follow-up checks.
 - [Goblin Scaffolding Roadmap](docs/goblin-scaffolding-roadmap.md): future CLI
   and Goblin Designer starter-folder templates for contract-compliant container
   goblins.

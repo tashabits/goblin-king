@@ -152,6 +152,7 @@ def test_demo_up_invokes_compose_validates_and_submits_job(
                 "scheduler",
                 "long-hello",
                 "worker-project-maintenance-hello",
+                "worker-project-reports-long-service",
             ]
         )
     ]

@@ -76,3 +76,6 @@ future-work plan.
   goblin visibility in the React admin, project admin test quickstart, and adopter stack
   closeout completed the trusted self-hosted project workflow. The admin/API can show,
   validate, submit, and inspect project goblins without rebuilding the React UI.
+- Local demo and doctor onboarding: `goblin-king demo up`, `goblin-king demo down`,
+  `goblin-king doctor`, and matching Make targets now provide a human-facing local
+  Docker/admin proof path with actionable diagnostics.

@@ -44,6 +44,7 @@ DEMO_COMPOSE_SERVICES = [
     "scheduler",
     "long-hello",
     "worker-project-maintenance-hello",
+    "worker-project-reports-long-service",
 ]
 TERMINAL_JOB_STATUSES = {"completed", "failed", "timed_out", "cancelled"}
 
@@ -138,6 +139,8 @@ class SubprocessCommandRunner:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             env=env,
             timeout=timeout_seconds,
         )
