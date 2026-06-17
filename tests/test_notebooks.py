@@ -38,6 +38,8 @@ def test_branch_workbook_is_valid_and_branch_pinned() -> None:
     assert "--force-reinstall" in source
     assert "--no-deps" in source
     assert "site.getusersitepackages()" in source
+    assert 'module_name == "goblin_king"' in source
+    assert 'module_name.startswith("goblin_king.")' in source
     assert "Path(goblin_king.__file__).resolve()" in source
     assert "JUPYTERHUB_API_TOKEN is required" in source
     assert "from goblin_king.notebooks import GoblinKingNotebookClient" in source
@@ -64,6 +66,8 @@ def test_default_workbook_uses_progress_without_branch_pin() -> None:
     assert "--no-deps" in source
     assert "progress=True" in source
     assert "site.getusersitepackages()" in source
+    assert 'module_name == "goblin_king"' in source
+    assert 'module_name.startswith("goblin_king.")' in source
 
 
 def test_notebook_client_declare_posts_function_source(monkeypatch) -> None:
