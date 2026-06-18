@@ -10,9 +10,10 @@ from pathlib import Path
 
 def load_images_for_current_context(images: list[str], kind_cluster: str) -> None:
     """Make local Docker images visible to the active Kubernetes context."""
-    if _load_kind_images(images, kind_cluster):
+    current_context = _current_context()
+    if _is_kind_context(current_context, kind_cluster) and _load_kind_images(images, kind_cluster):
         return
-    if _current_context() == "docker-desktop":
+    if current_context == "docker-desktop":
         _load_docker_desktop_images(images)
 
 
@@ -24,7 +25,7 @@ def _load_kind_images(images: list[str], kind_cluster: str) -> bool:
             capture_output=True,
             text=True,
         )
-    except FileNotFoundError:
+    except OSError:
         return False
     clusters = {line.strip() for line in completed.stdout.splitlines()}
     if completed.returncode != 0 or kind_cluster not in clusters:
@@ -35,6 +36,10 @@ def _load_kind_images(images: list[str], kind_cluster: str) -> bool:
             check=True,
         )
     return True
+
+
+def _is_kind_context(context: str, kind_cluster: str) -> bool:
+    return context == f"kind-{kind_cluster}"
 
 
 def _current_context() -> str:
