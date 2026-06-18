@@ -45,8 +45,8 @@ gateway.
 
 In zero-to-jupyterhub, add Goblin King as an externally managed service and grant the
 service enough scope to identify users and read group membership. If you enable the
-browser-facing Goblin Repository app, register it as a second service with its own
-OAuth client token and grant users `access:services!service=goblin-repository`. Use a
+browser-facing Goblin Directory app, register it as a second service with its own
+OAuth client token and grant users `access:services!service=goblin-directory`. Use a
 Kubernetes Secret for the shared service tokens.
 
 ```yaml
@@ -62,17 +62,17 @@ hub:
         secretKeyRef:
           name: goblin-king-jupyterhub-auth
           key: workbook-user-token
-    GOBLIN_KING_REPOSITORY_UI_SERVICE_TOKEN:
+    GOBLIN_KING_DIRECTORY_UI_SERVICE_TOKEN:
       valueFrom:
         secretKeyRef:
           name: goblin-king-jupyterhub-auth
-          key: repository-ui-token
+          key: directory-ui-token
   extraConfig:
     00-goblin-king-service: |
       import os
 
       service_token = os.environ["GOBLIN_KING_JUPYTERHUB_SERVICE_TOKEN"]
-      repository_ui_token = os.environ["GOBLIN_KING_REPOSITORY_UI_SERVICE_TOKEN"]
+      directory_ui_token = os.environ["GOBLIN_KING_DIRECTORY_UI_SERVICE_TOKEN"]
       workbook_user_token = os.environ["GOBLIN_KING_WORKBOOK_USER_TOKEN"]
       c.JupyterHub.api_tokens = {
           workbook_user_token: "alice",
@@ -84,12 +84,12 @@ hub:
               "api_token": service_token,
           },
           {
-              "name": "goblin-repository",
-              "url": "http://goblin-king-repository-ui.default.svc.cluster.local:8080",
-              "api_token": repository_ui_token,
+              "name": "goblin-directory",
+              "url": "http://goblin-king-directory-ui.default.svc.cluster.local:8080",
+              "api_token": directory_ui_token,
               "display": True,
               "oauth_no_confirm": True,
-              "oauth_redirect_uri": "/services/goblin-repository/oauth_callback",
+              "oauth_redirect_uri": "/services/goblin-directory/oauth_callback",
           }
       ]
       c.JupyterHub.load_groups = {
@@ -107,8 +107,8 @@ hub:
               ],
           },
           {
-              "name": "goblin-repository-service-auth",
-              "services": ["goblin-repository"],
+              "name": "goblin-directory-service-auth",
+              "services": ["goblin-directory"],
               "scopes": [
                   "read:users",
                   "read:users:name",
@@ -120,20 +120,20 @@ hub:
               "groups": ["goblin-users", "goblin-admins"],
               "scopes": [
                   "access:services!service=goblin-king",
-                  "access:services!service=goblin-repository",
+                  "access:services!service=goblin-directory",
               ],
           },
       ]
 ```
 
 The `goblin-king` service URL should point to the admin service when users enter
-through the Hub service route. The `goblin-repository` service URL should point to the
-repository UI service, not the repository API; its backend exchanges Hub OAuth and calls
+through the Hub service route. The `goblin-directory` service URL should point to the
+directory UI service, not the repository API; its backend exchanges Hub OAuth and calls
 the repository API as the logged-in user.
 
 If zero-to-jupyterhub network policies are enabled, every Goblin King pod that calls the
 Hub API must be allowed by the Hub ingress policy. The bundled local values add the
-standard label to the API, repository, and repository UI pods:
+standard label to the API, repository, and directory UI pods:
 
 ```yaml
 api:
@@ -142,7 +142,7 @@ api:
 repository:
   podLabels:
     hub.jupyter.org/network-access-hub: "true"
-repositoryUi:
+directoryUi:
   podLabels:
     hub.jupyter.org/network-access-hub: "true"
 ```
@@ -226,7 +226,7 @@ api:
 repository:
   podLabels:
     hub.jupyter.org/network-access-hub: "true"
-repositoryUi:
+directoryUi:
   podLabels:
     hub.jupyter.org/network-access-hub: "true"
 ```
@@ -247,7 +247,7 @@ For local Kubernetes proof, Goblin King includes a default editable stack config
 - `examples/jupyterhub-goblin-king/workbook-launch-branch.ipynb`
 
 The default zero-to-jupyterhub values use JupyterHub's dummy authenticator, register
-Goblin King admin and Goblin Repository browser services, create a starter
+Goblin King admin and Goblin Directory browser services, create a starter
 `goblin-users` group containing `alice`, `bob`, and `carol`, make `alice` a
 `goblin-admins` member, leave `mallory` unauthorized for negative proof, and set
 `GOBLIN_KING_API_URL` plus `GOBLIN_KING_NOTEBOOK_PACKAGE` in notebook
@@ -255,7 +255,7 @@ servers. The local make target injects a branch-aware
 `GOBLIN_KING_NOTEBOOK_PACKAGE` such as
 `git+https://github.com/tashabits/goblin-king.git@develop`; override
 `JUPYTERHUB_NOTEBOOK_PACKAGE` when you want notebook servers to install a
-different branch or package artifact. Repository workbooks always force-reinstall
+different branch or package artifact. Directory workbooks always force-reinstall
 that configured package with `--no-deps` and clear cached imports before loading
 the helper, so uploaded notebooks match the running stack instead of a stale user
 site package.
@@ -315,18 +315,18 @@ optional repository service enabled, validates Hub tokens for `bob`, `alice`, an
 - teardown confirms no Goblin King stack resources, JupyterHub resources,
   notebook-service Kubernetes resources, or notebook-service Docker containers remain
 
-Run the end-to-end repository browser-service proof with one command:
+Run the end-to-end directory browser-service proof with one command:
 
 ```bash
-make jupyterhub-repository-ui-proof
+make jupyterhub-directory-ui-proof
 ```
 
 That proof target installs Hub, Goblin King, the optional repository service, and the
-separate repository UI service. It opens the UI through the Hub proxy route
-`/services/goblin-repository/`, completes Hub OAuth for `bob`, `alice`, and `carol`,
+separate directory UI service. It opens the UI through the Hub proxy route
+`/services/goblin-directory/`, completes Hub OAuth for `bob`, `alice`, and `carol`,
 confirms `mallory` is denied, has `bob` upload v1 zip bundles for a function and ASGI
 service, has `alice` approve and publish them, has `carol` discover and invoke both by
-repository name, then tears down the stack and audits Kubernetes and Docker resources.
+directory name, then tears down the stack and audits Kubernetes and Docker resources.
 
 That target:
 
@@ -349,7 +349,7 @@ To bring the browser UI up for manual testing, enable both optional services:
 make jupyterhub-stack-up \
   JUPYTERHUB_STACK_REBUILD=1 \
   GOBLIN_REPOSITORY_ENABLED=1 \
-  GOBLIN_REPOSITORY_UI_ENABLED=1
+  GOBLIN_DIRECTORY_UI_ENABLED=1
 ```
 
 Then port-forward the Hub proxy and open both service routes:
@@ -359,7 +359,7 @@ kubectl port-forward -n default svc/proxy-public 8080:http
 ```
 
 - `http://127.0.0.1:8080/services/goblin-king/` opens the existing admin UI.
-- `http://127.0.0.1:8080/services/goblin-repository/` opens the repository UI with
+- `http://127.0.0.1:8080/services/goblin-directory/` opens the directory UI with
   Hub OAuth.
 
 To install or remove only the local Hub:
@@ -402,7 +402,7 @@ Browser flow:
 6. The workbook declares a Python function goblin, validates it, runs it, declares an
    ASGI service from source, validates/starts/probes/proxies it, then stops it.
 
-Repository workbook flow:
+Directory workbook flow:
 
 1. Enable the optional repository service for the stack:
 
@@ -411,15 +411,15 @@ Repository workbook flow:
    ```
 
 2. A contributor such as `bob` opens
-   `examples/jupyterhub-goblin-king/workbook-repository-submit.ipynb`.
+   `examples/jupyterhub-goblin-king/workbook-directory-submit.ipynb`.
 3. The submitter workbook defines a short function and an ASGI service in notebook
    source, submits both with `client.submit_repository_function()` and
    `client.submit_repository_service()`, validates both, and requests review.
 4. An admin such as `alice` opens
-   `examples/jupyterhub-goblin-king/workbook-repository-admin.ipynb`, lists
+   `examples/jupyterhub-goblin-king/workbook-directory-admin.ipynb`, lists
    `pending_review` entries, approves them, and publishes them.
 5. A consumer such as `carol` opens
-   `examples/jupyterhub-goblin-king/workbook-repository-consume.ipynb`, searches
+   `examples/jupyterhub-goblin-king/workbook-directory-consume.ipynb`, searches
    published entries, runs the approved function by repository name, starts the
    approved ASGI service by repository name, probes/proxies it, and stops it.
 
@@ -427,19 +427,19 @@ When repository routes are not enabled or the notebook server points at the wron
 endpoint, the notebook helper error mentions `repository.enabled=true` and
 `GOBLIN_KING_REPOSITORY_URL`.
 
-Repository browser flow:
+Directory browser flow:
 
 1. Enable both optional services:
 
    ```bash
    make jupyterhub-stack-up \
      GOBLIN_REPOSITORY_ENABLED=1 \
-     GOBLIN_REPOSITORY_UI_ENABLED=1
+     GOBLIN_DIRECTORY_UI_ENABLED=1
    ```
 
-2. The user logs in to JupyterHub and opens `/services/goblin-repository/`.
-3. The repository UI completes Hub OAuth; no token is pasted into the browser.
-4. A contributor uploads a `.zip` bundle with `goblin-repository.json` and one Python
+2. The user logs in to JupyterHub and opens `/services/goblin-directory/`.
+3. The directory UI completes Hub OAuth; no token is pasted into the browser.
+4. A contributor uploads a `.zip` bundle with `goblin-directory.json` and one Python
    entrypoint source file.
 5. The UI previews the manifest, source, requirements, and extra files. Extra files are
    visible for review but are not executed in upload bundle schema v1.
@@ -547,9 +547,9 @@ curl -X POST http://goblin-king.default.example/services/long-running \
 | `missing or invalid JupyterHub bearer token` | User token is expired, wrong Hub, or hidden by another auth layer. | Create a fresh Hub token and send it as `Authorization: Bearer ...`. |
 | `JupyterHub user is not authorized` | User is not in `allowed_users` or `allowed_groups`. | Add the user/group to Goblin King config and reload the API. |
 | `JupyterHub service token is required` | Secret was not mounted into the API pod. | Check `config.jupyterhub.serviceTokenSecret` and the API pod env. |
-| Repository UI redirects to Hub and then returns `invalid OAuth state` | Browser cookies were blocked or the service prefix changed while logging in. | Reload `/services/goblin-repository/`, keep cookies enabled for the Hub origin, and verify `repositoryUi.servicePrefix`. |
-| Repository UI returns `repository UI service token is required` | The UI service token Secret was not mounted into the repository UI pod. | Check `repositoryUi.serviceTokenSecret` and the `repository-ui-token` key in `goblin-king-jupyterhub-auth`. |
-| `/services/goblin-repository/` is missing from the Hub services menu | The Hub service was not registered or the user lacks the service access scope. | Add the `goblin-repository` service and grant `access:services!service=goblin-repository` to the Hub group. |
+| Directory UI redirects to Hub and then returns `invalid OAuth state` | Browser cookies were blocked or the service prefix changed while logging in. | Reload `/services/goblin-directory/`, keep cookies enabled for the Hub origin, and verify `directoryUi.servicePrefix`. |
+| Directory UI returns `directory UI service token is required` | The UI service token Secret was not mounted into the directory UI pod. | Check `directoryUi.serviceTokenSecret` and the `directory-ui-token` key in `goblin-king-jupyterhub-auth`. |
+| `/services/goblin-directory/` is missing from the Hub services menu | The Hub service was not registered or the user lacks the service access scope. | Add the `goblin-directory` service and grant `access:services!service=goblin-directory` to the Hub group. |
 | Bundle preview says `bundle path is not safe` | The zip contains an absolute path or `..` traversal segment. | Recreate the zip with relative paths rooted at the bundle directory. |
 | Bundle preview says `entrypoint must be UTF-8 text` | The configured entrypoint is binary or encoded differently. | Use one UTF-8 Python source file for upload bundle schema v1. |
 | `JupyterHub is unavailable for token validation` | Hub API URL or cluster DNS is wrong. | Confirm `config.jupyterhub.apiUrl` from inside the API pod. |
