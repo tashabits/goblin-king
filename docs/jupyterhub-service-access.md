@@ -295,6 +295,31 @@ Browser flow:
 6. The workbook declares a Python function goblin, validates it, runs it, declares an
    ASGI service from source, validates/starts/probes/proxies it, then stops it.
 
+Repository workbook flow:
+
+1. Enable the optional repository service for the stack:
+
+   ```bash
+   make jupyterhub-stack-up GOBLIN_REPOSITORY_ENABLED=1
+   ```
+
+2. A contributor such as `bob` opens
+   `examples/jupyterhub-goblin-king/workbook-repository-submit.ipynb`.
+3. The submitter workbook defines a short function and an ASGI service in notebook
+   source, submits both with `client.submit_repository_function()` and
+   `client.submit_repository_service()`, validates both, and requests review.
+4. An admin such as `alice` opens
+   `examples/jupyterhub-goblin-king/workbook-repository-admin.ipynb`, lists
+   `pending_review` entries, approves them, and publishes them.
+5. A consumer such as `carol` opens
+   `examples/jupyterhub-goblin-king/workbook-repository-consume.ipynb`, searches
+   published entries, runs the approved function by repository name, starts the
+   approved ASGI service by repository name, probes/proxies it, and stops it.
+
+When repository routes are not enabled or the notebook server points at the wrong
+endpoint, the notebook helper error mentions `repository.enabled=true` and
+`GOBLIN_KING_REPOSITORY_URL`.
+
 Notebook function flow:
 
 ```python
