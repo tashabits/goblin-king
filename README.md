@@ -49,6 +49,7 @@ intended for untrusted third-party container execution.
   - [Security Policy](SECURITY.md)
   - [Security Model](docs/security-model.md)
   - [JupyterHub Service Access](docs/jupyterhub-service-access.md)
+  - [Goblin Repository](docs/goblin-repository.md)
   - [API Roadmap](docs/api-roadmap.md)
   - [Scheduler Plan](docs/goblin-king-plan.md)
   - [Adopting Projects](docs/ADOPTING_PROJECTS.md)

@@ -39,3 +39,16 @@ def test_mandatory_validation_gate_is_documented() -> None:
     assert "Goblin King does not schedule arbitrary unvalidated container images" in validation_doc
     assert "validate first, then schedule" in validation_doc.lower()
     assert "| Condition | Scheduler behavior | Operator fix |" in validation_doc
+
+
+def test_repository_operator_docs_cover_stack_enablement() -> None:
+    """Verify optional repository service docs cover local and cluster operators."""
+    readme = Path("README.md").read_text(encoding="utf-8")
+    repository_doc = Path("docs/goblin-repository.md").read_text(encoding="utf-8")
+
+    assert "docs/goblin-repository.md" in readme
+    assert '"repository": {' in repository_doc
+    assert "## Docker Compose Enablement" in repository_doc
+    assert "## Helm Enablement" in repository_doc
+    assert "## JupyterHub Stack Enablement" in repository_doc
+    assert "Non-admin callers cannot request another `project_id`" in repository_doc
