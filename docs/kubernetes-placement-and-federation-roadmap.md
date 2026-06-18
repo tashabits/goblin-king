@@ -8,8 +8,8 @@ not an implemented feature.
 Core principles:
 
 ```text
-Placement chooses where a validated goblin container runs. It does not change
-what a goblin is.
+Placement chooses where a validated container-backed goblin workload runs. It does not
+change what a goblin is.
 ```
 
 ```text
@@ -34,8 +34,8 @@ resource policies, and result/artifact model. It must not replace them.
 
 ## Current Starting Point
 
-- Goblin King schedules validated, contract-compliant Docker/OCI goblin
-  containers.
+- Goblin King schedules or manages validated, contract-compliant Docker/OCI goblin
+  workloads.
 - Docker Compose and local Docker remain the local development path and do not
   support geographic placement.
 - Kubernetes and Helm are the natural future runtime path for placement because

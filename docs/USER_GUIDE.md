@@ -37,6 +37,7 @@ designed around the container contract.
 
 Worker authors should read:
 
+- [Goblin Workload Types](goblin-workload-types.md)
 - [What Is A Goblin?](what-is-a-goblin.md)
 - [Writing Goblins](writing-goblins.md)
 - [Goblin Dockerfiles](goblin-dockerfiles.md)
@@ -106,7 +107,7 @@ http://127.0.0.1:8080/admin
 ```
 
 Log in with `local-dev-token`. The same React admin image is used by Docker and Helm.
-It lists goblins, worker images, jobs, schedules, runs, fanouts, long-running services,
+It lists goblins, worker images, jobs, schedules, runs, fanouts, service goblins,
 events, heartbeats, artifacts, audit logs, and rate-limit proof panels. The lab bench
 captures request payloads, responses, durable events, Redis Stream delivery health, and
 live WebSocket messages. King-side kill controls cancel jobs or stop registered
@@ -122,9 +123,8 @@ For a screenshot walkthrough of each admin panel, see
 
 Use the Admin/Auth cleanup controls to remove old runtime rows after a testing pass.
 Always preview first; removal clears terminal jobs and runs, completed fanouts, captured
-events, worker heartbeats, and stopped or unprobed long-service rows. It preserves
-schedules, users, projects, API tokens, active jobs, running services, and scheduler
-heartbeat.
+events, worker heartbeats, and stopped or unprobed service rows. It preserves schedules,
+users, projects, API tokens, active jobs, running services, and scheduler heartbeat.
 
 Use the Runs & Artifacts artifact-volume controls to inspect filesystem-backed storage.
 The API reports the configured root, whether it exists and is writable, file count,
@@ -161,7 +161,7 @@ curl -X POST http://127.0.0.1:8000/admin/runtime/runs/<run-id>/kill \
 ```
 
 The response lists killed runtime objects and any runtime errors. A job hard-kill also
-marks a non-terminal job as cancelled. Registered long-running services can be
+marks a non-terminal job as cancelled. Registered service goblins can be
 hard-stopped from the admin UI or `/admin/runtime/services/{service_id}/kill`; this
 changes King-side service presentation because those services are registered by URL.
 
@@ -233,7 +233,7 @@ zero-to-jupyterhub values file, Helm flag, and exact Hub service config.
 
 ## Prove The Long-Running Service
 
-Start the sample long-running service:
+Start the sample long-running service goblin:
 
 ```bash
 make long-hello-up
@@ -306,7 +306,7 @@ make helm-template
 ```
 
 The chart includes API/admin, scheduler, Redis, persistent storage, and the sample
-long-running service. Admin ingress is on by default:
+service goblin. Admin ingress is on by default:
 
 ```bash
 helm template goblin-king charts/goblin-king
@@ -375,7 +375,7 @@ For project-ready adoption, use:
 ## Sample Goblins
 
 - `example.hello`: short-running Hello World proof.
-- `example.long-hello`: long-running service with timestamped probe responses.
+- `example.long-hello`: service goblin with timestamped probe responses.
 - `example.artifact`: writes a small text artifact and returns artifact metadata.
 - `example.environment`: reports safe runtime and context details.
 - `example.controlled-failure`: returns a predictable failed result.

@@ -79,11 +79,16 @@ ConfigMaps, audit logs, probe results, or worker output.
 Network access should be deliberate. Some goblins need APIs; many do not. Resource
 policies should make network mode or egress intent explicit per goblin.
 
-Long-running service workloads expose HTTP endpoints. Register only trusted project
-service URLs, prefer cluster-local DNS, and route user access through Goblin King's
-service proxy when project-scoped auth is required. The proxy strips standard auth and
-cookie headers before forwarding so user bearer tokens are not handed to service
-containers by default.
+Service goblins expose HTTP endpoints. Register only trusted project service URLs,
+prefer cluster-local DNS, and route user access through Goblin King's service proxy when
+project-scoped auth is required. The proxy strips standard auth and cookie headers
+before forwarding so user bearer tokens are not handed to service containers by
+default.
+
+The Goblin Directory is deployment-local sharing, not a public marketplace. Approval is
+not a security certification, and validation proves contract compliance rather than
+trustworthiness. Operators remain responsible for trusted runner images, auth mapping,
+secrets, resource policy, and deployment boundaries.
 
 The King can run chaos. He should not hand chaos the master key.
 

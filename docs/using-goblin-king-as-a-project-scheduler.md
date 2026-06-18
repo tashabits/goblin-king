@@ -1,12 +1,13 @@
 # Using Goblin King As Your Project Scheduler
 
-Use Goblin King when your project has background work that should run as isolated,
-contract-compliant containers. Your app keeps its own domain logic. Goblin King handles
-project goblin discovery, validation, scheduling, execution, run history, artifacts,
-events, and admin inspection.
+Use Goblin King when your project has background tasks or managed HTTP services that
+should run as isolated, validated container-backed workloads. Your app keeps its own
+domain logic. Goblin King handles project goblin discovery, validation, scheduling or
+service lifecycle, execution, run history, artifacts, events, and admin inspection.
 
-The short version: package each task as a container, describe it in
-`goblin-king-project.json`, validate the image, then submit or schedule the goblin.
+The short version: package each task or service as a container, describe it in
+`goblin-king-project.json`, validate the image, then submit/schedule or start the
+goblin.
 
 If your project includes Goblin King as a submodule, subtree, or local path dependency,
 see [Using Goblin King From A Vendored Checkout](using-goblin-king-from-a-vendored-checkout.md)
@@ -17,6 +18,7 @@ for the install and local stack details.
 - Trusted self-hosted projects.
 - Internal automations and maintenance jobs.
 - Scheduled background tasks.
+- Project-scoped HTTP services that need probe/proxy/start/stop visibility.
 - Artifact-producing jobs such as reports, exports, images, or PDFs.
 - Mixed-language worker tasks.
 - Legacy runtime wrappers that benefit from a clean container boundary.
@@ -33,10 +35,10 @@ for the install and local stack details.
 
 ## Mental model
 
-Goblin King can be the scheduler layer for another project, but it does not become that
-project's application framework. A goblin is always an OCI/Docker container. Goblin King
-schedules containers, not language runtimes. The language inside the container is an
-implementation detail.
+Goblin King can be the workload control plane for another project, but it does not
+become that project's application framework. A project goblin is a validated
+container-backed workload. Goblin King schedules or manages containers, not language
+runtimes. The language inside the container is an implementation detail.
 
 Each goblin must follow the
 [Goblin Container Contract](goblin-container-contract.md). Validation proves that the
@@ -72,8 +74,8 @@ my-project/
     invoice-renderer.input.schema.json
 ```
 
-This layout is only a convention. The important part is that each background task becomes
-a container image and is registered in project config.
+This layout is only a convention. The important part is that each background task or
+service becomes a container image and is registered in project config.
 
 ## Step 1: Add Goblin King project config
 

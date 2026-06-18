@@ -1,9 +1,10 @@
 # JupyterHub Service Access
 
 Goblin King can optionally use a JupyterHub in the same cluster as an auth provider for
-registered long-running services, notebook-declared Python function goblins, and
-notebook-declared ASGI services. This is additive: local bootstrap/API tokens and OIDC
-continue to work, and JupyterHub validation only runs when `jupyterhub.enabled` is true.
+registered service goblins, notebook-declared Python function goblins, notebook-declared
+ASGI service goblins, and the deployment-local Goblin Directory. This is additive:
+local bootstrap/API tokens and OIDC continue to work, and JupyterHub validation only
+runs when `jupyterhub.enabled` is true.
 
 Use this when JupyterHub already owns user identity and Goblin King owns service
 workload registration, probe proof, and project-scoped access control.
@@ -14,11 +15,12 @@ workload registration, probe proof, and project-scoped access control.
 - JupyterHub registers Goblin King as an external service and gives it a service token.
 - Goblin King validates incoming Hub user tokens against the Hub API.
 - Goblin King maps Hub users/groups to local roles and project scopes.
-- Users can declare a Python function in a workbook, validate it, and run it as a
-  project-scoped goblin.
-- Users can declare an ASGI service in a workbook, validate it, start a managed
-  Docker container or Kubernetes Deployment/Service/ConfigMap, probe it, proxy to it,
-  and stop it without writing a Dockerfile.
+- Users can declare a Python function in a workbook, validate it through the configured
+  function runner container, and run it as a project-scoped goblin.
+- Users can declare an ASGI service in a workbook, validate it through the configured
+  service runner container, start a managed Docker container or Kubernetes
+  Deployment/Service/ConfigMap, probe it, proxy to it, and stop it without writing a
+  Dockerfile for that authored service.
 - Users access registered services through Goblin King's service proxy:
 
 ```text
@@ -32,14 +34,20 @@ Notebook-defined goblins use the generic Python function runner image configured
 `notebook_function_image` / `config.notebookFunctionImage`. The workbook sends function
 source to Goblin King, Goblin King stores a hashed bundle under the requested kind, and
 the scheduler wraps user input with that bundle before invoking the runner image. The
-normal worker validation gate still applies before execution.
+normal worker validation gate still applies before execution. This is one authoring
+path, not a replacement for project config or Dockerfile-based goblins.
 
 Notebook-defined services use the ASGI runner image configured by
 `notebook_service_image` / `config.notebookServiceImage`. The workbook sends ASGI source,
 the target app symbol, inline pip requirements, port, and probe path. Goblin King starts
 an isolated runner, installs those requirements inside that runner, imports the app,
-probes it, and registers the managed runtime through the normal long-running service
-gateway.
+probes it, and registers the managed runtime through the normal service goblin gateway.
+
+The Goblin Directory, when enabled, is deployment-local. It lets authorized users in the
+same Goblin King deployment submit, validate, request review, publish, discover, and
+invoke notebook-authored goblins by name. Directory approval is not a security
+certification; operators remain responsible for the runner images, Hub mapping,
+resource policy, and trust boundary.
 
 ## Configure JupyterHub
 
@@ -461,7 +469,7 @@ Directory browser flow:
 6. The owner submits the draft, validates it, and requests review.
 7. An admin approves and publishes from the Review Queue.
 8. Authorized users search the Directory and run function goblins or start/probe/proxy
-   and stop service goblins by repository name.
+   and stop service goblins by Directory name.
 
 JupyterLab picker flow:
 

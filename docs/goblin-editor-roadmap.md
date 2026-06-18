@@ -4,7 +4,7 @@ This roadmap describes a future React admin page called **Goblin Designer**.
 It is a planning document, not an implemented feature.
 
 The Designer should help a trusted project author create a new contract-compliant
-goblin container, validate it, and promote it into the existing admin goblin
+goblin workload, validate it, and promote it into the existing admin goblin
 list without rebuilding the React admin. It should feel like the current admin
 lab bench: same shell, auth model, visual language, tables, badges, buttons,
 status messages, and proof-oriented workflow, but with a separate page focused
@@ -19,7 +19,8 @@ Design first. Validate next. Schedule only after validation passes.
 ## Goals
 
 - Provide a guided designer for project goblins, not a browser-based IDE.
-- Keep the Goblin Container Contract as the worker interface.
+- Keep the Goblin Container Contract as the worker interface for generated task and
+  service containers.
 - Make validation an explicit required step for newly designed goblins.
 - Show validation proof before a goblin can be promoted as runnable.
 - Make validated goblins appear in the existing admin registered goblin table
