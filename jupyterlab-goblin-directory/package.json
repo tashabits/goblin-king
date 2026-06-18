@@ -1,0 +1,24 @@
+{
+  "name": "goblin-king-jupyterlab",
+  "version": "0.1.0",
+  "description": "JupyterLab Goblin Directory picker for Goblin King user servers.",
+  "private": true,
+  "type": "module",
+  "main": "lib/index.js",
+  "style": "style/index.css",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@jupyterlab/application": "^4.2.0",
+    "@jupyterlab/apputils": "^4.2.0",
+    "@jupyterlab/coreutils": "^6.2.0",
+    "@jupyterlab/services": "^7.2.0",
+    "@lumino/widgets": "^2.4.0"
+  },
+  "jupyterlab": {
+    "extension": true,
+    "outputDir": "../src/goblin_king/labextension"
+  }
+}
