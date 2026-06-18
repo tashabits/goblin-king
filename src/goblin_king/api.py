@@ -64,9 +64,17 @@ from goblin_king.api_models import (
     PageMeta,
     ProjectCreateRequest,
     RepositoryEntryDetailResponse,
+    RepositoryFunctionRunRequest,
+    RepositoryFunctionRunResponse,
     RepositoryListResponse,
     RepositoryPublishRequest,
     RepositoryReviewRequest,
+    RepositoryServiceProbeRequest,
+    RepositoryServiceProbeResponse,
+    RepositoryServiceStartRequest,
+    RepositoryServiceStartResponse,
+    RepositoryServiceStopRequest,
+    RepositoryServiceStopResponse,
     RepositorySubmitRequest,
     RepositorySubmitResponse,
     RepositoryValidateRequest,
@@ -1162,7 +1170,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"long service not found: {service_id}")
         project_for_request(principal, service.project_id)
         if service.status == "stopped":
-            raise HTTPException(status_code=409, detail=f"long service is stopped: {service_id}")
+            raise HTTPException(status_code=409, detail=f"long service is stopped: {service.id}")
         proof = _probe_long_service_record(state, service)
         audit(
             state.store,
@@ -1201,20 +1209,52 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         if service is None:
             raise HTTPException(status_code=404, detail=f"long service not found: {service_id}")
         project_for_request(principal, service.project_id)
+        return await _proxy_long_service_request(
+            service=service,
+            request=request,
+            path=path,
+            principal=principal,
+            action="service.proxy",
+            resource_type="long_service",
+            resource_id=service.id,
+        )
+
+    async def _proxy_long_service_request(
+        *,
+        service: LongServiceRecord,
+        request: Request,
+        path: str,
+        principal: Principal,
+        action: str,
+        resource_type: str,
+        resource_id: str,
+        detail_extra: dict[str, Any] | None = None,
+        query_string: str | None = None,
+    ) -> FastAPIResponse:
+        """Forward one authenticated request to a resolved long-running service."""
         if service.status == "stopped":
             audit(
                 state.store,
-                action="service.proxy",
+                action=action,
                 outcome="denied",
                 principal=principal,
                 project_id=service.project_id,
-                resource_type="long_service",
-                resource_id=service.id,
-                detail={"method": request.method, "path": path, "reason": "stopped"},
+                resource_type=resource_type,
+                resource_id=resource_id,
+                detail={
+                    "method": request.method,
+                    "path": path,
+                    "reason": "stopped",
+                    **(detail_extra or {}),
+                },
             )
-            raise HTTPException(status_code=409, detail=f"long service is stopped: {service_id}")
+            raise HTTPException(status_code=409, detail=f"long service is stopped: {service.id}")
 
-        target_url = _service_proxy_url(service, path, request.url.query)
+        target_url = _service_proxy_url(
+            service,
+            path,
+            request.url.query if query_string is None else query_string,
+        )
         body = await request.body()
         upstream_request = urlrequest.Request(
             target_url,
@@ -1222,19 +1262,24 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             headers=_proxy_request_headers(request),
             method=request.method,
         )
-        detail = {"method": request.method, "path": path, "url": target_url}
+        detail = {
+            "method": request.method,
+            "path": path,
+            "url": target_url,
+            **(detail_extra or {}),
+        }
         try:
             with urlrequest.urlopen(upstream_request, timeout=30) as upstream:
                 response_body = upstream.read()
                 response_headers = _proxy_response_headers(upstream.headers)
                 audit(
                     state.store,
-                    action="service.proxy",
+                    action=action,
                     outcome="success",
                     principal=principal,
                     project_id=service.project_id,
-                    resource_type="long_service",
-                    resource_id=service.id,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
                     detail={**detail, "status_code": upstream.status},
                 )
                 return FastAPIResponse(
@@ -1246,12 +1291,12 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             response_body = error.read()
             audit(
                 state.store,
-                action="service.proxy",
+                action=action,
                 outcome="upstream_error",
                 principal=principal,
                 project_id=service.project_id,
-                resource_type="long_service",
-                resource_id=service.id,
+                resource_type=resource_type,
+                resource_id=resource_id,
                 detail={**detail, "status_code": error.code},
             )
             return FastAPIResponse(
@@ -1262,12 +1307,12 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         except (OSError, urlerror.URLError) as error:
             audit(
                 state.store,
-                action="service.proxy",
+                action=action,
                 outcome="failed",
                 principal=principal,
                 project_id=service.project_id,
-                resource_type="long_service",
-                resource_id=service.id,
+                resource_type=resource_type,
+                resource_id=resource_id,
                 detail={**detail, "error": str(error)},
             )
             raise HTTPException(status_code=502, detail=str(error)) from error
@@ -1873,6 +1918,147 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             runtime=runtime,
         )
 
+    def _resolve_published_repository_version(
+        *,
+        name: str,
+        expected_type: str,
+        principal: Principal,
+        project_id: str | None,
+        version: int | None,
+    ) -> tuple[RepositoryEntryRecord, RepositoryVersionRecord]:
+        """Resolve one published repository entry/version visible to a caller."""
+        _require_repository_enabled(state)
+        scoped_project = project_for_request(principal, project_id)
+        entry = state.store.get_repository_entry_by_project_name(scoped_project, name)
+        if entry is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"published repository entry not found: {name}",
+            )
+        if entry.type != expected_type:
+            raise HTTPException(
+                status_code=409,
+                detail=f"repository entry is {entry.type}, not {expected_type}",
+            )
+        requested_version = version or entry.published_version
+        if requested_version is None:
+            published_versions = [
+                item
+                for item in state.store.list_repository_versions(entry.id)
+                if item.status == "published"
+            ]
+            if not published_versions:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"repository entry has no published version: {name}",
+                )
+            return entry, published_versions[-1]
+        resolved = state.store.get_repository_version(entry.id, requested_version)
+        if resolved is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"repository version not found: {name}:{requested_version}",
+            )
+        if resolved.status != "published":
+            raise HTTPException(
+                status_code=409,
+                detail=f"repository version is not published: {name}:{requested_version}",
+            )
+        return entry, resolved
+
+    def _queue_job(
+        request: JobCreateRequest,
+        principal: Principal,
+        *,
+        repository_entry: RepositoryEntryRecord | None = None,
+        repository_version: RepositoryVersionRecord | None = None,
+    ) -> JobRecord:
+        """Queue a registry or notebook-backed job with consistent metadata."""
+        notebook_record = None
+        try:
+            definition = state.registry.get(request.kind)
+        except RegistryError as error:
+            notebook_record = state.store.get_notebook_goblin(request.kind)
+            if notebook_record is None:
+                raise HTTPException(status_code=404, detail=str(error)) from error
+            definition = notebook_definition(notebook_record)
+        project_id = project_for_request(
+            principal,
+            request.project_id or (notebook_record.project_id if notebook_record else None),
+        )
+        if notebook_record is not None:
+            if request.project_id is not None and request.project_id != notebook_record.project_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail="notebook goblin cannot be submitted outside its project",
+                )
+            policy = None
+            metadata = {
+                **goblin_job_metadata(definition),
+                "goblin_source": "notebook",
+                "notebook_source_hash": notebook_record.source_hash,
+                "notebook_function_name": notebook_record.function_name,
+            }
+            max_retries = request.max_retries or notebook_record.max_retries
+            timeout_seconds = request.timeout_seconds or notebook_record.timeout_seconds
+        else:
+            try:
+                policy = effective_policy(
+                    state,
+                    definition.kind,
+                    timeout_seconds=request.timeout_seconds,
+                    max_retries=request.max_retries,
+                )
+            except ResourcePolicyError as error:
+                record_policy_rejection(state, principal, project_id, definition.kind, str(error))
+                raise HTTPException(status_code=422, detail=str(error)) from error
+            metadata = goblin_job_metadata(definition, policy)
+            max_retries = (policy.max_retries or 0) if policy else request.max_retries
+            timeout_seconds = policy.timeout_seconds if policy else request.timeout_seconds
+        if repository_entry is not None and repository_version is not None:
+            metadata.update(
+                {
+                    "goblin_source": "repository",
+                    "repository_entry_id": repository_entry.id,
+                    "repository_name": repository_entry.name,
+                    "repository_version": repository_version.version,
+                    "repository_source_hash": repository_version.source_hash,
+                }
+            )
+        job = JobRecord(
+            id=str(uuid4()),
+            kind=definition.kind,
+            input=request.input,
+            created_at=utc_now(),
+            created_by=principal.user_id,
+            correlation_id=request.correlation_id,
+            project_id=project_id,
+            status="queued",
+            priority=request.priority,
+            due_at=utc_now(),
+            max_retries=max_retries,
+            timeout_seconds=timeout_seconds,
+            metadata=metadata,
+        )
+        state.store.save_job(job)
+        state.event_bus.emit(
+            "job.queued",
+            source="api",
+            project_id=project_id,
+            job_id=job.id,
+            payload={"kind": job.kind, "created_by": job.created_by},
+        )
+        audit(
+            state.store,
+            action="job.created",
+            outcome="success",
+            principal=principal,
+            project_id=project_id,
+            resource_type="job",
+            resource_id=job.id,
+        )
+        return job
+
     @app.post(
         "/repository/entries",
         response_model=RepositorySubmitResponse,
@@ -2429,86 +2615,370 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         )
         return _repository_entry_detail(state, updated)
 
+    @app.post(
+        "/repository/functions/{name}/run",
+        response_model=RepositoryFunctionRunResponse,
+        tags=["repository"],
+        operation_id="runRepositoryFunction",
+    )
+    def run_repository_function(
+        name: str,
+        request: RepositoryFunctionRunRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> RepositoryFunctionRunResponse:
+        """Queue an approved repository function goblin by project-local name."""
+        entry, version_record = _resolve_published_repository_version(
+            name=name,
+            expected_type="notebook_function",
+            principal=principal,
+            project_id=request.project_id,
+            version=request.version,
+        )
+        record = state.store.get_notebook_goblin(version_record.kind)
+        if record is None:
+            raise HTTPException(
+                status_code=500,
+                detail=f"repository notebook goblin missing: {version_record.kind}",
+            )
+        job = _queue_job(
+            JobCreateRequest(
+                kind=version_record.kind,
+                input=request.input,
+                project_id=entry.project_id,
+                priority=request.priority,
+                correlation_id=request.correlation_id,
+                max_retries=request.max_retries,
+                timeout_seconds=request.timeout_seconds,
+            ),
+            principal,
+            repository_entry=entry,
+            repository_version=version_record,
+        )
+        audit(
+            state.store,
+            action="repository.run",
+            outcome="success",
+            principal=principal,
+            project_id=entry.project_id,
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail={
+                "name": entry.name,
+                "version": version_record.version,
+                "kind": version_record.kind,
+                "job_id": job.id,
+            },
+        )
+        return RepositoryFunctionRunResponse(entry=entry, version=version_record, job=job)
+
+    def _repository_service_record(
+        entry: RepositoryEntryRecord,
+        version_record: RepositoryVersionRecord,
+    ) -> NotebookServiceRecord:
+        record = state.store.get_notebook_service(version_record.kind)
+        if record is None:
+            raise HTTPException(
+                status_code=500,
+                detail=f"repository notebook service missing: {version_record.kind}",
+            )
+        if record.project_id != entry.project_id:
+            raise HTTPException(
+                status_code=500,
+                detail=f"repository notebook service project mismatch: {version_record.kind}",
+            )
+        return record
+
+    def _repository_proxy_query_string(raw_query: str) -> str:
+        """Remove repository selector params before forwarding to the service."""
+        filtered = [
+            (key, value)
+            for key, value in urlparse.parse_qsl(raw_query, keep_blank_values=True)
+            if key not in {"project_id", "version"}
+        ]
+        return urlparse.urlencode(filtered, doseq=True)
+
+    @app.post(
+        "/repository/services/{name}/start",
+        response_model=RepositoryServiceStartResponse,
+        tags=["repository"],
+        operation_id="startRepositoryService",
+    )
+    def start_repository_service(
+        name: str,
+        request: RepositoryServiceStartRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> RepositoryServiceStartResponse:
+        """Start an approved repository ASGI service by project-local name."""
+        _forbid_viewer_write(principal)
+        entry, version_record = _resolve_published_repository_version(
+            name=name,
+            expected_type="notebook_service",
+            principal=principal,
+            project_id=request.project_id,
+            version=request.version,
+        )
+        record = _repository_service_record(entry, version_record)
+        manager = _notebook_service_runtime_manager(state)
+        _stop_existing_notebook_service_runtime(state, manager, record)
+        try:
+            runtime_proof = manager.start(record, timeout_seconds=request.timeout_seconds)
+        except NotebookServiceRuntimeError as error:
+            audit(
+                state.store,
+                action="repository.start",
+                outcome="failure",
+                principal=principal,
+                project_id=record.project_id,
+                resource_type="repository_entry",
+                resource_id=entry.id,
+                detail={"name": entry.name, "version": version_record.version, "error": str(error)},
+            )
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        service = LongServiceRecord(
+            id=str(uuid4()),
+            kind=record.kind,
+            project_id=record.project_id,
+            image=record.image,
+            base_url=runtime_proof.base_url,
+            probe_path=record.probe_path,
+            status="running",
+            created_at=utc_now(),
+            created_by=principal.user_id,
+            last_probe_json=runtime_proof.probe,
+        )
+        state.store.save_long_service(service)
+        updated = state.store.update_notebook_service_runtime(
+            record.kind,
+            runtime_status="running",
+            runtime_backend=runtime_proof.backend,
+            runtime_name=runtime_proof.name,
+            active_service_id=service.id,
+            updated_at=utc_now(),
+        )
+        assert updated is not None
+        probe = _probe_long_service_record(state, service)
+        state.event_bus.emit(
+            "repository.service.started",
+            source="api",
+            project_id=record.project_id,
+            worker_id=service.id,
+            payload={
+                "name": entry.name,
+                "version": version_record.version,
+                "kind": record.kind,
+                "backend": runtime_proof.backend,
+            },
+        )
+        audit(
+            state.store,
+            action="repository.start",
+            outcome="success",
+            principal=principal,
+            project_id=record.project_id,
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail={
+                "name": entry.name,
+                "version": version_record.version,
+                "kind": record.kind,
+                "service_id": service.id,
+                "runtime": runtime_proof.model(),
+            },
+        )
+        return RepositoryServiceStartResponse(
+            entry=entry,
+            version=version_record,
+            notebook_service=updated,
+            service=service,
+            runtime=runtime_proof.model(),
+            probe=probe,
+        )
+
+    def _active_repository_service(
+        entry: RepositoryEntryRecord,
+        version_record: RepositoryVersionRecord,
+    ) -> tuple[NotebookServiceRecord, LongServiceRecord]:
+        record = _repository_service_record(entry, version_record)
+        if not record.active_service_id:
+            raise HTTPException(
+                status_code=409,
+                detail=f"repository service is not running: {entry.name}",
+            )
+        service = state.store.get_long_service(record.active_service_id)
+        if service is None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"repository service runtime is missing: {entry.name}",
+            )
+        return record, service
+
+    @app.post(
+        "/repository/services/{name}/probe",
+        response_model=RepositoryServiceProbeResponse,
+        tags=["repository"],
+        operation_id="probeRepositoryService",
+    )
+    def probe_repository_service(
+        name: str,
+        request: RepositoryServiceProbeRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> RepositoryServiceProbeResponse:
+        """Probe a running approved repository ASGI service by name."""
+        entry, version_record = _resolve_published_repository_version(
+            name=name,
+            expected_type="notebook_service",
+            principal=principal,
+            project_id=request.project_id,
+            version=request.version,
+        )
+        record, service = _active_repository_service(entry, version_record)
+        project_for_request(principal, service.project_id)
+        if service.status == "stopped":
+            raise HTTPException(status_code=409, detail=f"long service is stopped: {service.id}")
+        probe = _probe_long_service_record(state, service)
+        audit(
+            state.store,
+            action="repository.probe",
+            outcome="success",
+            principal=principal,
+            project_id=service.project_id,
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail={
+                "name": entry.name,
+                "version": version_record.version,
+                "kind": record.kind,
+                "service_id": service.id,
+                "url": probe.request["url"],
+            },
+        )
+        return RepositoryServiceProbeResponse(
+            entry=entry,
+            version=version_record,
+            notebook_service=record,
+            probe=probe,
+        )
+
+    @app.post(
+        "/repository/services/{name}/stop",
+        response_model=RepositoryServiceStopResponse,
+        tags=["repository"],
+        operation_id="stopRepositoryService",
+    )
+    def stop_repository_service(
+        name: str,
+        request: RepositoryServiceStopRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> RepositoryServiceStopResponse:
+        """Stop a running approved repository ASGI service by name."""
+        _forbid_viewer_write(principal)
+        entry, version_record = _resolve_published_repository_version(
+            name=name,
+            expected_type="notebook_service",
+            principal=principal,
+            project_id=request.project_id,
+            version=request.version,
+        )
+        record = _repository_service_record(entry, version_record)
+        manager = _notebook_service_runtime_manager(state)
+        runtime = manager.stop(record)
+        service = None
+        if record.active_service_id:
+            service = state.store.update_long_service_status(
+                record.active_service_id,
+                status="stopped",
+                last_probe_json={"stopped_by": "repository.stop"},
+            )
+        updated = state.store.update_notebook_service_runtime(
+            record.kind,
+            runtime_status="stopped",
+            runtime_backend=None,
+            runtime_name=None,
+            active_service_id=None,
+            updated_at=utc_now(),
+        )
+        assert updated is not None
+        audit(
+            state.store,
+            action="repository.stop",
+            outcome="success",
+            principal=principal,
+            project_id=record.project_id,
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail={
+                "name": entry.name,
+                "version": version_record.version,
+                "kind": record.kind,
+                "service_id": service.id if service else None,
+                "runtime": runtime,
+            },
+        )
+        return RepositoryServiceStopResponse(
+            entry=entry,
+            version=version_record,
+            notebook_service=updated,
+            service=service,
+            runtime=runtime,
+        )
+
+    @app.api_route(
+        "/repository/services/{name}/proxy",
+        methods=SERVICE_PROXY_METHODS,
+        tags=["repository"],
+        operation_id="proxyRepositoryServiceRoot",
+        include_in_schema=False,
+    )
+    @app.api_route(
+        "/repository/services/{name}/proxy/{path:path}",
+        methods=SERVICE_PROXY_METHODS,
+        tags=["repository"],
+        operation_id="proxyRepositoryService",
+        include_in_schema=False,
+    )
+    async def proxy_repository_service(
+        name: str,
+        request: Request,
+        path: str = "",
+        project_id: str | None = None,
+        version: int | None = Query(default=None, gt=0),
+        principal: Principal = Depends(require_principal),
+    ) -> FastAPIResponse:
+        """Proxy authenticated HTTP traffic to an approved repository service."""
+        entry, version_record = _resolve_published_repository_version(
+            name=name,
+            expected_type="notebook_service",
+            principal=principal,
+            project_id=project_id,
+            version=version,
+        )
+        record, service = _active_repository_service(entry, version_record)
+        project_for_request(principal, service.project_id)
+        return await _proxy_long_service_request(
+            service=service,
+            request=request,
+            path=path,
+            principal=principal,
+            action="repository.proxy",
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail_extra={
+                "name": entry.name,
+                "version": version_record.version,
+                "kind": record.kind,
+                "service_id": service.id,
+            },
+            query_string=_repository_proxy_query_string(request.url.query),
+        )
+
     @app.post("/jobs", response_model=JobRecord, tags=["jobs"], operation_id="createJob")
     def create_job(
         request: JobCreateRequest,
         principal: Principal = Depends(require_principal),
     ) -> JobRecord:
         """Queue one job for later scheduler execution."""
-        notebook_record = None
-        try:
-            definition = state.registry.get(request.kind)
-        except RegistryError as error:
-            notebook_record = state.store.get_notebook_goblin(request.kind)
-            if notebook_record is None:
-                raise HTTPException(status_code=404, detail=str(error)) from error
-            definition = notebook_definition(notebook_record)
-        project_id = project_for_request(
-            principal,
-            request.project_id or (notebook_record.project_id if notebook_record else None),
-        )
-        if notebook_record is not None:
-            if request.project_id is not None and request.project_id != notebook_record.project_id:
-                raise HTTPException(
-                    status_code=403,
-                    detail="notebook goblin cannot be submitted outside its project",
-                )
-            policy = None
-            metadata = {
-                **goblin_job_metadata(definition),
-                "goblin_source": "notebook",
-                "notebook_source_hash": notebook_record.source_hash,
-                "notebook_function_name": notebook_record.function_name,
-            }
-            max_retries = request.max_retries or notebook_record.max_retries
-            timeout_seconds = request.timeout_seconds or notebook_record.timeout_seconds
-        else:
-            try:
-                policy = effective_policy(
-                    state,
-                    definition.kind,
-                    timeout_seconds=request.timeout_seconds,
-                    max_retries=request.max_retries,
-                )
-            except ResourcePolicyError as error:
-                record_policy_rejection(state, principal, project_id, definition.kind, str(error))
-                raise HTTPException(status_code=422, detail=str(error)) from error
-            metadata = goblin_job_metadata(definition, policy)
-            max_retries = (policy.max_retries or 0) if policy else request.max_retries
-            timeout_seconds = policy.timeout_seconds if policy else request.timeout_seconds
-        job = JobRecord(
-            id=str(uuid4()),
-            kind=definition.kind,
-            input=request.input,
-            created_at=utc_now(),
-            created_by=principal.user_id,
-            correlation_id=request.correlation_id,
-            project_id=project_id,
-            status="queued",
-            priority=request.priority,
-            due_at=utc_now(),
-            max_retries=max_retries,
-            timeout_seconds=timeout_seconds,
-            metadata=metadata,
-        )
-        state.store.save_job(job)
-        state.event_bus.emit(
-            "job.queued",
-            source="api",
-            project_id=project_id,
-            job_id=job.id,
-            payload={"kind": job.kind, "created_by": job.created_by},
-        )
-        audit(
-            state.store,
-            action="job.created",
-            outcome="success",
-            principal=principal,
-            project_id=project_id,
-            resource_type="job",
-            resource_id=job.id,
-        )
-        return job
+        return _queue_job(request, principal)
 
     @app.get("/jobs", response_model=JobListResponse, tags=["jobs"], operation_id="listJobs")
     def list_jobs(

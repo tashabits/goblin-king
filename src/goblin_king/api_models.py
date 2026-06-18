@@ -338,6 +338,78 @@ class RepositoryListResponse(BaseModel):
     meta: PageMeta
 
 
+class RepositoryFunctionRunRequest(BaseModel):
+    """Request body for running a published repository function by name."""
+
+    input: dict[str, Any] = Field(default_factory=dict)
+    project_id: str | None = None
+    version: int | None = Field(default=None, gt=0)
+    priority: int = 100
+    correlation_id: str | None = None
+    max_retries: int = Field(default=0, ge=0)
+    timeout_seconds: int | None = Field(default=None, gt=0)
+
+
+class RepositoryFunctionRunResponse(BaseModel):
+    """Resolved repository function plus queued job proof."""
+
+    entry: RepositoryEntryRecord
+    version: RepositoryVersionRecord
+    job: JobRecord
+
+
+class RepositoryServiceStartRequest(BaseModel):
+    """Request body for starting a published repository ASGI service by name."""
+
+    project_id: str | None = None
+    version: int | None = Field(default=None, gt=0)
+    timeout_seconds: int = Field(default=120, gt=0)
+
+
+class RepositoryServiceStartResponse(BaseModel):
+    """Resolved repository service plus runtime start proof."""
+
+    entry: RepositoryEntryRecord
+    version: RepositoryVersionRecord
+    notebook_service: NotebookServiceRecord
+    service: LongServiceRecord
+    runtime: dict[str, Any]
+    probe: LongServiceProbeResponse
+
+
+class RepositoryServiceProbeRequest(BaseModel):
+    """Request body for probing a started repository ASGI service by name."""
+
+    project_id: str | None = None
+    version: int | None = Field(default=None, gt=0)
+
+
+class RepositoryServiceProbeResponse(BaseModel):
+    """Resolved repository service plus probe proof."""
+
+    entry: RepositoryEntryRecord
+    version: RepositoryVersionRecord
+    notebook_service: NotebookServiceRecord
+    probe: LongServiceProbeResponse
+
+
+class RepositoryServiceStopRequest(BaseModel):
+    """Request body for stopping a started repository ASGI service by name."""
+
+    project_id: str | None = None
+    version: int | None = Field(default=None, gt=0)
+
+
+class RepositoryServiceStopResponse(BaseModel):
+    """Resolved repository service plus cleanup proof."""
+
+    entry: RepositoryEntryRecord
+    version: RepositoryVersionRecord
+    notebook_service: NotebookServiceRecord
+    service: LongServiceRecord | None = None
+    runtime: dict[str, Any]
+
+
 class RuntimeCleanupRequest(BaseModel):
     """Admin request for pruning historical local runtime rows."""
 
