@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 from pathlib import Path
+from urllib.error import HTTPError
 
 from goblin_king.api_models import LongServiceProbeResponse
 from goblin_king.contracts import (
@@ -186,6 +188,35 @@ def test_notebook_client_request_uses_configured_timeout(monkeypatch) -> None:
     assert client._request("GET", "/health") == {"ok": True}
 
     assert seen == {"url": "http://goblin.local/health", "timeout": 321}
+
+
+def test_notebook_client_404_hint_for_stale_notebook_api(monkeypatch) -> None:
+    """Verify notebook route 404s explain the likely API/client mismatch."""
+
+    def fake_urlopen(_request, timeout):
+        assert timeout == 120
+        raise HTTPError(
+            url="http://goblin.local/notebooks/goblins",
+            code=404,
+            msg="Not Found",
+            hdrs={},
+            fp=BytesIO(b'{"detail":"Not Found"}'),
+        )
+
+    monkeypatch.setenv("GOBLIN_KING_API_TOKEN", "token")
+    monkeypatch.setattr("goblin_king.notebooks.urlrequest.urlopen", fake_urlopen)
+
+    client = GoblinKingNotebookClient(api_url="http://goblin.local")
+    try:
+        client._request("POST", "/notebooks/goblins", {})
+    except RuntimeError as error:
+        message = str(error)
+    else:
+        raise AssertionError("expected notebook route 404 to raise")
+
+    assert "POST /notebooks/goblins failed with 404" in message
+    assert "newer than the Goblin King API" in message
+    assert "GOBLIN_KING_API_URL points at the wrong service" in message
 
 
 def test_notebook_client_service_start_prints_progress(monkeypatch, capsys) -> None:

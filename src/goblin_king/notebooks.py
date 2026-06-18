@@ -505,7 +505,16 @@ class GoblinKingNotebookClient:
                 raw = response.read().decode("utf-8")
         except urlerror.HTTPError as error:
             body = error.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"{method} {path} failed with {error.code}: {body}") from error
+            hint = ""
+            if error.code == 404 and path.startswith("/notebooks/"):
+                hint = (
+                    " The notebook helper is newer than the Goblin King API at "
+                    f"{self.api_url}, or GOBLIN_KING_API_URL points at the wrong service. "
+                    "Redeploy Goblin King from the matching branch, then rerun the workbook."
+                )
+            raise RuntimeError(
+                f"{method} {path} failed with {error.code}: {body}{hint}"
+            ) from error
         return json.loads(raw) if raw else {}
 
 
