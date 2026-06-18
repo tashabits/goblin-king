@@ -61,6 +61,18 @@ def test_repository_operator_docs_cover_stack_enablement() -> None:
     assert "workbook-repository-submit.ipynb" in repository_doc
     assert "workbook-repository-admin.ipynb" in repository_doc
     assert "workbook-repository-consume.ipynb" in repository_doc
+    assert "make jupyterhub-repository-proof" in repository_doc
     assert "client.run_repository_function" in repository_doc
     assert "client.repository_service" in repository_doc
     assert "Non-admin callers cannot request another `project_id`" in repository_doc
+
+
+def test_jupyterhub_docs_cover_repository_proof_users() -> None:
+    """Verify Hub docs describe the repository proof target and users."""
+    hub_doc = Path("docs/jupyterhub-service-access.md").read_text(encoding="utf-8")
+
+    assert "make jupyterhub-repository-proof" in hub_doc
+    assert "`bob` submits" in hub_doc
+    assert "`alice` approves" in hub_doc
+    assert "`carol` searches" in hub_doc
+    assert "`mallory` is denied" in hub_doc

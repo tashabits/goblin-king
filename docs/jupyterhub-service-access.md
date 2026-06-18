@@ -77,8 +77,8 @@ hub:
           }
       ]
       c.JupyterHub.load_groups = {
-          "goblin-users": ["alice", "bob"],
-          "goblin-admins": ["admin"],
+          "goblin-users": ["alice", "bob", "carol"],
+          "goblin-admins": ["alice"],
       }
       c.JupyterHub.load_roles = [
           {
@@ -196,8 +196,10 @@ For local Kubernetes proof, Goblin King includes a default editable stack config
 - `examples/jupyterhub-goblin-king/workbook-launch-branch.ipynb`
 
 The default zero-to-jupyterhub values use JupyterHub's dummy authenticator, register
-Goblin King as a service, create a starter `goblin-users` group containing `alice` and
-`bob`, and set `GOBLIN_KING_API_URL` plus `GOBLIN_KING_NOTEBOOK_PACKAGE` in notebook
+Goblin King as a service, create a starter `goblin-users` group containing `alice`,
+`bob`, and `carol`, make `alice` a `goblin-admins` member, leave `mallory`
+unauthorized for negative proof, and set `GOBLIN_KING_API_URL` plus
+`GOBLIN_KING_NOTEBOOK_PACKAGE` in notebook
 servers. The default workbook installs the helper package if the notebook image does
 not already include it. The branch workbook is for pre-merge testing and pins the
 package install to `service-workloads-jupyterhub-auth` with `--no-deps` so it does not
@@ -239,6 +241,24 @@ That proof target:
 - starts the managed Kubernetes Deployment/Service/ConfigMap, probes it, proxies it,
   stops it, and confirms cleanup
 - tears down the Hub plus Goblin King stack in a cleanup step
+
+Run the end-to-end repository proof with one command:
+
+```bash
+make jupyterhub-repository-proof
+```
+
+That proof target rebuilds local images, installs JupyterHub plus Goblin King with the
+optional repository service enabled, validates Hub tokens for `bob`, `alice`, and
+`carol`, confirms `mallory` is denied, and runs the repository workflow:
+
+- `bob` submits a notebook-defined function and ASGI service, validates both, and
+  requests review
+- `alice` approves and publishes both entries
+- `carol` searches published entries, runs the function by repository name, starts the
+  service by repository name, probes/proxies it, and stops it
+- teardown confirms no Goblin King stack resources, JupyterHub resources,
+  notebook-service Kubernetes resources, or notebook-service Docker containers remain
 
 That target:
 
