@@ -20,6 +20,8 @@ from goblin_king.contracts import (
     NotebookGoblinRecord,
     NotebookServiceRecord,
     ProjectRecord,
+    RepositoryEntryRecord,
+    RepositoryVersionRecord,
     RunRecord,
     ScheduleRecord,
     UserRecord,
@@ -262,6 +264,50 @@ def _row_to_notebook_service(payload: dict[str, Any]) -> NotebookServiceRecord:
         runtime_name=payload.get("runtime_name"),
         runtime_status=payload.get("runtime_status") or "declared",
         active_service_id=payload.get("active_service_id"),
+    )
+
+
+def _row_to_repository_entry(payload: dict[str, Any]) -> RepositoryEntryRecord:
+    return RepositoryEntryRecord(
+        id=payload["id"],
+        name=payload["name"],
+        kind=payload["kind"],
+        type=payload["type"],
+        project_id=payload.get("project_id"),
+        owner=payload["owner"],
+        display_name=payload["display_name"],
+        description=payload.get("description"),
+        tags=json.loads(payload.get("tags_json") or "[]"),
+        status=payload["status"],
+        published_version=payload.get("published_version"),
+        created_at=_coerce_datetime(payload["created_at"]),
+        updated_at=_coerce_datetime(payload["updated_at"]),
+    )
+
+
+def _row_to_repository_version(payload: dict[str, Any]) -> RepositoryVersionRecord:
+    kind = payload.get("kind") or (
+        f"repository.{payload['entry_id']}.v{payload['version']}".replace("_", "-")
+    )
+    return RepositoryVersionRecord(
+        id=payload["id"],
+        entry_id=payload["entry_id"],
+        version=payload["version"],
+        kind=kind,
+        source_hash=payload["source_hash"],
+        runner_image=payload["runner_image"],
+        validation_proof=json.loads(payload.get("validation_proof_json") or "{}"),
+        approval_status=payload.get("approval_status") or "draft",
+        status=payload["status"],
+        approved_by=payload.get("approved_by"),
+        approved_at=(
+            _coerce_datetime(payload["approved_at"]) if payload.get("approved_at") else None
+        ),
+        published_at=(
+            _coerce_datetime(payload["published_at"]) if payload.get("published_at") else None
+        ),
+        created_at=_coerce_datetime(payload["created_at"]),
+        updated_at=_coerce_datetime(payload["updated_at"]),
     )
 
 

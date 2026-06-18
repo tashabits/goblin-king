@@ -35,6 +35,66 @@ api:
     enabled: false
     minAvailable: 1
 
+repository:
+  enabled: false
+  replicas: 1
+  port: 8000
+  url: ""
+  podLabels: {}
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 80
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
+
+directoryUi:
+  enabled: false
+  replicas: 1
+  image:
+    repository: goblin-king-directory-ui
+    tag: local
+    pullPolicy: IfNotPresent
+  port: 8080
+  serviceName: goblin-directory
+  servicePrefix: /services/goblin-directory/
+  apiUrl: ""
+  repositoryUrl: ""
+  hubApiUrl: ""
+  hubBaseUrl: /hub/
+  publicUrl: ""
+  serviceTokenSecret:
+    name: ""
+    key: directory-ui-token
+  adminGroups:
+    - goblin-admins
+  requestTimeoutSeconds: 10
+  sessionTtlSeconds: 28800
+  bundleLimits:
+    maxBundleBytes: "5242880"
+    maxSourceBytes: "1048576"
+    maxRequirementsBytes: "65536"
+    maxFiles: "50"
+  podLabels: {}
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
 scheduler:
   enabled: true
   replicas: 1

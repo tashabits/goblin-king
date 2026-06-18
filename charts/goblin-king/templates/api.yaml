@@ -1,3 +1,4 @@
+{{- $repositoryUrl := include "goblin-king.repositoryUrl" . -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -41,6 +42,12 @@ spec:
               {{- else }}
               value: {{ .Values.api.bootstrapAdminToken | quote }}
               {{- end }}
+            - name: GOBLIN_KING_REPOSITORY_ENABLED
+              value: {{ .Values.repository.enabled | quote }}
+            {{- if $repositoryUrl }}
+            - name: GOBLIN_KING_REPOSITORY_URL
+              value: {{ $repositoryUrl | quote }}
+            {{- end }}
             {{- if and .Values.config.jupyterhub.enabled .Values.config.jupyterhub.serviceTokenSecret.name }}
             - name: {{ .Values.config.jupyterhub.serviceTokenEnv }}
               valueFrom:

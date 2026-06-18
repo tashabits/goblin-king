@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -14,6 +15,7 @@ from pydantic import BaseModel, Field
 from goblin_king.contracts import GoblinDefinition, GoblinResult, WorkerValidationRecord
 from goblin_king.registry import GoblinRegistry
 from goblin_king.runtime import DockerRuntime, new_run_context
+from goblin_king.runtime_helpers import kubernetes_name
 from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
 
@@ -154,10 +156,17 @@ def validate_workers(
 
     with TemporaryDirectory(prefix="goblin-contract-validation-") as temp_dir:
         root = Path(temp_dir)
+        effective_run_root = run_root
+        if effective_run_root is None:
+            effective_run_root = (
+                Path(".goblin-king") / "runs"
+                if os.environ.get("GOBLIN_KING_DOCKER_DATA_VOLUME")
+                else root / "runs"
+            )
         runtime = DockerRuntime(
             workers=workers,
             redis_url=redis_url,
-            run_root=run_root or root / "runs",
+            run_root=effective_run_root,
         )
         for definition in definitions:
             results.append(
@@ -248,7 +257,7 @@ def _validate_one(
             checks=checks,
         )
 
-    context = new_run_context(f"validation-{kind}", kind)
+    context = new_run_context(validation_job_id(kind), kind)
     context = context.model_copy(
         update={"artifact_root": str(runtime.run_root.parent / "artifacts" / context.run_id)}
     )
@@ -338,6 +347,15 @@ def _validate_one(
         artifact_count=len(parsed.artifacts),
         checks=checks,
     )
+
+
+def validation_job_id(kind: str) -> str:
+    """Return a short job id safe for Docker labels and Kubernetes labels."""
+    suffix = uuid4().hex[:12]
+    base = kubernetes_name(f"validation-{kind}")
+    limit = 63 - len(suffix) - 1
+    prefix = base[:limit].strip("-") or "validation"
+    return f"{prefix}-{suffix}"
 
 
 def inspect_image_identity(docker_executable: str, image: str) -> tuple[str | None, str | None]:

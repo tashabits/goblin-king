@@ -118,6 +118,7 @@ scheduler_app = typer.Typer(help="Run scheduler passes.")
 smoke_app = typer.Typer(help="Run local end-to-end smoke proofs.")
 workers_app = typer.Typer(help="Build Docker worker images.")
 resource_policies_app = typer.Typer(help="Inspect runtime resource policy mappings.")
+directory_ui_app = typer.Typer(help="Run the Goblin Directory browser service.")
 app.add_typer(api_app, name="api")
 app.add_typer(auth_app, name="auth")
 app.add_typer(goblins_app, name="goblins")
@@ -136,6 +137,7 @@ app.add_typer(scheduler_app, name="scheduler")
 app.add_typer(smoke_app, name="smoke")
 app.add_typer(workers_app, name="workers")
 app.add_typer(resource_policies_app, name="resource-policies")
+app.add_typer(directory_ui_app, name="directory-ui")
 
 @auth_app.command("create-user")
 def create_auth_user(
@@ -201,6 +203,27 @@ def run_api(
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error
     uvicorn.run(create_app(loaded_settings), host=host, port=port)
+
+
+@directory_ui_app.command("run")
+def run_directory_ui_service(
+    host: Annotated[
+        str,
+        typer.Option("--host", help="Directory UI service bind host."),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option("--port", help="Directory UI service bind port."),
+    ] = 8080,
+) -> None:
+    """Run the JupyterHub-authenticated directory browser service."""
+    from goblin_king.directory_ui import DirectoryUISettings, run_directory_ui
+
+    run_directory_ui(
+        host=host,
+        port=port,
+        settings=DirectoryUISettings.from_env(),
+    )
 
 
 @demo_app.command("up")

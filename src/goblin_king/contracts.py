@@ -27,6 +27,16 @@ LongServiceStatus = Literal["registered", "running", "failed", "stopped"]
 ImagePromotionStatus = Literal["planned", "built", "pushed", "promoted", "failed"]
 DeploymentRecordStatus = Literal["planned", "rendered", "dry_run", "applied", "failed"]
 ValidationStatus = Literal["passed", "failed"]
+RepositoryGoblinType = Literal["notebook_function", "notebook_service"]
+RepositoryEntryStatus = Literal[
+    "draft",
+    "validated",
+    "pending_review",
+    "approved",
+    "published",
+    "rejected",
+    "retired",
+]
 
 
 def utc_now() -> datetime:
@@ -277,6 +287,71 @@ class NotebookServiceRecord(BaseModel):
     def validate_probe_path(cls, value: str) -> str:
         """Persist probe paths as absolute HTTP paths."""
         return value if value.startswith("/") else f"/{value}"
+
+
+class RepositoryEntryRecord(BaseModel):
+    """Track the mutable catalog entry for a shared notebook-authored goblin."""
+
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    kind: str
+    type: RepositoryGoblinType
+    project_id: str | None = None
+    owner: str = Field(min_length=1)
+    display_name: str = Field(min_length=1)
+    description: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    status: RepositoryEntryStatus = "draft"
+    published_version: int | None = Field(default=None, gt=0)
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("name", "kind")
+    @classmethod
+    def validate_identifier(cls, value: str) -> str:
+        if not GOBLIN_KIND_PATTERN.match(value):
+            raise ValueError("value must use lowercase letters, digits, dots, or dashes")
+        return value
+
+    @field_validator("tags")
+    @classmethod
+    def validate_tags(cls, value: list[str]) -> list[str]:
+        tags = []
+        for tag in value:
+            cleaned = tag.strip().lower()
+            if not cleaned:
+                continue
+            if not GOBLIN_KIND_PATTERN.match(cleaned):
+                raise ValueError("tags must use lowercase letters, digits, dots, or dashes")
+            if cleaned not in tags:
+                tags.append(cleaned)
+        return tags
+
+
+class RepositoryVersionRecord(BaseModel):
+    """Track one immutable submitted source version for a repository entry."""
+
+    id: str = Field(min_length=1)
+    entry_id: str = Field(min_length=1)
+    version: int = Field(gt=0)
+    kind: str
+    source_hash: str = Field(min_length=1)
+    runner_image: str = Field(min_length=1)
+    validation_proof: dict[str, Any] = Field(default_factory=dict)
+    approval_status: RepositoryEntryStatus = "draft"
+    status: RepositoryEntryStatus = "draft"
+    approved_by: str | None = None
+    approved_at: datetime | None = None
+    published_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("kind")
+    @classmethod
+    def validate_kind(cls, value: str) -> str:
+        if not GOBLIN_KIND_PATTERN.match(value):
+            raise ValueError("kind must use lowercase letters, digits, dots, or dashes")
+        return value
 
 
 class ImagePromotionRecord(BaseModel):

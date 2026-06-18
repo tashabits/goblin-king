@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import create_engine, delete, func, or_, select, update
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import OperationalError
 
 from goblin_king.contracts import (
     ApiTokenRecord,
@@ -27,6 +29,8 @@ from goblin_king.contracts import (
     NotebookServiceRecord,
     ProjectRecord,
     RateLimitRecord,
+    RepositoryEntryRecord,
+    RepositoryVersionRecord,
     RunRecord,
     ScheduleRecord,
     TeamRecord,
@@ -48,6 +52,8 @@ from goblin_king.store_rows import (
     _row_to_notebook_goblin,
     _row_to_notebook_service,
     _row_to_project,
+    _row_to_repository_entry,
+    _row_to_repository_version,
     _row_to_run,
     _row_to_schedule,
     _row_to_user,
@@ -71,6 +77,8 @@ from goblin_king.store_schema import (
     notebook_services_table,
     projects_table,
     rate_limits_table,
+    repository_entries_table,
+    repository_versions_table,
     runs_table,
     schedules_table,
     teams_table,
@@ -79,6 +87,42 @@ from goblin_king.store_schema import (
 )
 
 DEFAULT_DB_PATH = Path(".goblin-king") / "goblin-king.sqlite3"
+REPOSITORY_STATUS_TRANSITIONS = {
+    "draft": {"validated", "rejected", "retired"},
+    "validated": {"pending_review", "rejected", "retired"},
+    "pending_review": {"approved", "rejected", "retired"},
+    "approved": {"published", "rejected", "retired"},
+    "published": {"retired"},
+    "rejected": {"retired"},
+    "retired": set(),
+}
+REPOSITORY_VERSION_IDENTITY_FIELDS = {
+    "entry_id",
+    "version",
+    "kind",
+    "source_hash",
+    "runner_image",
+    "created_at",
+}
+
+
+def _initialize_schema(engine: Engine) -> None:
+    """Create or migrate SQLite schema, tolerating parallel first startup."""
+    retryable = ("already exists", "duplicate column name", "database is locked")
+    last_error: OperationalError | None = None
+    for attempt in range(10):
+        try:
+            metadata.create_all(engine)
+            ensure_schema_columns(engine)
+            return
+        except OperationalError as error:
+            message = str(error).lower()
+            if not any(token in message for token in retryable):
+                raise
+            last_error = error
+            time.sleep(0.1 * (attempt + 1))
+    if last_error is not None:
+        raise last_error
 
 
 class SQLiteStore:
@@ -88,8 +132,7 @@ class SQLiteStore:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.engine: Engine = create_engine(f"sqlite:///{self.db_path}")
-        metadata.create_all(self.engine)
-        ensure_schema_columns(self.engine)
+        _initialize_schema(self.engine)
 
     def save_job(self, job: JobRecord) -> None:
         """Insert one submitted job record."""
@@ -296,6 +339,492 @@ class SQLiteStore:
                 .values(**values)
             )
         return self.get_notebook_service(kind)
+
+    def create_repository_entry(
+        self,
+        entry: RepositoryEntryRecord,
+    ) -> RepositoryEntryRecord:
+        if entry.status != "draft":
+            raise ValueError("repository entries must start as drafts")
+        if entry.published_version is not None:
+            raise ValueError("draft repository entries cannot be published")
+        with self.engine.begin() as connection:
+            _ensure_repository_entry_name_available(
+                connection,
+                entry.project_id,
+                entry.name,
+            )
+            connection.execute(
+                repository_entries_table.insert().values(
+                    **_repository_entry_values(entry)
+                )
+            )
+        loaded = self.get_repository_entry(entry.id)
+        assert loaded is not None
+        return loaded
+
+    def update_repository_entry(
+        self,
+        entry: RepositoryEntryRecord,
+    ) -> RepositoryEntryRecord:
+        existing = self.get_repository_entry(entry.id)
+        if existing is None:
+            raise ValueError(f"repository entry not found: {entry.id}")
+        _validate_repository_transition(existing.status, entry.status)
+        if entry.status == "published" and entry.published_version is None:
+            raise ValueError("published repository entries require a published version")
+        with self.engine.begin() as connection:
+            if (entry.project_id, entry.name) != (existing.project_id, existing.name):
+                _ensure_repository_entry_name_available(
+                    connection,
+                    entry.project_id,
+                    entry.name,
+                    exclude_entry_id=entry.id,
+                )
+            if entry.published_version is not None:
+                _require_repository_version_status(
+                    connection,
+                    entry.id,
+                    entry.published_version,
+                    "published",
+                )
+            connection.execute(
+                update(repository_entries_table)
+                .where(repository_entries_table.c.id == entry.id)
+                .values(**_repository_entry_values(entry))
+            )
+        loaded = self.get_repository_entry(entry.id)
+        assert loaded is not None
+        return loaded
+
+    def get_repository_entry(self, entry_id: str) -> RepositoryEntryRecord | None:
+        with self.engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(repository_entries_table).where(
+                        repository_entries_table.c.id == entry_id
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        return _row_to_repository_entry(dict(row)) if row else None
+
+    def get_repository_entry_by_project_name(
+        self,
+        project_id: str | None,
+        name: str,
+        *,
+        include_retired: bool = False,
+    ) -> RepositoryEntryRecord | None:
+        query = select(repository_entries_table).where(repository_entries_table.c.name == name)
+        if project_id is None:
+            query = query.where(repository_entries_table.c.project_id.is_(None))
+        else:
+            query = query.where(repository_entries_table.c.project_id == project_id)
+        if not include_retired:
+            query = query.where(repository_entries_table.c.status != "retired")
+        query = query.order_by(repository_entries_table.c.updated_at.desc())
+        with self.engine.connect() as connection:
+            row = connection.execute(query).mappings().first()
+        return _row_to_repository_entry(dict(row)) if row else None
+
+    def list_repository_entries(
+        self,
+        *,
+        project_id: str | None = None,
+        status: str | None = None,
+        entry_type: str | None = None,
+        include_retired: bool = True,
+    ) -> list[RepositoryEntryRecord]:
+        query = select(repository_entries_table).order_by(
+            repository_entries_table.c.project_id,
+            repository_entries_table.c.name,
+        )
+        if project_id is not None:
+            query = query.where(repository_entries_table.c.project_id == project_id)
+        if status is not None:
+            query = query.where(repository_entries_table.c.status == status)
+        elif not include_retired:
+            query = query.where(repository_entries_table.c.status != "retired")
+        if entry_type is not None:
+            query = query.where(repository_entries_table.c.type == entry_type)
+        with self.engine.connect() as connection:
+            rows = connection.execute(query).mappings().all()
+        return [_row_to_repository_entry(dict(row)) for row in rows]
+
+    def transition_repository_entry_status(
+        self,
+        entry_id: str,
+        status: str,
+        *,
+        updated_at: datetime,
+        published_version: int | None = None,
+    ) -> RepositoryEntryRecord:
+        existing = self.get_repository_entry(entry_id)
+        if existing is None:
+            raise ValueError(f"repository entry not found: {entry_id}")
+        _validate_repository_transition(existing.status, status)
+        values: dict[str, Any] = {"status": status, "updated_at": updated_at}
+        if status == "published":
+            version = published_version or existing.published_version
+            if version is None:
+                raise ValueError("published repository entries require a published version")
+            with self.engine.begin() as connection:
+                _require_repository_version_status(connection, entry_id, version, "published")
+                values["published_version"] = version
+                connection.execute(
+                    update(repository_entries_table)
+                    .where(repository_entries_table.c.id == entry_id)
+                    .values(**values)
+                )
+        else:
+            if published_version is not None:
+                values["published_version"] = published_version
+            with self.engine.begin() as connection:
+                connection.execute(
+                    update(repository_entries_table)
+                    .where(repository_entries_table.c.id == entry_id)
+                    .values(**values)
+                )
+        loaded = self.get_repository_entry(entry_id)
+        assert loaded is not None
+        return loaded
+
+    def delete_repository_entry(self, entry_id: str) -> dict[str, Any]:
+        """Permanently delete a non-published repository entry and generated bundles."""
+        with self.engine.begin() as connection:
+            entry_row = (
+                connection.execute(
+                    select(repository_entries_table).where(
+                        repository_entries_table.c.id == entry_id
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if entry_row is None:
+                raise ValueError(f"repository entry not found: {entry_id}")
+            entry = _row_to_repository_entry(dict(entry_row))
+            if entry.status not in {"draft", "rejected", "retired"}:
+                raise ValueError(
+                    "repository entries must be draft, rejected, or retired before deletion"
+                )
+
+            version_rows = (
+                connection.execute(
+                    select(repository_versions_table.c.kind).where(
+                        repository_versions_table.c.entry_id == entry_id
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            version_kinds = [str(row["kind"]) for row in version_rows]
+
+            if entry.type == "notebook_service" and version_kinds:
+                active_service = (
+                    connection.execute(
+                        select(
+                            notebook_services_table.c.kind,
+                            notebook_services_table.c.runtime_status,
+                            notebook_services_table.c.active_service_id,
+                        )
+                        .where(notebook_services_table.c.kind.in_(version_kinds))
+                        .where(notebook_services_table.c.active_service_id.is_not(None))
+                    )
+                    .mappings()
+                    .first()
+                )
+                if active_service is not None:
+                    raise ValueError(
+                        "repository entry has an active service runtime; stop it before deleting"
+                    )
+
+            deleted_notebook_records = 0
+            if version_kinds:
+                if entry.type == "notebook_function":
+                    result = connection.execute(
+                        delete(notebook_goblins_table).where(
+                            notebook_goblins_table.c.kind.in_(version_kinds)
+                        )
+                    )
+                else:
+                    result = connection.execute(
+                        delete(notebook_services_table).where(
+                            notebook_services_table.c.kind.in_(version_kinds)
+                        )
+                    )
+                deleted_notebook_records = int(result.rowcount or 0)
+
+            version_result = connection.execute(
+                delete(repository_versions_table).where(
+                    repository_versions_table.c.entry_id == entry_id
+                )
+            )
+            connection.execute(
+                delete(repository_entries_table).where(repository_entries_table.c.id == entry_id)
+            )
+
+        return {
+            "entry_id": entry.id,
+            "name": entry.name,
+            "status": entry.status,
+            "deleted_versions": int(version_result.rowcount or 0),
+            "deleted_notebook_records": deleted_notebook_records,
+        }
+
+    def create_repository_version(
+        self,
+        version: RepositoryVersionRecord,
+    ) -> RepositoryVersionRecord:
+        if version.status != "draft" or version.approval_status != "draft":
+            raise ValueError("repository versions must start as drafts")
+        if version.approved_by is not None or version.approved_at is not None:
+            raise ValueError("draft repository versions cannot keep approval")
+        if version.published_at is not None:
+            raise ValueError("draft repository versions cannot be published")
+        with self.engine.begin() as connection:
+            entry = (
+                connection.execute(
+                    select(repository_entries_table).where(
+                        repository_entries_table.c.id == version.entry_id
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if entry is None:
+                raise ValueError(f"repository entry not found: {version.entry_id}")
+            if entry["status"] == "retired":
+                raise ValueError("retired repository entries cannot receive new versions")
+            latest = (
+                connection.execute(
+                    select(repository_versions_table)
+                    .where(repository_versions_table.c.entry_id == version.entry_id)
+                    .order_by(repository_versions_table.c.version.desc())
+                )
+                .mappings()
+                .first()
+            )
+            if latest is None and version.version != 1:
+                raise ValueError("first repository version must be 1")
+            if latest is not None:
+                if version.version != latest["version"] + 1:
+                    raise ValueError(
+                        "repository source changes must create the next sequential version"
+                    )
+                if version.source_hash == latest["source_hash"]:
+                    raise ValueError("repository version source hash must change")
+            duplicate = (
+                connection.execute(
+                    select(repository_versions_table.c.id)
+                    .where(repository_versions_table.c.entry_id == version.entry_id)
+                    .where(repository_versions_table.c.version == version.version)
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if duplicate is not None:
+                raise ValueError("repository version already exists")
+            connection.execute(
+                repository_versions_table.insert().values(
+                    **_repository_version_values(version)
+                )
+            )
+            connection.execute(
+                update(repository_entries_table)
+                .where(repository_entries_table.c.id == version.entry_id)
+                .values(status="draft", updated_at=version.updated_at)
+            )
+        loaded = self.get_repository_version(version.entry_id, version.version)
+        assert loaded is not None
+        return loaded
+
+    def update_repository_version(
+        self,
+        version: RepositoryVersionRecord,
+    ) -> RepositoryVersionRecord:
+        with self.engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(repository_versions_table).where(
+                        repository_versions_table.c.id == version.id
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        if row is None:
+            raise ValueError(f"repository version not found: {version.id}")
+        existing = _row_to_repository_version(dict(row))
+        if existing.status == "published":
+            raise ValueError("published repository versions are immutable")
+        for field in REPOSITORY_VERSION_IDENTITY_FIELDS:
+            if getattr(existing, field) != getattr(version, field):
+                raise ValueError("repository version identity cannot change")
+        _validate_repository_transition(existing.status, version.status)
+        if existing.source_hash != version.source_hash:
+            if existing.status != "draft":
+                raise ValueError("source changes must create a new draft version")
+            if (
+                version.status != "draft"
+                or version.approval_status != "draft"
+                or version.validation_proof
+                or version.approved_by is not None
+                or version.approved_at is not None
+                or version.published_at is not None
+            ):
+                raise ValueError("source changes must clear review state")
+        with self.engine.begin() as connection:
+            if version.status == "published":
+                _ensure_repository_version_publishable(version)
+            connection.execute(
+                update(repository_versions_table)
+                .where(repository_versions_table.c.id == version.id)
+                .values(**_repository_version_values(version))
+            )
+            if version.status == "published":
+                connection.execute(
+                    update(repository_entries_table)
+                    .where(repository_entries_table.c.id == version.entry_id)
+                    .values(
+                        status="published",
+                        published_version=version.version,
+                        updated_at=version.updated_at,
+                    )
+                )
+        loaded = self.get_repository_version(version.entry_id, version.version)
+        assert loaded is not None
+        return loaded
+
+    def get_repository_version(
+        self,
+        entry_id: str,
+        version: int,
+    ) -> RepositoryVersionRecord | None:
+        with self.engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(repository_versions_table)
+                    .where(repository_versions_table.c.entry_id == entry_id)
+                    .where(repository_versions_table.c.version == version)
+                )
+                .mappings()
+                .one_or_none()
+            )
+        return _row_to_repository_version(dict(row)) if row else None
+
+    def get_repository_version_by_project_name(
+        self,
+        project_id: str | None,
+        name: str,
+        version: int,
+        *,
+        include_retired: bool = False,
+    ) -> RepositoryVersionRecord | None:
+        entry = self.get_repository_entry_by_project_name(
+            project_id,
+            name,
+            include_retired=include_retired,
+        )
+        if entry is None:
+            return None
+        return self.get_repository_version(entry.id, version)
+
+    def list_repository_versions(
+        self,
+        entry_id: str,
+        *,
+        status: str | None = None,
+    ) -> list[RepositoryVersionRecord]:
+        query = (
+            select(repository_versions_table)
+            .where(repository_versions_table.c.entry_id == entry_id)
+            .order_by(repository_versions_table.c.version)
+        )
+        if status is not None:
+            query = query.where(repository_versions_table.c.status == status)
+        with self.engine.connect() as connection:
+            rows = connection.execute(query).mappings().all()
+        return [_row_to_repository_version(dict(row)) for row in rows]
+
+    def transition_repository_version_status(
+        self,
+        entry_id: str,
+        version: int,
+        status: str,
+        *,
+        updated_at: datetime,
+        validation_proof: dict[str, Any] | None = None,
+        approved_by: str | None = None,
+        approved_at: datetime | None = None,
+        published_at: datetime | None = None,
+    ) -> RepositoryVersionRecord:
+        existing = self.get_repository_version(entry_id, version)
+        if existing is None:
+            raise ValueError(f"repository version not found: {entry_id}:{version}")
+        if existing.status == "published":
+            if status == "published":
+                return existing
+            raise ValueError("published repository versions are immutable")
+        _validate_repository_transition(existing.status, status)
+        values: dict[str, Any] = {"status": status, "updated_at": updated_at}
+        if validation_proof is not None:
+            values["validation_proof_json"] = json.dumps(validation_proof)
+        if status in {"draft", "rejected", "retired"}:
+            values["approval_status"] = status
+            values["approved_by"] = None
+            values["approved_at"] = None
+            if status == "draft":
+                values["validation_proof_json"] = "{}"
+                values["published_at"] = None
+        elif status == "validated":
+            proof = validation_proof if validation_proof is not None else existing.validation_proof
+            if not proof:
+                raise ValueError("validated repository versions require validation proof")
+            values["approval_status"] = "validated"
+            values["validation_proof_json"] = json.dumps(proof)
+        elif status == "pending_review":
+            values["approval_status"] = "pending_review"
+        elif status == "approved":
+            approver = approved_by or existing.approved_by
+            approved_time = approved_at or existing.approved_at or updated_at
+            if not approver:
+                raise ValueError("approved repository versions require an approver")
+            values["approval_status"] = "approved"
+            values["approved_by"] = approver
+            values["approved_at"] = approved_time
+        elif status == "published":
+            approver = approved_by or existing.approved_by
+            approved_time = approved_at or existing.approved_at
+            if not approver or approved_time is None:
+                raise ValueError("published repository versions require approval")
+            values["approval_status"] = "published"
+            values["approved_by"] = approver
+            values["approved_at"] = approved_time
+            values["published_at"] = published_at or updated_at
+        with self.engine.begin() as connection:
+            connection.execute(
+                update(repository_versions_table)
+                .where(repository_versions_table.c.entry_id == entry_id)
+                .where(repository_versions_table.c.version == version)
+                .values(**values)
+            )
+            entry_values: dict[str, Any] = {
+                "status": status,
+                "updated_at": updated_at,
+            }
+            if status == "published":
+                entry_values["published_version"] = version
+            connection.execute(
+                update(repository_entries_table)
+                .where(repository_entries_table.c.id == entry_id)
+                .values(**entry_values)
+            )
+        loaded = self.get_repository_version(entry_id, version)
+        assert loaded is not None
+        return loaded
 
     def get_latest_worker_validation(
         self,
@@ -1445,6 +1974,103 @@ class SQLiteStore:
         ]
 
 
+def _repository_entry_values(record: RepositoryEntryRecord) -> dict[str, Any]:
+    return {
+        "id": record.id,
+        "name": record.name,
+        "kind": record.kind,
+        "type": record.type,
+        "project_id": record.project_id,
+        "owner": record.owner,
+        "display_name": record.display_name,
+        "description": record.description,
+        "tags_json": json.dumps(record.tags),
+        "status": record.status,
+        "published_version": record.published_version,
+        "created_at": record.created_at,
+        "updated_at": record.updated_at,
+    }
+
+
+def _repository_version_values(record: RepositoryVersionRecord) -> dict[str, Any]:
+    return {
+        "id": record.id,
+        "entry_id": record.entry_id,
+        "version": record.version,
+        "kind": record.kind,
+        "source_hash": record.source_hash,
+        "runner_image": record.runner_image,
+        "validation_proof_json": json.dumps(record.validation_proof),
+        "approval_status": record.approval_status,
+        "status": record.status,
+        "approved_by": record.approved_by,
+        "approved_at": record.approved_at,
+        "published_at": record.published_at,
+        "created_at": record.created_at,
+        "updated_at": record.updated_at,
+    }
+
+
+def _ensure_repository_entry_name_available(
+    connection: Any,
+    project_id: str | None,
+    name: str,
+    *,
+    exclude_entry_id: str | None = None,
+) -> None:
+    query = select(repository_entries_table.c.id).where(
+        repository_entries_table.c.name == name,
+        repository_entries_table.c.status != "retired",
+    )
+    if project_id is None:
+        query = query.where(repository_entries_table.c.project_id.is_(None))
+    else:
+        query = query.where(repository_entries_table.c.project_id == project_id)
+    if exclude_entry_id is not None:
+        query = query.where(repository_entries_table.c.id != exclude_entry_id)
+    existing = connection.execute(query.limit(1)).scalar_one_or_none()
+    if existing is not None:
+        raise ValueError("repository entry name already exists in project")
+
+
+def _validate_repository_transition(current: str, target: str) -> None:
+    if current == target:
+        return
+    allowed = REPOSITORY_STATUS_TRANSITIONS.get(current)
+    if allowed is None or target not in allowed:
+        raise ValueError(f"cannot transition repository record from {current} to {target}")
+
+
+def _require_repository_version_status(
+    connection: Any,
+    entry_id: str,
+    version: int,
+    status: str,
+) -> None:
+    existing = (
+        connection.execute(
+            select(repository_versions_table.c.status)
+            .where(repository_versions_table.c.entry_id == entry_id)
+            .where(repository_versions_table.c.version == version)
+        )
+        .scalars()
+        .one_or_none()
+    )
+    if existing != status:
+        raise ValueError(f"repository version {version} is not {status}")
+
+
+def _ensure_repository_version_publishable(record: RepositoryVersionRecord) -> None:
+    if record.status != "published":
+        return
+    if record.approval_status not in {"approved", "published"}:
+        raise ValueError("published repository versions require approval")
+    if record.approved_by is None or record.approved_at is None:
+        raise ValueError("published repository versions require approval")
+    if record.published_at is None:
+        raise ValueError("published repository versions require a publication timestamp")
+
+
 
 __all__ = [
     "ArtifactRecord",
@@ -1459,5 +2085,7 @@ __all__ = [
     "ImagePromotionRecord",
     "LongServiceRecord",
     "NotebookServiceRecord",
+    "RepositoryEntryRecord",
+    "RepositoryVersionRecord",
     "SQLiteStore",
 ]

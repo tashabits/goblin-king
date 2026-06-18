@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import time
@@ -51,21 +52,21 @@ def main() -> None:
         api_url = f"http://127.0.0.1:{args.local_port}"
         _wait_for_api(f"{api_url}/health")
         _wait_for_authenticated_api(api_url, args.token)
-        subprocess.run(
-            [
-                sys.executable,
-                args.workbook_proof,
-                "--api-url",
-                api_url,
-                "--token",
-                args.token,
-                "--project-id",
-                args.project_id,
-                "--kind",
-                args.kind,
-            ],
-            check=True,
-        )
+        proof_command = [
+            sys.executable,
+            args.workbook_proof,
+            "--api-url",
+            api_url,
+            "--token",
+            args.token,
+            "--project-id",
+            args.project_id,
+            "--kind",
+            args.kind,
+        ]
+        if args.repository_url:
+            proof_command.extend(["--repository-url", args.repository_url])
+        subprocess.run(proof_command, check=True)
     finally:
         if port_forward is not None:
             port_forward.terminate()
@@ -90,24 +91,42 @@ def _run_make(
     )
 
 
-def _prepare_local_images(kind_cluster: str, tag: str) -> dict[str, str]:
+def _prepare_local_images(
+    kind_cluster: str,
+    tag: str,
+    *,
+    include_singleuser: bool = False,
+) -> dict[str, str]:
     """Build local images needed by the proof stack and load them into Kubernetes."""
     images = {
         "app": f"goblin-king:{tag}",
         "admin": f"goblin-king-admin-ui:{tag}",
+        "directory_ui": f"goblin-king-directory-ui:{tag}",
         "notebook_runner": f"goblin-king-notebook-python-function:{tag}",
         "notebook_service_runner": f"goblin-king-notebook-asgi-service:{tag}",
         "long_hello": f"goblin-king-example-long-hello:{tag}",
     }
+    if include_singleuser:
+        images["singleuser"] = f"goblin-king-directory-singleuser:{tag}"
     contexts = {
-        images["app"]: ".",
-        images["admin"]: "admin-ui",
-        images["notebook_runner"]: "workers/notebook.python-function",
-        images["notebook_service_runner"]: "workers/notebook.asgi-service",
-        images["long_hello"]: "workers/example.long-hello",
+        images["app"]: (".", None),
+        images["admin"]: ("admin-ui", None),
+        images["directory_ui"]: (".", "directory-ui/Dockerfile"),
+        images["notebook_runner"]: ("workers/notebook.python-function", None),
+        images["notebook_service_runner"]: ("workers/notebook.asgi-service", None),
+        images["long_hello"]: ("workers/example.long-hello", None),
     }
-    for image, context in contexts.items():
-        subprocess.run(["docker", "build", "-t", image, context], check=True)
+    if include_singleuser:
+        contexts[images["singleuser"]] = (
+            ".",
+            "examples/jupyterhub-goblin-king/singleuser/Dockerfile",
+        )
+    for image, (context, dockerfile) in contexts.items():
+        command = ["docker", "build", "-t", image]
+        if dockerfile:
+            command.extend(["-f", dockerfile])
+        command.append(context)
+        subprocess.run(command, check=True)
     load_images_for_current_context(list(contexts), kind_cluster)
     return images
 
@@ -160,6 +179,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--project-id", default="default")
     parser.add_argument("--kind", default="notebook.workbook-short-hello")
     parser.add_argument("--kind-cluster", default="kind")
+    parser.add_argument(
+        "--repository-url",
+        default=os.environ.get("GOBLIN_KING_REPOSITORY_URL", ""),
+    )
     parser.add_argument(
         "--workbook-proof",
         default="examples/jupyterhub-goblin-king/workbook_proof.py",

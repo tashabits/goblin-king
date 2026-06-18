@@ -10,6 +10,31 @@ hub:
         secretKeyRef:
           name: goblin-king-jupyterhub-auth
           key: workbook-user-token
+    GOBLIN_KING_WORKBOOK_ALICE_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: goblin-king-jupyterhub-auth
+          key: alice-token
+    GOBLIN_KING_WORKBOOK_BOB_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: goblin-king-jupyterhub-auth
+          key: bob-token
+    GOBLIN_KING_WORKBOOK_CAROL_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: goblin-king-jupyterhub-auth
+          key: carol-token
+    GOBLIN_KING_WORKBOOK_MALLORY_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: goblin-king-jupyterhub-auth
+          key: mallory-token
+    GOBLIN_KING_DIRECTORY_UI_SERVICE_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: goblin-king-jupyterhub-auth
+          key: directory-ui-token
   config:
     JupyterHub:
       authenticator_class: dummy
@@ -20,19 +45,38 @@ hub:
       import os
 
       service_token = os.environ["GOBLIN_KING_JUPYTERHUB_SERVICE_TOKEN"]
+      directory_ui_token = os.environ["GOBLIN_KING_DIRECTORY_UI_SERVICE_TOKEN"]
       workbook_user_token = os.environ["GOBLIN_KING_WORKBOOK_USER_TOKEN"]
+      alice_token = os.environ["GOBLIN_KING_WORKBOOK_ALICE_TOKEN"]
+      bob_token = os.environ["GOBLIN_KING_WORKBOOK_BOB_TOKEN"]
+      carol_token = os.environ["GOBLIN_KING_WORKBOOK_CAROL_TOKEN"]
+      mallory_token = os.environ["GOBLIN_KING_WORKBOOK_MALLORY_TOKEN"]
       c.JupyterHub.api_tokens = {
           workbook_user_token: "alice",
+          alice_token: "alice",
+          bob_token: "bob",
+          carol_token: "carol",
+          mallory_token: "mallory",
       }
       c.JupyterHub.services = [
           {
               "name": "goblin-king",
               "url": "http://goblin-king-admin.default.svc.cluster.local:8080",
               "api_token": service_token,
+              "display": True,
+          },
+          {
+              "name": "goblin-directory",
+              "url": "http://goblin-king-directory-ui.default.svc.cluster.local:8080",
+              "api_token": directory_ui_token,
+              "display": True,
+              "oauth_no_confirm": True,
+              "oauth_redirect_uri": "/services/goblin-directory/oauth_callback",
           }
       ]
       c.JupyterHub.load_groups = {
-          "goblin-users": ["alice", "bob"],
+          "goblin-users": ["alice", "bob", "carol"],
+          "goblin-admins": ["alice"],
       }
       c.JupyterHub.load_roles = [
           {
@@ -45,10 +89,20 @@ hub:
               ],
           },
           {
+              "name": "goblin-directory-service-auth",
+              "services": ["goblin-directory"],
+              "scopes": [
+                  "read:users",
+                  "read:users:name",
+                  "read:users:groups",
+              ],
+          },
+          {
               "name": "goblin-king-user-access",
               "groups": ["goblin-users"],
               "scopes": [
                   "access:services!service=goblin-king",
+                  "access:services!service=goblin-directory",
               ],
           },
       ]
@@ -60,6 +114,8 @@ proxy:
 singleuser:
   extraEnv:
     GOBLIN_KING_API_URL: http://goblin-king-api.default.svc.cluster.local:8000
+    GOBLIN_KING_DIRECTORY_URL: ""
+    GOBLIN_KING_REPOSITORY_URL: ""
     GOBLIN_KING_NOTEBOOK_PACKAGE: git+https://github.com/tashabits/goblin-king.git
   networkPolicy:
     egress:
@@ -70,6 +126,15 @@ singleuser:
           - podSelector:
               matchLabels:
                 app.kubernetes.io/component: api
+                app.kubernetes.io/instance: goblin-king
+                app.kubernetes.io/name: goblin-king
+      - ports:
+          - port: 8000
+            protocol: TCP
+        to:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/component: directory-api
                 app.kubernetes.io/instance: goblin-king
                 app.kubernetes.io/name: goblin-king
   storage:

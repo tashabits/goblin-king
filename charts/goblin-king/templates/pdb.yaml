@@ -16,3 +16,17 @@ spec:
       app.kubernetes.io/name: {{ include "goblin-king.name" $root }}
 {{- end }}
 {{- end }}
+{{- if and .Values.repository.enabled .Values.repository.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "goblin-king.fullname" . }}-directory-api
+spec:
+  minAvailable: {{ .Values.repository.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: directory-api
+      app.kubernetes.io/name: {{ include "goblin-king.name" . }}
+{{- end }}

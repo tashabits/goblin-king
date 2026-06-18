@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
 )
 
 metadata = MetaData()
@@ -264,6 +265,44 @@ notebook_services_table = Table(
     Column("runtime_name", String, nullable=True),
     Column("runtime_status", String, nullable=False, default="declared"),
     Column("active_service_id", String, nullable=True),
+)
+
+repository_entries_table = Table(
+    "repository_entries",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("name", String, nullable=False),
+    Column("kind", String, nullable=False),
+    Column("type", String, nullable=False),
+    Column("project_id", String, nullable=True),
+    Column("owner", String, nullable=False),
+    Column("display_name", Text, nullable=False),
+    Column("description", Text, nullable=True),
+    Column("tags_json", Text, nullable=False, default="[]"),
+    Column("status", String, nullable=False, default="draft"),
+    Column("published_version", Integer, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+)
+
+repository_versions_table = Table(
+    "repository_versions",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("entry_id", String, ForeignKey("repository_entries.id"), nullable=False),
+    Column("version", Integer, nullable=False),
+    Column("kind", String, nullable=False),
+    Column("source_hash", String, nullable=False),
+    Column("runner_image", Text, nullable=False),
+    Column("validation_proof_json", Text, nullable=False, default="{}"),
+    Column("approval_status", String, nullable=False, default="draft"),
+    Column("status", String, nullable=False, default="draft"),
+    Column("approved_by", String, nullable=True),
+    Column("approved_at", DateTime(timezone=True), nullable=True),
+    Column("published_at", DateTime(timezone=True), nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    UniqueConstraint("entry_id", "version", name="uq_repository_versions_entry_version"),
 )
 
 image_promotions_table = Table(

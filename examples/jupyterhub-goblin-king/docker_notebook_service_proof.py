@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import time
 from urllib import request as urlrequest
@@ -27,7 +28,11 @@ def hello():
 def main() -> None:
     args = _parse_args()
     _wait_for_api(f"{args.api_url.rstrip('/')}/health")
-    client = GoblinKingNotebookClient(api_url=args.api_url, token=args.token)
+    client = GoblinKingNotebookClient(
+        api_url=args.api_url,
+        token=args.token,
+        repository_url=args.repository_url,
+    )
     service = None
     try:
         _stop_if_present(client, args.kind)
@@ -56,6 +61,7 @@ def main() -> None:
                     "probe": probe["response"].get("json"),
                     "proxy": proxied,
                     "stopped": stopped["notebook_service"]["runtime_status"],
+                    "repository_url": client.repository_url,
                 },
                 indent=2,
             )
@@ -115,6 +121,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--token", default="local-dev-token")
     parser.add_argument("--project-id", default="default")
     parser.add_argument("--kind", default="notebook.docker-long-hello")
+    parser.add_argument(
+        "--repository-url",
+        default=os.environ.get("GOBLIN_KING_REPOSITORY_URL", ""),
+    )
     parser.add_argument("--timeout-seconds", type=int, default=180)
     return parser.parse_args()
 

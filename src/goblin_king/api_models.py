@@ -5,9 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from goblin_king.contracts import (
+    GOBLIN_KIND_PATTERN,
     ApiTokenRecord,
     AuditLogRecord,
     EventRecord,
@@ -15,6 +16,9 @@ from goblin_king.contracts import (
     LongServiceRecord,
     NotebookGoblinRecord,
     NotebookServiceRecord,
+    RepositoryEntryRecord,
+    RepositoryGoblinType,
+    RepositoryVersionRecord,
     RunRecord,
 )
 from goblin_king.termination import RuntimeTarget
@@ -237,6 +241,181 @@ class NotebookServiceStartResponse(BaseModel):
 class NotebookServiceStopResponse(BaseModel):
     """Proof that a notebook-defined ASGI service was stopped and cleaned up."""
 
+    notebook_service: NotebookServiceRecord
+    service: LongServiceRecord | None = None
+    runtime: dict[str, Any]
+
+
+class RepositorySubmitRequest(BaseModel):
+    """Request body for submitting notebook-authored source to the repository."""
+
+    name: str
+    type: RepositoryGoblinType = "notebook_function"
+    source: str = Field(min_length=1)
+    display_name: str | None = None
+    description: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    project_id: str | None = None
+    image: str | None = None
+    function_name: str = Field(default="run", min_length=1)
+    timeout_seconds: int | None = Field(default=None, gt=0)
+    max_retries: int = Field(default=0, ge=0)
+    app_name: str = Field(default="app", min_length=1)
+    requirements: list[str] = Field(default_factory=list)
+    port: int = Field(default=8080, gt=0)
+    probe_path: str = Field(default="/hello", min_length=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        if not GOBLIN_KIND_PATTERN.match(value):
+            raise ValueError("name must use lowercase letters, digits, dots, or dashes")
+        return value
+
+    @field_validator("tags")
+    @classmethod
+    def normalize_tags(cls, value: list[str]) -> list[str]:
+        tags = []
+        for tag in value:
+            cleaned = tag.strip().lower()
+            if not cleaned:
+                continue
+            if not GOBLIN_KIND_PATTERN.match(cleaned):
+                raise ValueError("tags must use lowercase letters, digits, dots, or dashes")
+            if cleaned not in tags:
+                tags.append(cleaned)
+        return tags
+
+
+class RepositoryValidateRequest(BaseModel):
+    """Request body for validating a submitted repository version."""
+
+    input: dict[str, Any] = Field(default_factory=dict)
+    require_success: bool = True
+    timeout_seconds: int | None = Field(default=None, gt=0)
+
+
+class RepositoryReviewRequest(BaseModel):
+    """Optional review note for repository workflow transitions."""
+
+    note: str | None = None
+
+
+class RepositoryPublishRequest(BaseModel):
+    """Request body for publishing an approved repository version."""
+
+    version: int | None = Field(default=None, gt=0)
+
+
+class RepositoryEntryDetailResponse(BaseModel):
+    """Repository entry plus version records visible to the caller."""
+
+    entry: RepositoryEntryRecord
+    versions: list[RepositoryVersionRecord] = Field(default_factory=list)
+
+
+class RepositorySubmitResponse(BaseModel):
+    """Repository submit result including the backing notebook bundle."""
+
+    entry: RepositoryEntryRecord
+    version: RepositoryVersionRecord
+    notebook: NotebookGoblinRecord | NotebookServiceRecord
+
+
+class RepositoryValidationResponse(BaseModel):
+    """Repository validation result tied to the version that was validated."""
+
+    entry: RepositoryEntryRecord
+    version: RepositoryVersionRecord
+    validation: dict[str, Any]
+
+
+class RepositoryListResponse(BaseModel):
+    """Paginated repository entry list response."""
+
+    items: list[RepositoryEntryDetailResponse]
+    meta: PageMeta
+
+
+class RepositoryDeleteResponse(BaseModel):
+    """Permanent repository deletion result."""
+
+    deleted: bool
+    entry_id: str
+    name: str
+    status: str
+    deleted_versions: int
+    deleted_notebook_records: int
+
+
+class RepositoryFunctionRunRequest(BaseModel):
+    """Request body for running a published repository function by name."""
+
+    input: dict[str, Any] = Field(default_factory=dict)
+    project_id: str | None = None
+    version: int | None = Field(default=None, gt=0)
+    priority: int = 100
+    correlation_id: str | None = None
+    max_retries: int = Field(default=0, ge=0)
+    timeout_seconds: int | None = Field(default=None, gt=0)
+
+
+class RepositoryFunctionRunResponse(BaseModel):
+    """Resolved repository function plus queued job proof."""
+
+    entry: RepositoryEntryRecord
+    version: RepositoryVersionRecord
+    job: JobRecord
+
+
+class RepositoryServiceStartRequest(BaseModel):
+    """Request body for starting a published repository ASGI service by name."""
+
+    project_id: str | None = None
+    version: int | None = Field(default=None, gt=0)
+    timeout_seconds: int = Field(default=120, gt=0)
+
+
+class RepositoryServiceStartResponse(BaseModel):
+    """Resolved repository service plus runtime start proof."""
+
+    entry: RepositoryEntryRecord
+    version: RepositoryVersionRecord
+    notebook_service: NotebookServiceRecord
+    service: LongServiceRecord
+    runtime: dict[str, Any]
+    probe: LongServiceProbeResponse
+
+
+class RepositoryServiceProbeRequest(BaseModel):
+    """Request body for probing a started repository ASGI service by name."""
+
+    project_id: str | None = None
+    version: int | None = Field(default=None, gt=0)
+
+
+class RepositoryServiceProbeResponse(BaseModel):
+    """Resolved repository service plus probe proof."""
+
+    entry: RepositoryEntryRecord
+    version: RepositoryVersionRecord
+    notebook_service: NotebookServiceRecord
+    probe: LongServiceProbeResponse
+
+
+class RepositoryServiceStopRequest(BaseModel):
+    """Request body for stopping a started repository ASGI service by name."""
+
+    project_id: str | None = None
+    version: int | None = Field(default=None, gt=0)
+
+
+class RepositoryServiceStopResponse(BaseModel):
+    """Resolved repository service plus cleanup proof."""
+
+    entry: RepositoryEntryRecord
+    version: RepositoryVersionRecord
     notebook_service: NotebookServiceRecord
     service: LongServiceRecord | None = None
     runtime: dict[str, Any]

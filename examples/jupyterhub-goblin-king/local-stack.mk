@@ -9,6 +9,7 @@ JUPYTERHUB_VALUES = examples/jupyterhub-goblin-king/zero-to-jupyterhub.values.ya
 JUPYTERHUB_SERVICE_TOKEN_SECRET = goblin-king-jupyterhub-auth
 JUPYTERHUB_SERVICE_TOKEN_KEY = service-token
 JUPYTERHUB_SERVICE_TOKEN = local-goblin-king-hub-token
+JUPYTERHUB_REPOSITORY_URL = http://$(HELM_RELEASE)-directory-api.$(HELM_NAMESPACE).svc.cluster.local:8000
 
 HELM_ARGS = -f examples/jupyterhub-goblin-king/goblin-king.values.yaml
 HELM_JUPYTERHUB_ARGS =

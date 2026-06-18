@@ -63,6 +63,23 @@ from goblin_king.api_models import (
     NotebookServiceValidateResponse,
     PageMeta,
     ProjectCreateRequest,
+    RepositoryDeleteResponse,
+    RepositoryEntryDetailResponse,
+    RepositoryFunctionRunRequest,
+    RepositoryFunctionRunResponse,
+    RepositoryListResponse,
+    RepositoryPublishRequest,
+    RepositoryReviewRequest,
+    RepositoryServiceProbeRequest,
+    RepositoryServiceProbeResponse,
+    RepositoryServiceStartRequest,
+    RepositoryServiceStartResponse,
+    RepositoryServiceStopRequest,
+    RepositoryServiceStopResponse,
+    RepositorySubmitRequest,
+    RepositorySubmitResponse,
+    RepositoryValidateRequest,
+    RepositoryValidationResponse,
     RunListResponse,
     RuntimeCleanupRequest,
     RuntimeCleanupResponse,
@@ -108,6 +125,8 @@ from goblin_king.contracts import (
     NotebookGoblinRecord,
     NotebookServiceRecord,
     ProjectRecord,
+    RepositoryEntryRecord,
+    RepositoryVersionRecord,
     ScheduleRecord,
     UserRecord,
     utc_now,
@@ -145,6 +164,7 @@ from goblin_king.termination import terminate_runtime
 from goblin_king.validation import (
     WorkerValidationResult,
     validate_workers,
+    validation_job_id,
     validation_record,
     validation_status_payload,
 )
@@ -290,6 +310,81 @@ def _forbid_viewer_write(principal: Principal) -> None:
         raise HTTPException(status_code=403, detail="viewer role cannot create notebook goblins")
 
 
+def _repository_kind_part(value: str | None) -> str:
+    """Normalize project/name parts into a valid goblin kind segment."""
+    cleaned = []
+    for char in (value or "global").lower():
+        cleaned.append(char if char.isalnum() else "-")
+    part = "".join(cleaned).strip("-")
+    while "--" in part:
+        part = part.replace("--", "-")
+    return part or "global"
+
+
+def _repository_entry_kind(project_id: str | None, name: str) -> str:
+    """Return the stable catalog kind for one repository entry."""
+    return f"repository.{_repository_kind_part(project_id)}.{name}"
+
+
+def _repository_version_kind(project_id: str | None, name: str, version: int) -> str:
+    """Return the immutable runtime kind for one repository source version."""
+    return f"{_repository_entry_kind(project_id, name)}.v{version}"
+
+
+def _repository_latest_version(
+    entry: RepositoryEntryRecord,
+    versions: list[RepositoryVersionRecord],
+) -> RepositoryVersionRecord:
+    """Return the newest version for an entry or raise a consistent 404."""
+    if not versions:
+        raise HTTPException(status_code=404, detail=f"repository entry has no versions: {entry.id}")
+    return versions[-1]
+
+
+def _repository_entry_detail(
+    state: AppState,
+    entry: RepositoryEntryRecord,
+) -> RepositoryEntryDetailResponse:
+    """Return one repository entry plus all recorded source versions."""
+    return RepositoryEntryDetailResponse(
+        entry=entry,
+        versions=state.store.list_repository_versions(entry.id),
+    )
+
+
+def _repository_requested_version(
+    state: AppState,
+    entry: RepositoryEntryRecord,
+    version: int | None,
+) -> RepositoryVersionRecord:
+    """Return the requested version or the newest version when omitted."""
+    if version is not None:
+        record = state.store.get_repository_version(entry.id, version)
+        if record is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"repository version not found: {entry.id}:{version}",
+            )
+        return record
+    return _repository_latest_version(entry, state.store.list_repository_versions(entry.id))
+
+
+def _require_repository_owner_or_admin(
+    principal: Principal,
+    entry: RepositoryEntryRecord,
+) -> None:
+    """Allow repository owners and admins to mutate review workflow state."""
+    if principal.role == "admin" or entry.owner == principal.user_id:
+        return
+    raise HTTPException(status_code=403, detail="repository entry owner or admin required")
+
+
+def _require_repository_enabled(state: AppState) -> None:
+    """Keep repository routes disabled unless the optional service is configured."""
+    if not state.settings.repository.enabled:
+        raise HTTPException(status_code=404, detail="repository service is not enabled")
+
+
 def _running_in_kubernetes() -> bool:
     """Return true when the API process is running inside a Kubernetes pod."""
     return bool(os.environ.get("KUBERNETES_SERVICE_HOST"))
@@ -310,7 +405,7 @@ def _validate_notebook_with_kubernetes(
         redis_url=redis_url,
         event_bus=event_bus,
     )
-    context = new_run_context(f"validation-{record.kind}", record.kind)
+    context = new_run_context(validation_job_id(record.kind), record.kind)
     try:
         run_result = runtime.run(
             notebook_definition(record),
@@ -1076,7 +1171,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"long service not found: {service_id}")
         project_for_request(principal, service.project_id)
         if service.status == "stopped":
-            raise HTTPException(status_code=409, detail=f"long service is stopped: {service_id}")
+            raise HTTPException(status_code=409, detail=f"long service is stopped: {service.id}")
         proof = _probe_long_service_record(state, service)
         audit(
             state.store,
@@ -1115,20 +1210,52 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         if service is None:
             raise HTTPException(status_code=404, detail=f"long service not found: {service_id}")
         project_for_request(principal, service.project_id)
+        return await _proxy_long_service_request(
+            service=service,
+            request=request,
+            path=path,
+            principal=principal,
+            action="service.proxy",
+            resource_type="long_service",
+            resource_id=service.id,
+        )
+
+    async def _proxy_long_service_request(
+        *,
+        service: LongServiceRecord,
+        request: Request,
+        path: str,
+        principal: Principal,
+        action: str,
+        resource_type: str,
+        resource_id: str,
+        detail_extra: dict[str, Any] | None = None,
+        query_string: str | None = None,
+    ) -> FastAPIResponse:
+        """Forward one authenticated request to a resolved long-running service."""
         if service.status == "stopped":
             audit(
                 state.store,
-                action="service.proxy",
+                action=action,
                 outcome="denied",
                 principal=principal,
                 project_id=service.project_id,
-                resource_type="long_service",
-                resource_id=service.id,
-                detail={"method": request.method, "path": path, "reason": "stopped"},
+                resource_type=resource_type,
+                resource_id=resource_id,
+                detail={
+                    "method": request.method,
+                    "path": path,
+                    "reason": "stopped",
+                    **(detail_extra or {}),
+                },
             )
-            raise HTTPException(status_code=409, detail=f"long service is stopped: {service_id}")
+            raise HTTPException(status_code=409, detail=f"long service is stopped: {service.id}")
 
-        target_url = _service_proxy_url(service, path, request.url.query)
+        target_url = _service_proxy_url(
+            service,
+            path,
+            request.url.query if query_string is None else query_string,
+        )
         body = await request.body()
         upstream_request = urlrequest.Request(
             target_url,
@@ -1136,19 +1263,24 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             headers=_proxy_request_headers(request),
             method=request.method,
         )
-        detail = {"method": request.method, "path": path, "url": target_url}
+        detail = {
+            "method": request.method,
+            "path": path,
+            "url": target_url,
+            **(detail_extra or {}),
+        }
         try:
             with urlrequest.urlopen(upstream_request, timeout=30) as upstream:
                 response_body = upstream.read()
                 response_headers = _proxy_response_headers(upstream.headers)
                 audit(
                     state.store,
-                    action="service.proxy",
+                    action=action,
                     outcome="success",
                     principal=principal,
                     project_id=service.project_id,
-                    resource_type="long_service",
-                    resource_id=service.id,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
                     detail={**detail, "status_code": upstream.status},
                 )
                 return FastAPIResponse(
@@ -1160,12 +1292,12 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             response_body = error.read()
             audit(
                 state.store,
-                action="service.proxy",
+                action=action,
                 outcome="upstream_error",
                 principal=principal,
                 project_id=service.project_id,
-                resource_type="long_service",
-                resource_id=service.id,
+                resource_type=resource_type,
+                resource_id=resource_id,
                 detail={**detail, "status_code": error.code},
             )
             return FastAPIResponse(
@@ -1176,12 +1308,12 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         except (OSError, urlerror.URLError) as error:
             audit(
                 state.store,
-                action="service.proxy",
+                action=action,
                 outcome="failed",
                 principal=principal,
                 project_id=service.project_id,
-                resource_type="long_service",
-                resource_id=service.id,
+                resource_type=resource_type,
+                resource_id=resource_id,
                 detail={**detail, "error": str(error)},
             )
             raise HTTPException(status_code=502, detail=str(error)) from error
@@ -1787,12 +1919,62 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             runtime=runtime,
         )
 
-    @app.post("/jobs", response_model=JobRecord, tags=["jobs"], operation_id="createJob")
-    def create_job(
+    def _resolve_published_repository_version(
+        *,
+        name: str,
+        expected_type: str,
+        principal: Principal,
+        project_id: str | None,
+        version: int | None,
+    ) -> tuple[RepositoryEntryRecord, RepositoryVersionRecord]:
+        """Resolve one published repository entry/version visible to a caller."""
+        _require_repository_enabled(state)
+        scoped_project = project_for_request(principal, project_id)
+        entry = state.store.get_repository_entry_by_project_name(scoped_project, name)
+        if entry is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"published repository entry not found: {name}",
+            )
+        if entry.type != expected_type:
+            raise HTTPException(
+                status_code=409,
+                detail=f"repository entry is {entry.type}, not {expected_type}",
+            )
+        requested_version = version or entry.published_version
+        if requested_version is None:
+            published_versions = [
+                item
+                for item in state.store.list_repository_versions(entry.id)
+                if item.status == "published"
+            ]
+            if not published_versions:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"repository entry has no published version: {name}",
+                )
+            return entry, published_versions[-1]
+        resolved = state.store.get_repository_version(entry.id, requested_version)
+        if resolved is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"repository version not found: {name}:{requested_version}",
+            )
+        if resolved.status != "published":
+            raise HTTPException(
+                status_code=409,
+                detail=f"repository version is not published: {name}:{requested_version}",
+            )
+        return entry, resolved
+
+    def _queue_job(
         request: JobCreateRequest,
-        principal: Principal = Depends(require_principal),
+        principal: Principal,
+        *,
+        repository_entry: RepositoryEntryRecord | None = None,
+        repository_version: RepositoryVersionRecord | None = None,
     ) -> JobRecord:
-        """Queue one job for later scheduler execution."""
+        """Queue a registry or notebook-backed job with consistent metadata."""
         notebook_record = None
         try:
             definition = state.registry.get(request.kind)
@@ -1834,6 +2016,16 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             metadata = goblin_job_metadata(definition, policy)
             max_retries = (policy.max_retries or 0) if policy else request.max_retries
             timeout_seconds = policy.timeout_seconds if policy else request.timeout_seconds
+        if repository_entry is not None and repository_version is not None:
+            metadata.update(
+                {
+                    "goblin_source": "repository",
+                    "repository_entry_id": repository_entry.id,
+                    "repository_name": repository_entry.name,
+                    "repository_version": repository_version.version,
+                    "repository_source_hash": repository_version.source_hash,
+                }
+            )
         job = JobRecord(
             id=str(uuid4()),
             kind=definition.kind,
@@ -1867,6 +2059,979 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             resource_id=job.id,
         )
         return job
+
+    @app.post(
+        "/repository/entries",
+        response_model=RepositorySubmitResponse,
+        tags=["repository"],
+        operation_id="submitRepositoryEntry",
+    )
+    def submit_repository_entry(
+        request: RepositorySubmitRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> RepositorySubmitResponse:
+        """Submit notebook-authored source as a private repository draft version."""
+        _require_repository_enabled(state)
+        _forbid_viewer_write(principal)
+        project_id = project_for_request(principal, request.project_id)
+        now = utc_now()
+        existing = state.store.get_repository_entry_by_project_name(
+            project_id,
+            request.name,
+        )
+        if existing is not None:
+            project_for_request(principal, existing.project_id)
+            _require_repository_owner_or_admin(principal, existing)
+            if existing.type != request.type:
+                raise HTTPException(
+                    status_code=409,
+                    detail="repository entry already exists with a different type",
+                )
+            entry = state.store.update_repository_entry(
+                existing.model_copy(
+                    update={
+                        "display_name": request.display_name or existing.display_name,
+                        "description": request.description,
+                        "tags": request.tags,
+                        "updated_at": now,
+                    }
+                )
+            )
+            next_version = (
+                _repository_latest_version(
+                    entry,
+                    state.store.list_repository_versions(entry.id),
+                ).version
+                + 1
+            )
+        else:
+            entry = state.store.create_repository_entry(
+                RepositoryEntryRecord(
+                    id=str(uuid4()),
+                    name=request.name,
+                    kind=_repository_entry_kind(project_id, request.name),
+                    type=request.type,
+                    project_id=project_id,
+                    owner=principal.user_id,
+                    display_name=request.display_name or request.name,
+                    description=request.description,
+                    tags=request.tags,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            next_version = 1
+
+        version_kind = _repository_version_kind(project_id, entry.name, next_version)
+        if request.type == "notebook_function":
+            source_hash = notebook_source_hash(request.source, request.function_name)
+            runner_image = request.image or state.settings.notebook_function_image
+            notebook = NotebookGoblinRecord(
+                kind=version_kind,
+                project_id=project_id,
+                display_name=request.display_name or entry.display_name,
+                image=runner_image,
+                source=request.source,
+                source_hash=source_hash,
+                function_name=request.function_name,
+                timeout_seconds=request.timeout_seconds,
+                max_retries=request.max_retries,
+                created_at=now,
+                updated_at=now,
+                created_by=principal.user_id,
+                metadata={
+                    **request.metadata,
+                    "repository_entry_id": entry.id,
+                    "repository_name": entry.name,
+                    "repository_version": next_version,
+                },
+            )
+            state.store.save_notebook_goblin(notebook)
+        else:
+            probe_path = _normalize_probe_path(request.probe_path)
+            source_hash = notebook_service_source_hash(
+                request.source,
+                request.app_name,
+                request.requirements,
+            )
+            runner_image = request.image or state.settings.notebook_service_image
+            notebook = NotebookServiceRecord(
+                kind=version_kind,
+                project_id=project_id,
+                display_name=request.display_name or entry.display_name,
+                image=runner_image,
+                source=request.source,
+                source_hash=source_hash,
+                app_name=request.app_name,
+                requirements=request.requirements,
+                port=request.port,
+                probe_path=probe_path,
+                created_at=now,
+                updated_at=now,
+                created_by=principal.user_id,
+                metadata={
+                    **request.metadata,
+                    "repository_entry_id": entry.id,
+                    "repository_name": entry.name,
+                    "repository_version": next_version,
+                },
+            )
+            state.store.save_notebook_service(notebook)
+
+        try:
+            version = state.store.create_repository_version(
+                RepositoryVersionRecord(
+                    id=str(uuid4()),
+                    entry_id=entry.id,
+                    version=next_version,
+                    kind=version_kind,
+                    source_hash=source_hash,
+                    runner_image=runner_image,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        refreshed = state.store.get_repository_entry(entry.id)
+        assert refreshed is not None
+        audit(
+            state.store,
+            action="repository.submit",
+            outcome="success",
+            principal=principal,
+            project_id=project_id,
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail={
+                "name": entry.name,
+                "type": entry.type,
+                "version": version.version,
+                "kind": version.kind,
+                "source_hash": version.source_hash,
+            },
+        )
+        return RepositorySubmitResponse(entry=refreshed, version=version, notebook=notebook)
+
+    @app.get(
+        "/repository/entries",
+        response_model=RepositoryListResponse,
+        tags=["repository"],
+        operation_id="listRepositoryEntries",
+    )
+    def list_repository_entries(
+        limit: int = Query(default=100, ge=1, le=500),
+        offset: int = Query(default=0, ge=0),
+        project_id: str | None = None,
+        entry_type: str | None = Query(default=None, alias="type"),
+        status: str | None = "published",
+        q: str | None = None,
+        principal: Principal = Depends(require_principal),
+    ) -> RepositoryListResponse:
+        """List repository entries visible to the authenticated caller."""
+        _require_repository_enabled(state)
+        scoped_project = project_for_request(principal, project_id)
+        requested_status = None if status in {None, "all"} else status
+        entries = state.store.list_repository_entries(
+            project_id=scoped_project,
+            status=requested_status,
+            entry_type=entry_type,
+            include_retired=False,
+        )
+        query = (q or "").strip().lower()
+        if query:
+            entries = [
+                entry
+                for entry in entries
+                if query in entry.name.lower()
+                or query in entry.display_name.lower()
+                or any(query in tag for tag in entry.tags)
+                or (entry.description is not None and query in entry.description.lower())
+            ]
+        visible = []
+        for entry in entries:
+            if entry.status != "published":
+                try:
+                    _require_repository_owner_or_admin(principal, entry)
+                except HTTPException:
+                    continue
+            visible.append(_repository_entry_detail(state, entry))
+        page = visible[offset : offset + limit]
+        return RepositoryListResponse(
+            items=page,
+            meta=PageMeta(limit=limit, offset=offset, count=len(page)),
+        )
+
+    @app.get(
+        "/repository/entries/{entry_id}",
+        response_model=RepositoryEntryDetailResponse,
+        tags=["repository"],
+        operation_id="getRepositoryEntry",
+    )
+    def get_repository_entry(
+        entry_id: str,
+        principal: Principal = Depends(require_principal),
+    ) -> RepositoryEntryDetailResponse:
+        """Inspect one repository entry and its source versions."""
+        _require_repository_enabled(state)
+        entry = state.store.get_repository_entry(entry_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"repository entry not found: {entry_id}")
+        project_for_request(principal, entry.project_id)
+        if entry.status != "published":
+            _require_repository_owner_or_admin(principal, entry)
+        return _repository_entry_detail(state, entry)
+
+    @app.post(
+        "/repository/entries/{entry_id}/validate",
+        response_model=RepositoryValidationResponse,
+        tags=["repository"],
+        operation_id="validateRepositoryEntry",
+    )
+    def validate_repository_entry(
+        entry_id: str,
+        request: RepositoryValidateRequest,
+        version: int | None = None,
+        principal: Principal = Depends(require_principal),
+    ) -> RepositoryValidationResponse:
+        """Validate a submitted repository version before review."""
+        _require_repository_enabled(state)
+        _forbid_viewer_write(principal)
+        entry = state.store.get_repository_entry(entry_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"repository entry not found: {entry_id}")
+        project_for_request(principal, entry.project_id)
+        _require_repository_owner_or_admin(principal, entry)
+        source_version = _repository_requested_version(state, entry, version)
+        if entry.type == "notebook_function":
+            record = state.store.get_notebook_goblin(source_version.kind)
+            if record is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"repository notebook goblin missing: {source_version.kind}",
+                )
+            input_payload = notebook_worker_input(record, request.input)
+            timeout_seconds = request.timeout_seconds or record.timeout_seconds
+            if _running_in_kubernetes():
+                result = _validate_notebook_with_kubernetes(
+                    record=record,
+                    input_payload=input_payload,
+                    require_success=request.require_success,
+                    timeout_seconds=timeout_seconds,
+                    redis_url=state.settings.redis_url,
+                    event_bus=state.event_bus,
+                )
+            else:
+                results = validate_workers(
+                    registry=GoblinRegistry.from_definitions([notebook_definition(record)]),
+                    workers=notebook_worker_map(record),
+                    input_payload=input_payload,
+                    kinds=[record.kind],
+                    require_success=request.require_success,
+                    prebuilt_image=True,
+                    timeout_seconds=timeout_seconds,
+                    redis_url=state.settings.redis_url,
+                )
+                result = results[0]
+                result = result.model_copy(
+                    update={
+                        "image_digest": notebook_validation_identity(
+                            result.image_digest,
+                            record.source_hash,
+                        )
+                    }
+                )
+            state.store.save_worker_validation(validation_record(result))
+            proof = result.model_dump(mode="json")
+            outcome = "success" if result.ok else "failure"
+            if not result.ok:
+                audit(
+                    state.store,
+                    action="repository.validate",
+                    outcome=outcome,
+                    principal=principal,
+                    project_id=entry.project_id,
+                    resource_type="repository_entry",
+                    resource_id=entry.id,
+                    detail={"version": source_version.version, "proof": proof},
+                )
+                raise HTTPException(status_code=422, detail=proof)
+        else:
+            record = state.store.get_notebook_service(source_version.kind)
+            if record is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"repository notebook service missing: {source_version.kind}",
+                )
+            manager = _notebook_service_runtime_manager(state)
+            try:
+                runtime = manager.validate(
+                    record,
+                    timeout_seconds=request.timeout_seconds or 120,
+                )
+            except NotebookServiceRuntimeError as error:
+                proof = {"ok": False, "error": str(error)}
+                audit(
+                    state.store,
+                    action="repository.validate",
+                    outcome="failure",
+                    principal=principal,
+                    project_id=entry.project_id,
+                    resource_type="repository_entry",
+                    resource_id=entry.id,
+                    detail={"version": source_version.version, "proof": proof},
+                )
+                raise HTTPException(status_code=422, detail=proof) from error
+            state.store.update_notebook_service_runtime(
+                record.kind,
+                runtime_status="validated",
+                updated_at=utc_now(),
+            )
+            proof = {"ok": True, "runtime": runtime.model()}
+            outcome = "success"
+
+        updated_version = state.store.transition_repository_version_status(
+            entry.id,
+            source_version.version,
+            "validated",
+            updated_at=utc_now(),
+            validation_proof=proof,
+        )
+        updated_entry = state.store.get_repository_entry(entry.id)
+        assert updated_entry is not None
+        audit(
+            state.store,
+            action="repository.validate",
+            outcome=outcome,
+            principal=principal,
+            project_id=entry.project_id,
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail={"version": updated_version.version, "proof": proof},
+        )
+        return RepositoryValidationResponse(
+            entry=updated_entry,
+            version=updated_version,
+            validation=proof,
+        )
+
+    @app.post(
+        "/repository/entries/{entry_id}/request-review",
+        response_model=RepositoryEntryDetailResponse,
+        tags=["repository"],
+        operation_id="requestRepositoryReview",
+    )
+    def request_repository_review(
+        entry_id: str,
+        request: RepositoryReviewRequest,
+        version: int | None = None,
+        principal: Principal = Depends(require_principal),
+    ) -> RepositoryEntryDetailResponse:
+        """Request admin review for a validated repository version."""
+        _require_repository_enabled(state)
+        entry = state.store.get_repository_entry(entry_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"repository entry not found: {entry_id}")
+        project_for_request(principal, entry.project_id)
+        _require_repository_owner_or_admin(principal, entry)
+        source_version = _repository_requested_version(state, entry, version)
+        if source_version.status != "validated":
+            raise HTTPException(status_code=409, detail="repository version must be validated")
+        updated = state.store.transition_repository_version_status(
+            entry.id,
+            source_version.version,
+            "pending_review",
+            updated_at=utc_now(),
+        )
+        audit(
+            state.store,
+            action="repository.review_requested",
+            outcome="success",
+            principal=principal,
+            project_id=entry.project_id,
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail={"version": updated.version, "note": request.note},
+        )
+        refreshed = state.store.get_repository_entry(entry.id)
+        assert refreshed is not None
+        return _repository_entry_detail(state, refreshed)
+
+    @app.post(
+        "/repository/entries/{entry_id}/approve",
+        response_model=RepositoryEntryDetailResponse,
+        tags=["repository"],
+        operation_id="approveRepositoryEntry",
+    )
+    def approve_repository_entry(
+        entry_id: str,
+        request: RepositoryReviewRequest,
+        version: int | None = None,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> RepositoryEntryDetailResponse:
+        """Approve a pending repository version for publication."""
+        _require_repository_enabled(state)
+        entry = state.store.get_repository_entry(entry_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"repository entry not found: {entry_id}")
+        project_for_request(principal, entry.project_id)
+        source_version = _repository_requested_version(state, entry, version)
+        if source_version.status != "pending_review":
+            raise HTTPException(status_code=409, detail="repository version must be pending review")
+        updated = state.store.transition_repository_version_status(
+            entry.id,
+            source_version.version,
+            "approved",
+            updated_at=utc_now(),
+            approved_by=principal.user_id,
+        )
+        audit(
+            state.store,
+            action="repository.approve",
+            outcome="success",
+            principal=principal,
+            project_id=entry.project_id,
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail={"version": updated.version, "note": request.note},
+        )
+        refreshed = state.store.get_repository_entry(entry.id)
+        assert refreshed is not None
+        return _repository_entry_detail(state, refreshed)
+
+    @app.post(
+        "/repository/entries/{entry_id}/reject",
+        response_model=RepositoryEntryDetailResponse,
+        tags=["repository"],
+        operation_id="rejectRepositoryEntry",
+    )
+    def reject_repository_entry(
+        entry_id: str,
+        request: RepositoryReviewRequest,
+        version: int | None = None,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> RepositoryEntryDetailResponse:
+        """Reject a repository version after review."""
+        _require_repository_enabled(state)
+        entry = state.store.get_repository_entry(entry_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"repository entry not found: {entry_id}")
+        project_for_request(principal, entry.project_id)
+        source_version = _repository_requested_version(state, entry, version)
+        updated = state.store.transition_repository_version_status(
+            entry.id,
+            source_version.version,
+            "rejected",
+            updated_at=utc_now(),
+        )
+        audit(
+            state.store,
+            action="repository.reject",
+            outcome="success",
+            principal=principal,
+            project_id=entry.project_id,
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail={"version": updated.version, "note": request.note},
+        )
+        refreshed = state.store.get_repository_entry(entry.id)
+        assert refreshed is not None
+        return _repository_entry_detail(state, refreshed)
+
+    @app.post(
+        "/repository/entries/{entry_id}/publish",
+        response_model=RepositoryEntryDetailResponse,
+        tags=["repository"],
+        operation_id="publishRepositoryEntry",
+    )
+    def publish_repository_entry(
+        entry_id: str,
+        request: RepositoryPublishRequest,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> RepositoryEntryDetailResponse:
+        """Publish an approved repository version so users can discover it."""
+        _require_repository_enabled(state)
+        entry = state.store.get_repository_entry(entry_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"repository entry not found: {entry_id}")
+        project_for_request(principal, entry.project_id)
+        source_version = _repository_requested_version(state, entry, request.version)
+        if source_version.status != "approved":
+            raise HTTPException(status_code=409, detail="repository version must be approved")
+        updated = state.store.transition_repository_version_status(
+            entry.id,
+            source_version.version,
+            "published",
+            updated_at=utc_now(),
+            approved_by=source_version.approved_by,
+            approved_at=source_version.approved_at,
+        )
+        audit(
+            state.store,
+            action="repository.publish",
+            outcome="success",
+            principal=principal,
+            project_id=entry.project_id,
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail={"version": updated.version},
+        )
+        refreshed = state.store.get_repository_entry(entry.id)
+        assert refreshed is not None
+        return _repository_entry_detail(state, refreshed)
+
+    @app.post(
+        "/repository/entries/{entry_id}/retire",
+        response_model=RepositoryEntryDetailResponse,
+        tags=["repository"],
+        operation_id="retireRepositoryEntry",
+    )
+    def retire_repository_entry(
+        entry_id: str,
+        request: RepositoryReviewRequest,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> RepositoryEntryDetailResponse:
+        """Retire a repository entry from normal discovery."""
+        _require_repository_enabled(state)
+        entry = state.store.get_repository_entry(entry_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"repository entry not found: {entry_id}")
+        project_for_request(principal, entry.project_id)
+        updated = state.store.transition_repository_entry_status(
+            entry.id,
+            "retired",
+            updated_at=utc_now(),
+        )
+        audit(
+            state.store,
+            action="repository.retire",
+            outcome="success",
+            principal=principal,
+            project_id=entry.project_id,
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail={"note": request.note},
+        )
+        return _repository_entry_detail(state, updated)
+
+    @app.delete(
+        "/repository/entries/{entry_id}",
+        response_model=RepositoryDeleteResponse,
+        tags=["repository"],
+        operation_id="deleteRepositoryEntry",
+    )
+    def delete_repository_entry(
+        entry_id: str,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> RepositoryDeleteResponse:
+        """Permanently delete a draft, rejected, or retired repository entry."""
+        _require_repository_enabled(state)
+        entry = state.store.get_repository_entry(entry_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"repository entry not found: {entry_id}")
+        project_for_request(principal, entry.project_id)
+        if entry.status not in {"draft", "rejected", "retired"}:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "repository entry must be draft, rejected, or retired before permanent "
+                    "deletion; retire published entries first"
+                ),
+            )
+        for version_record in state.store.list_repository_versions(entry.id):
+            if entry.type != "notebook_service":
+                continue
+            record = state.store.get_notebook_service(version_record.kind)
+            if record is not None and record.active_service_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail="repository service is still running; stop it before deleting",
+                )
+        try:
+            deleted = state.store.delete_repository_entry(entry.id)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        audit(
+            state.store,
+            action="repository.delete",
+            outcome="success",
+            principal=principal,
+            project_id=entry.project_id,
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail={
+                "name": entry.name,
+                "status": entry.status,
+                "deleted_versions": deleted["deleted_versions"],
+                "deleted_notebook_records": deleted["deleted_notebook_records"],
+            },
+        )
+        return RepositoryDeleteResponse(deleted=True, **deleted)
+
+    @app.post(
+        "/repository/functions/{name}/run",
+        response_model=RepositoryFunctionRunResponse,
+        tags=["repository"],
+        operation_id="runRepositoryFunction",
+    )
+    def run_repository_function(
+        name: str,
+        request: RepositoryFunctionRunRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> RepositoryFunctionRunResponse:
+        """Queue an approved repository function goblin by project-local name."""
+        entry, version_record = _resolve_published_repository_version(
+            name=name,
+            expected_type="notebook_function",
+            principal=principal,
+            project_id=request.project_id,
+            version=request.version,
+        )
+        record = state.store.get_notebook_goblin(version_record.kind)
+        if record is None:
+            raise HTTPException(
+                status_code=500,
+                detail=f"repository notebook goblin missing: {version_record.kind}",
+            )
+        job = _queue_job(
+            JobCreateRequest(
+                kind=version_record.kind,
+                input=request.input,
+                project_id=entry.project_id,
+                priority=request.priority,
+                correlation_id=request.correlation_id,
+                max_retries=request.max_retries,
+                timeout_seconds=request.timeout_seconds,
+            ),
+            principal,
+            repository_entry=entry,
+            repository_version=version_record,
+        )
+        audit(
+            state.store,
+            action="repository.run",
+            outcome="success",
+            principal=principal,
+            project_id=entry.project_id,
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail={
+                "name": entry.name,
+                "version": version_record.version,
+                "kind": version_record.kind,
+                "job_id": job.id,
+            },
+        )
+        return RepositoryFunctionRunResponse(entry=entry, version=version_record, job=job)
+
+    def _repository_service_record(
+        entry: RepositoryEntryRecord,
+        version_record: RepositoryVersionRecord,
+    ) -> NotebookServiceRecord:
+        record = state.store.get_notebook_service(version_record.kind)
+        if record is None:
+            raise HTTPException(
+                status_code=500,
+                detail=f"repository notebook service missing: {version_record.kind}",
+            )
+        if record.project_id != entry.project_id:
+            raise HTTPException(
+                status_code=500,
+                detail=f"repository notebook service project mismatch: {version_record.kind}",
+            )
+        return record
+
+    def _repository_proxy_query_string(raw_query: str) -> str:
+        """Remove repository selector params before forwarding to the service."""
+        filtered = [
+            (key, value)
+            for key, value in urlparse.parse_qsl(raw_query, keep_blank_values=True)
+            if key not in {"project_id", "version"}
+        ]
+        return urlparse.urlencode(filtered, doseq=True)
+
+    @app.post(
+        "/repository/services/{name}/start",
+        response_model=RepositoryServiceStartResponse,
+        tags=["repository"],
+        operation_id="startRepositoryService",
+    )
+    def start_repository_service(
+        name: str,
+        request: RepositoryServiceStartRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> RepositoryServiceStartResponse:
+        """Start an approved repository ASGI service by project-local name."""
+        _forbid_viewer_write(principal)
+        entry, version_record = _resolve_published_repository_version(
+            name=name,
+            expected_type="notebook_service",
+            principal=principal,
+            project_id=request.project_id,
+            version=request.version,
+        )
+        record = _repository_service_record(entry, version_record)
+        manager = _notebook_service_runtime_manager(state)
+        _stop_existing_notebook_service_runtime(state, manager, record)
+        try:
+            runtime_proof = manager.start(record, timeout_seconds=request.timeout_seconds)
+        except NotebookServiceRuntimeError as error:
+            audit(
+                state.store,
+                action="repository.start",
+                outcome="failure",
+                principal=principal,
+                project_id=record.project_id,
+                resource_type="repository_entry",
+                resource_id=entry.id,
+                detail={"name": entry.name, "version": version_record.version, "error": str(error)},
+            )
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+        service = LongServiceRecord(
+            id=str(uuid4()),
+            kind=record.kind,
+            project_id=record.project_id,
+            image=record.image,
+            base_url=runtime_proof.base_url,
+            probe_path=record.probe_path,
+            status="running",
+            created_at=utc_now(),
+            created_by=principal.user_id,
+            last_probe_json=runtime_proof.probe,
+        )
+        state.store.save_long_service(service)
+        updated = state.store.update_notebook_service_runtime(
+            record.kind,
+            runtime_status="running",
+            runtime_backend=runtime_proof.backend,
+            runtime_name=runtime_proof.name,
+            active_service_id=service.id,
+            updated_at=utc_now(),
+        )
+        assert updated is not None
+        probe = _probe_long_service_record(state, service)
+        state.event_bus.emit(
+            "repository.service.started",
+            source="api",
+            project_id=record.project_id,
+            worker_id=service.id,
+            payload={
+                "name": entry.name,
+                "version": version_record.version,
+                "kind": record.kind,
+                "backend": runtime_proof.backend,
+            },
+        )
+        audit(
+            state.store,
+            action="repository.start",
+            outcome="success",
+            principal=principal,
+            project_id=record.project_id,
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail={
+                "name": entry.name,
+                "version": version_record.version,
+                "kind": record.kind,
+                "service_id": service.id,
+                "runtime": runtime_proof.model(),
+            },
+        )
+        return RepositoryServiceStartResponse(
+            entry=entry,
+            version=version_record,
+            notebook_service=updated,
+            service=service,
+            runtime=runtime_proof.model(),
+            probe=probe,
+        )
+
+    def _active_repository_service(
+        entry: RepositoryEntryRecord,
+        version_record: RepositoryVersionRecord,
+    ) -> tuple[NotebookServiceRecord, LongServiceRecord]:
+        record = _repository_service_record(entry, version_record)
+        if not record.active_service_id:
+            raise HTTPException(
+                status_code=409,
+                detail=f"repository service is not running: {entry.name}",
+            )
+        service = state.store.get_long_service(record.active_service_id)
+        if service is None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"repository service runtime is missing: {entry.name}",
+            )
+        return record, service
+
+    @app.post(
+        "/repository/services/{name}/probe",
+        response_model=RepositoryServiceProbeResponse,
+        tags=["repository"],
+        operation_id="probeRepositoryService",
+    )
+    def probe_repository_service(
+        name: str,
+        request: RepositoryServiceProbeRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> RepositoryServiceProbeResponse:
+        """Probe a running approved repository ASGI service by name."""
+        entry, version_record = _resolve_published_repository_version(
+            name=name,
+            expected_type="notebook_service",
+            principal=principal,
+            project_id=request.project_id,
+            version=request.version,
+        )
+        record, service = _active_repository_service(entry, version_record)
+        project_for_request(principal, service.project_id)
+        if service.status == "stopped":
+            raise HTTPException(status_code=409, detail=f"long service is stopped: {service.id}")
+        probe = _probe_long_service_record(state, service)
+        audit(
+            state.store,
+            action="repository.probe",
+            outcome="success",
+            principal=principal,
+            project_id=service.project_id,
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail={
+                "name": entry.name,
+                "version": version_record.version,
+                "kind": record.kind,
+                "service_id": service.id,
+                "url": probe.request["url"],
+            },
+        )
+        return RepositoryServiceProbeResponse(
+            entry=entry,
+            version=version_record,
+            notebook_service=record,
+            probe=probe,
+        )
+
+    @app.post(
+        "/repository/services/{name}/stop",
+        response_model=RepositoryServiceStopResponse,
+        tags=["repository"],
+        operation_id="stopRepositoryService",
+    )
+    def stop_repository_service(
+        name: str,
+        request: RepositoryServiceStopRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> RepositoryServiceStopResponse:
+        """Stop a running approved repository ASGI service by name."""
+        _forbid_viewer_write(principal)
+        entry, version_record = _resolve_published_repository_version(
+            name=name,
+            expected_type="notebook_service",
+            principal=principal,
+            project_id=request.project_id,
+            version=request.version,
+        )
+        record = _repository_service_record(entry, version_record)
+        manager = _notebook_service_runtime_manager(state)
+        runtime = manager.stop(record)
+        service = None
+        if record.active_service_id:
+            service = state.store.update_long_service_status(
+                record.active_service_id,
+                status="stopped",
+                last_probe_json={"stopped_by": "repository.stop"},
+            )
+        updated = state.store.update_notebook_service_runtime(
+            record.kind,
+            runtime_status="stopped",
+            runtime_backend=None,
+            runtime_name=None,
+            active_service_id=None,
+            updated_at=utc_now(),
+        )
+        assert updated is not None
+        audit(
+            state.store,
+            action="repository.stop",
+            outcome="success",
+            principal=principal,
+            project_id=record.project_id,
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail={
+                "name": entry.name,
+                "version": version_record.version,
+                "kind": record.kind,
+                "service_id": service.id if service else None,
+                "runtime": runtime,
+            },
+        )
+        return RepositoryServiceStopResponse(
+            entry=entry,
+            version=version_record,
+            notebook_service=updated,
+            service=service,
+            runtime=runtime,
+        )
+
+    @app.api_route(
+        "/repository/services/{name}/proxy",
+        methods=SERVICE_PROXY_METHODS,
+        tags=["repository"],
+        operation_id="proxyRepositoryServiceRoot",
+        include_in_schema=False,
+    )
+    @app.api_route(
+        "/repository/services/{name}/proxy/{path:path}",
+        methods=SERVICE_PROXY_METHODS,
+        tags=["repository"],
+        operation_id="proxyRepositoryService",
+        include_in_schema=False,
+    )
+    async def proxy_repository_service(
+        name: str,
+        request: Request,
+        path: str = "",
+        project_id: str | None = None,
+        version: int | None = Query(default=None, gt=0),
+        principal: Principal = Depends(require_principal),
+    ) -> FastAPIResponse:
+        """Proxy authenticated HTTP traffic to an approved repository service."""
+        entry, version_record = _resolve_published_repository_version(
+            name=name,
+            expected_type="notebook_service",
+            principal=principal,
+            project_id=project_id,
+            version=version,
+        )
+        record, service = _active_repository_service(entry, version_record)
+        project_for_request(principal, service.project_id)
+        return await _proxy_long_service_request(
+            service=service,
+            request=request,
+            path=path,
+            principal=principal,
+            action="repository.proxy",
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail_extra={
+                "name": entry.name,
+                "version": version_record.version,
+                "kind": record.kind,
+                "service_id": service.id,
+            },
+            query_string=_repository_proxy_query_string(request.url.query),
+        )
+
+    @app.post("/jobs", response_model=JobRecord, tags=["jobs"], operation_id="createJob")
+    def create_job(
+        request: JobCreateRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> JobRecord:
+        """Queue one job for later scheduler execution."""
+        return _queue_job(request, principal)
 
     @app.get("/jobs", response_model=JobListResponse, tags=["jobs"], operation_id="listJobs")
     def list_jobs(
