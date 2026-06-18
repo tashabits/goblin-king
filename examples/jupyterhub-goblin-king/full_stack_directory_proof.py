@@ -18,7 +18,7 @@ from full_stack_workbook_proof import (
 
 
 def main() -> None:
-    """Run the full local Kubernetes JupyterHub repository proof."""
+    """Run the full local Kubernetes JupyterHub Directory proof."""
     args = _parse_args()
     port_forward = None
     tag = f"repository-proof-{int(time.time())}"
@@ -30,7 +30,7 @@ def main() -> None:
             args.stack_config,
             "jupyterhub-stack-up",
             [
-                "GOBLIN_REPOSITORY_ENABLED=1",
+                "GOBLIN_DIRECTORY_ENABLED=1",
                 f"JUPYTERHUB_WORKBOOK_USER_TOKEN={args.alice_token}",
                 f"JUPYTERHUB_WORKBOOK_ALICE_TOKEN={args.alice_token}",
                 f"JUPYTERHUB_WORKBOOK_BOB_TOKEN={args.bob_token}",

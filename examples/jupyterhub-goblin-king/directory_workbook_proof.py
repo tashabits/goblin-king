@@ -25,7 +25,7 @@ def hello():
 
 
 def repository_proof_hello(payload):
-    """Short workbook-style function submitted to the repository proof."""
+    """Short workbook-style function submitted to the Directory proof."""
     name = payload.get("name", "Directory")
     return {
         "message": f"Hello {name}",

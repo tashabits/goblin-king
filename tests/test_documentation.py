@@ -42,7 +42,7 @@ def test_mandatory_validation_gate_is_documented() -> None:
 
 
 def test_repository_operator_docs_cover_stack_enablement() -> None:
-    """Verify optional repository service docs cover local and cluster operators."""
+    """Verify optional Directory service docs cover local and cluster operators."""
     readme = Path("README.md").read_text(encoding="utf-8")
     repository_doc = Path("docs/goblin-directory.md").read_text(encoding="utf-8")
 
@@ -61,17 +61,17 @@ def test_repository_operator_docs_cover_stack_enablement() -> None:
     assert "workbook-directory-submit.ipynb" in repository_doc
     assert "workbook-directory-admin.ipynb" in repository_doc
     assert "workbook-directory-consume.ipynb" in repository_doc
-    assert "make jupyterhub-repository-proof" in repository_doc
+    assert "make jupyterhub-directory-proof" in repository_doc
     assert "client.run_directory_function" in repository_doc
     assert "client.directory_service" in repository_doc
     assert "Non-admin callers cannot request another `project_id`" in repository_doc
 
 
 def test_jupyterhub_docs_cover_repository_proof_users() -> None:
-    """Verify Hub docs describe the repository proof target and users."""
+    """Verify Hub docs describe the Directory proof target and users."""
     hub_doc = Path("docs/jupyterhub-service-access.md").read_text(encoding="utf-8")
 
-    assert "make jupyterhub-repository-proof" in hub_doc
+    assert "make jupyterhub-directory-proof" in hub_doc
     assert "make jupyterhub-directory-ui-proof" in hub_doc
     assert "`bob` submits" in hub_doc
     assert "`alice` approves" in hub_doc

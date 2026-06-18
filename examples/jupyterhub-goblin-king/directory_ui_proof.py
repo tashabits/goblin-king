@@ -35,7 +35,7 @@ def main() -> None:
             args.stack_config,
             "jupyterhub-stack-up",
             [
-                "GOBLIN_REPOSITORY_ENABLED=1",
+                "GOBLIN_DIRECTORY_ENABLED=1",
                 "GOBLIN_DIRECTORY_UI_ENABLED=1",
                 f"JUPYTERHUB_STACK_IMAGE_TAG={tag}",
                 f"JUPYTERHUB_WORKBOOK_USER_TOKEN={args.alice_token}",
