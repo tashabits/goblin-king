@@ -26,7 +26,7 @@ def hello():
 
 def repository_proof_hello(payload):
     """Short workbook-style function submitted to the repository proof."""
-    name = payload.get("name", "Repository")
+    name = payload.get("name", "Directory")
     return {
         "message": f"Hello {name}",
         "source": "repository-workbook-proof-function",
@@ -44,7 +44,7 @@ def main() -> None:
         carol_token = args.carol_token
         token_source = "jupyterhub"
     else:
-        project = _create_project(args.api_url, args.admin_token, f"Repository Proof {suffix}")
+        project = _create_project(args.api_url, args.admin_token, f"Directory Proof {suffix}")
         bob_token = _create_user_token(
             args.api_url,
             args.admin_token,

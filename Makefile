@@ -26,16 +26,16 @@ HELM_EXTRA_ARGS ?=
 HELM_PVC ?= $(HELM_RELEASE)-data
 HELM_WITH_JUPYTERHUB ?= 0
 GOBLIN_REPOSITORY_ENABLED ?= 0
-GOBLIN_REPOSITORY_UI_ENABLED ?= 0
+GOBLIN_DIRECTORY_UI_ENABLED ?= 0
 GOBLIN_REPOSITORY_LOCAL_URL ?= http://127.0.0.1:8010
-JUPYTERHUB_REPOSITORY_URL ?= http://$(HELM_RELEASE)-repository.$(HELM_NAMESPACE).svc.cluster.local:8000
-JUPYTERHUB_REPOSITORY_UI_URL ?= http://$(HELM_RELEASE)-repository-ui.$(HELM_NAMESPACE).svc.cluster.local:8080
-JUPYTERHUB_REPOSITORY_UI_SERVICE_TOKEN_KEY ?= repository-ui-token
-JUPYTERHUB_REPOSITORY_UI_SERVICE_TOKEN ?= local-goblin-king-repository-ui-token
+JUPYTERHUB_REPOSITORY_URL ?= http://$(HELM_RELEASE)-directory-api.$(HELM_NAMESPACE).svc.cluster.local:8000
+JUPYTERHUB_DIRECTORY_UI_URL ?= http://$(HELM_RELEASE)-directory-ui.$(HELM_NAMESPACE).svc.cluster.local:8080
+JUPYTERHUB_DIRECTORY_UI_SERVICE_TOKEN_KEY ?= directory-ui-token
+JUPYTERHUB_DIRECTORY_UI_SERVICE_TOKEN ?= local-goblin-king-directory-ui-token
 HELM_REPOSITORY_ARGS ?= --set repository.enabled=true --set repository.url=$(JUPYTERHUB_REPOSITORY_URL)
-HELM_REPOSITORY_UI_ARGS ?= --set repositoryUi.enabled=true --set repositoryUi.image.tag=$(JUPYTERHUB_STACK_IMAGE_TAG) --set repositoryUi.image.pullPolicy=Never --set repositoryUi.serviceTokenSecret.name=$(JUPYTERHUB_SERVICE_TOKEN_SECRET) --set repositoryUi.serviceTokenSecret.key=$(JUPYTERHUB_REPOSITORY_UI_SERVICE_TOKEN_KEY) --set repositoryUi.apiUrl=http://$(HELM_RELEASE)-api.$(HELM_NAMESPACE).svc.cluster.local:8000 --set repositoryUi.repositoryUrl=$(JUPYTERHUB_REPOSITORY_URL) --set repositoryUi.hubApiUrl=http://hub.$(HELM_NAMESPACE).svc.cluster.local:8081/hub/api --set repositoryUi.hubBaseUrl=/hub/
+HELM_DIRECTORY_UI_ARGS ?= --set directoryUi.enabled=true --set directoryUi.image.tag=$(JUPYTERHUB_STACK_IMAGE_TAG) --set directoryUi.image.pullPolicy=Never --set directoryUi.serviceTokenSecret.name=$(JUPYTERHUB_SERVICE_TOKEN_SECRET) --set directoryUi.serviceTokenSecret.key=$(JUPYTERHUB_DIRECTORY_UI_SERVICE_TOKEN_KEY) --set directoryUi.apiUrl=http://$(HELM_RELEASE)-api.$(HELM_NAMESPACE).svc.cluster.local:8000 --set directoryUi.repositoryUrl=$(JUPYTERHUB_REPOSITORY_URL) --set directoryUi.hubApiUrl=http://hub.$(HELM_NAMESPACE).svc.cluster.local:8081/hub/api --set directoryUi.hubBaseUrl=/hub/
 JUPYTERHUB_REPOSITORY_ARGS ?= --set singleuser.extraEnv.GOBLIN_KING_REPOSITORY_URL=$(JUPYTERHUB_REPOSITORY_URL)
-JUPYTERHUB_REPOSITORY_UI_ARGS ?= --set hub.extraEnv.GOBLIN_KING_REPOSITORY_UI_SERVICE_TOKEN.valueFrom.secretKeyRef.name=$(JUPYTERHUB_SERVICE_TOKEN_SECRET) --set hub.extraEnv.GOBLIN_KING_REPOSITORY_UI_SERVICE_TOKEN.valueFrom.secretKeyRef.key=$(JUPYTERHUB_REPOSITORY_UI_SERVICE_TOKEN_KEY)
+JUPYTERHUB_DIRECTORY_UI_ARGS ?= --set hub.extraEnv.GOBLIN_KING_DIRECTORY_UI_SERVICE_TOKEN.valueFrom.secretKeyRef.name=$(JUPYTERHUB_SERVICE_TOKEN_SECRET) --set hub.extraEnv.GOBLIN_KING_DIRECTORY_UI_SERVICE_TOKEN.valueFrom.secretKeyRef.key=$(JUPYTERHUB_DIRECTORY_UI_SERVICE_TOKEN_KEY)
 JUPYTERHUB_EXTRA_ARGS ?=
 JUPYTERHUB_STACK_CONFIG ?= examples/jupyterhub-goblin-king/local-stack.mk
 JUPYTERHUB_RELEASE ?= jupyterhub
@@ -55,9 +55,14 @@ JUPYTERHUB_WORKBOOK_CAROL_TOKEN ?= local-goblin-king-carol-token
 JUPYTERHUB_WORKBOOK_MALLORY_TOKEN ?= local-goblin-king-mallory-token
 JUPYTERHUB_WORKBOOK_PROOF ?= examples/jupyterhub-goblin-king/workbook_proof.py
 JUPYTERHUB_FULL_STACK_PROOF ?= examples/jupyterhub-goblin-king/full_stack_workbook_proof.py
-JUPYTERHUB_REPOSITORY_FULL_STACK_PROOF ?= examples/jupyterhub-goblin-king/full_stack_repository_proof.py
-JUPYTERHUB_REPOSITORY_UI_PROOF ?= examples/jupyterhub-goblin-king/repository_ui_proof.py
+JUPYTERHUB_REPOSITORY_FULL_STACK_PROOF ?= examples/jupyterhub-goblin-king/full_stack_directory_proof.py
+JUPYTERHUB_DIRECTORY_UI_PROOF ?= examples/jupyterhub-goblin-king/directory_ui_proof.py
 JUPYTERHUB_STACK_IMAGE_PREPARE ?= examples/jupyterhub-goblin-king/prepare_stack_images.py
+JUPYTERHUB_WORKBOOK_SEED ?= examples/jupyterhub-goblin-king/seed_user_workbooks.py
+JUPYTERHUB_SEED_WORKBOOKS ?= 1
+JUPYTERHUB_WORKBOOK_SEED_DESTINATION ?= examples
+JUPYTERHUB_WORKBOOK_SEED_USERS ?= --user alice:$(JUPYTERHUB_WORKBOOK_ALICE_TOKEN) --user bob:$(JUPYTERHUB_WORKBOOK_BOB_TOKEN) --user carol:$(JUPYTERHUB_WORKBOOK_CAROL_TOKEN)
+JUPYTERHUB_WORKBOOK_SEED_FILES ?= --workbook examples/jupyterhub-goblin-king/workbook-launch.ipynb --workbook examples/jupyterhub-goblin-king/workbook-directory-submit.ipynb --workbook examples/jupyterhub-goblin-king/workbook-directory-admin.ipynb --workbook examples/jupyterhub-goblin-king/workbook-directory-consume.ipynb
 JUPYTERHUB_STACK_REBUILD ?= 0
 JUPYTERHUB_STACK_BUILD_NO_CACHE ?= 1
 JUPYTERHUB_STACK_IMAGE_TAG ?=
@@ -75,10 +80,10 @@ COMPOSE_REPOSITORY_SERVICE = $(if $(filter 1 true yes,$(GOBLIN_REPOSITORY_ENABLE
 NOTEBOOK_REPOSITORY_PROOF_ARGS = $(if $(filter 1 true yes,$(GOBLIN_REPOSITORY_ENABLED)),--repository-url $(GOBLIN_REPOSITORY_LOCAL_URL),)
 HELM_OPTIONAL_REPOSITORY_ARGS = $(if $(filter 1 true yes,$(GOBLIN_REPOSITORY_ENABLED)),$(HELM_REPOSITORY_ARGS),)
 JUPYTERHUB_OPTIONAL_REPOSITORY_ARGS = $(if $(filter 1 true yes,$(GOBLIN_REPOSITORY_ENABLED)),$(JUPYTERHUB_REPOSITORY_ARGS),)
-HELM_OPTIONAL_REPOSITORY_UI_ARGS = $(if $(filter 1 true yes,$(GOBLIN_REPOSITORY_UI_ENABLED)),$(HELM_REPOSITORY_UI_ARGS),)
-JUPYTERHUB_OPTIONAL_REPOSITORY_UI_ARGS = $(if $(filter 1 true yes,$(GOBLIN_REPOSITORY_UI_ENABLED)),$(JUPYTERHUB_REPOSITORY_UI_ARGS),)
+HELM_OPTIONAL_DIRECTORY_UI_ARGS = $(if $(filter 1 true yes,$(GOBLIN_DIRECTORY_UI_ENABLED)),$(HELM_DIRECTORY_UI_ARGS),)
+JUPYTERHUB_OPTIONAL_DIRECTORY_UI_ARGS = $(if $(filter 1 true yes,$(GOBLIN_DIRECTORY_UI_ENABLED)),$(JUPYTERHUB_DIRECTORY_UI_ARGS),)
 
-.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean notebook-service-docker-proof jupyterhub-stack-up jupyterhub-stack-down jupyterhub-up jupyterhub-down jupyterhub-workbook-proof jupyterhub-repository-proof jupyterhub-repository-ui-proof helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit doctor demo demo-down project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel release-check helm-template helm-admin-smoke kind-smoke clean clean-all docker-clean
+.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean notebook-service-docker-proof jupyterhub-stack-up jupyterhub-stack-down jupyterhub-up jupyterhub-down jupyterhub-seed-workbooks jupyterhub-workbook-proof jupyterhub-directory-proof jupyterhub-repository-proof jupyterhub-directory-ui-proof helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit doctor demo demo-down project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel release-check helm-template helm-admin-smoke kind-smoke clean clean-all docker-clean
 
 help:
 	@echo "Targets:"
@@ -104,14 +109,16 @@ help:
 	@echo "  helm-up        Install/upgrade the Helm stack and wait for readiness"
 	@echo "  jupyterhub-stack-up Install local Kubernetes stack with JupyterHub auth"
 	@echo "                 Set JUPYTERHUB_STACK_REBUILD=1 to build fresh local images first"
-	@echo "                 Set GOBLIN_REPOSITORY_ENABLED=1 to add the optional repository service"
-	@echo "                 Set GOBLIN_REPOSITORY_UI_ENABLED=1 to add the Hub repository UI service"
+	@echo "                 Set GOBLIN_REPOSITORY_ENABLED=1 to add the optional directory API service"
+	@echo "                 Set GOBLIN_DIRECTORY_UI_ENABLED=1 to add the Hub directory UI service"
+	@echo "                 Seeds Alice/Bob/Carol workbook examples by default; set JUPYTERHUB_SEED_WORKBOOKS=0 to skip"
 	@echo "  jupyterhub-stack-down Remove local Kubernetes stack with JupyterHub auth"
+	@echo "  jupyterhub-seed-workbooks Copy example notebooks into Hub user servers"
 	@echo "  jupyterhub-up  Install default zero-to-jupyterhub for local auth proof"
 	@echo "  jupyterhub-down Uninstall the default local JupyterHub release"
 	@echo "  jupyterhub-workbook-proof Run full Hub workbook declare/validate/run/service proof"
-	@echo "  jupyterhub-repository-proof Run full Hub repository submit/review/consume proof"
-	@echo "  jupyterhub-repository-ui-proof Run full Hub repository browser-service proof"
+	@echo "  jupyterhub-directory-proof Run full Hub directory submit/review/consume proof"
+	@echo "  jupyterhub-directory-ui-proof Run full Hub directory browser-service proof"
 	@echo "  helm-wipe      Uninstall Helm release and delete its PVC/data"
 	@echo "  helm-restart-clean Wipe Helm data, then install/upgrade and wait"
 	@echo "  stack-wipe     Wipe both Docker Compose and Helm data"
@@ -216,16 +223,22 @@ else
 	$(PYTHON) $(JUPYTERHUB_STACK_IMAGE_PREPARE) --tag $(JUPYTERHUB_STACK_IMAGE_TAG) --kind-cluster $(JUPYTERHUB_KIND_CLUSTER) $(if $(filter 1 true yes,$(JUPYTERHUB_STACK_BUILD_NO_CACHE)),--no-cache,)
 	$(MAKE) -f Makefile -f $(JUPYTERHUB_STACK_CONFIG) helm-up HELM_WITH_JUPYTERHUB=1 JUPYTERHUB_STACK_IMAGE_TAG=$(JUPYTERHUB_STACK_IMAGE_TAG) HELM_EXTRA_ARGS="$(JUPYTERHUB_STACK_REBUILD_HELM_ARGS)"
 endif
+ifeq ($(filter 0 false no,$(JUPYTERHUB_SEED_WORKBOOKS)),)
+	$(MAKE) -f Makefile -f $(JUPYTERHUB_STACK_CONFIG) jupyterhub-seed-workbooks
+endif
 
 jupyterhub-stack-down:
 	$(MAKE) -f Makefile -f $(JUPYTERHUB_STACK_CONFIG) helm-wipe jupyterhub-down
 
+jupyterhub-seed-workbooks:
+	$(PYTHON) $(JUPYTERHUB_WORKBOOK_SEED) --namespace $(HELM_NAMESPACE) --proxy-service proxy-public --destination $(JUPYTERHUB_WORKBOOK_SEED_DESTINATION) $(JUPYTERHUB_WORKBOOK_SEED_USERS) $(JUPYTERHUB_WORKBOOK_SEED_FILES)
+
 jupyterhub-up:
 	kubectl create namespace $(HELM_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
-	kubectl create secret generic $(JUPYTERHUB_SERVICE_TOKEN_SECRET) --namespace $(HELM_NAMESPACE) --from-literal=$(JUPYTERHUB_SERVICE_TOKEN_KEY)=$(JUPYTERHUB_SERVICE_TOKEN) --from-literal=$(JUPYTERHUB_REPOSITORY_UI_SERVICE_TOKEN_KEY)=$(JUPYTERHUB_REPOSITORY_UI_SERVICE_TOKEN) --from-literal=$(JUPYTERHUB_WORKBOOK_USER_TOKEN_KEY)=$(JUPYTERHUB_WORKBOOK_USER_TOKEN) --from-literal=alice-token=$(JUPYTERHUB_WORKBOOK_ALICE_TOKEN) --from-literal=bob-token=$(JUPYTERHUB_WORKBOOK_BOB_TOKEN) --from-literal=carol-token=$(JUPYTERHUB_WORKBOOK_CAROL_TOKEN) --from-literal=mallory-token=$(JUPYTERHUB_WORKBOOK_MALLORY_TOKEN) --dry-run=client -o yaml | kubectl apply -f -
+	kubectl create secret generic $(JUPYTERHUB_SERVICE_TOKEN_SECRET) --namespace $(HELM_NAMESPACE) --from-literal=$(JUPYTERHUB_SERVICE_TOKEN_KEY)=$(JUPYTERHUB_SERVICE_TOKEN) --from-literal=$(JUPYTERHUB_DIRECTORY_UI_SERVICE_TOKEN_KEY)=$(JUPYTERHUB_DIRECTORY_UI_SERVICE_TOKEN) --from-literal=$(JUPYTERHUB_WORKBOOK_USER_TOKEN_KEY)=$(JUPYTERHUB_WORKBOOK_USER_TOKEN) --from-literal=alice-token=$(JUPYTERHUB_WORKBOOK_ALICE_TOKEN) --from-literal=bob-token=$(JUPYTERHUB_WORKBOOK_BOB_TOKEN) --from-literal=carol-token=$(JUPYTERHUB_WORKBOOK_CAROL_TOKEN) --from-literal=mallory-token=$(JUPYTERHUB_WORKBOOK_MALLORY_TOKEN) --dry-run=client -o yaml | kubectl apply -f -
 	helm repo add jupyterhub https://hub.jupyter.org/helm-chart/
 	helm repo update jupyterhub
-	helm upgrade --install $(JUPYTERHUB_RELEASE) $(JUPYTERHUB_CHART) --namespace $(HELM_NAMESPACE) --create-namespace --wait --timeout $(HELM_TIMEOUT) -f $(JUPYTERHUB_VALUES) $(JUPYTERHUB_NOTEBOOK_PACKAGE_ARGS) $(JUPYTERHUB_EXTRA_ARGS) $(JUPYTERHUB_OPTIONAL_REPOSITORY_ARGS) $(JUPYTERHUB_OPTIONAL_REPOSITORY_UI_ARGS)
+	helm upgrade --install $(JUPYTERHUB_RELEASE) $(JUPYTERHUB_CHART) --namespace $(HELM_NAMESPACE) --create-namespace --wait --timeout $(HELM_TIMEOUT) -f $(JUPYTERHUB_VALUES) $(JUPYTERHUB_NOTEBOOK_PACKAGE_ARGS) $(JUPYTERHUB_EXTRA_ARGS) $(JUPYTERHUB_OPTIONAL_REPOSITORY_ARGS) $(JUPYTERHUB_OPTIONAL_DIRECTORY_UI_ARGS)
 
 jupyterhub-down:
 	-kubectl delete pod --namespace $(HELM_NAMESPACE) -l app.kubernetes.io/instance=$(JUPYTERHUB_RELEASE),app.kubernetes.io/component=singleuser-server --ignore-not-found
@@ -236,14 +249,16 @@ jupyterhub-down:
 jupyterhub-workbook-proof:
 	$(PYTHON) $(JUPYTERHUB_FULL_STACK_PROOF) --stack-config $(JUPYTERHUB_STACK_CONFIG) --namespace $(HELM_NAMESPACE) --release $(HELM_RELEASE) --token $(JUPYTERHUB_WORKBOOK_USER_TOKEN) --kind $(JUPYTERHUB_WORKBOOK_KIND) --workbook-proof $(JUPYTERHUB_WORKBOOK_PROOF) $(if $(filter 1 true yes,$(GOBLIN_REPOSITORY_ENABLED)),--repository-url $(JUPYTERHUB_REPOSITORY_URL),)
 
-jupyterhub-repository-proof:
+jupyterhub-directory-proof:
 	$(PYTHON) $(JUPYTERHUB_REPOSITORY_FULL_STACK_PROOF) --stack-config $(JUPYTERHUB_STACK_CONFIG) --namespace $(HELM_NAMESPACE) --release $(HELM_RELEASE) --jupyterhub-release $(JUPYTERHUB_RELEASE) --alice-token $(JUPYTERHUB_WORKBOOK_ALICE_TOKEN) --bob-token $(JUPYTERHUB_WORKBOOK_BOB_TOKEN) --carol-token $(JUPYTERHUB_WORKBOOK_CAROL_TOKEN) --mallory-token $(JUPYTERHUB_WORKBOOK_MALLORY_TOKEN)
 
-jupyterhub-repository-ui-proof:
-	$(PYTHON) $(JUPYTERHUB_REPOSITORY_UI_PROOF) --stack-config $(JUPYTERHUB_STACK_CONFIG) --namespace $(HELM_NAMESPACE) --release $(HELM_RELEASE) --jupyterhub-release $(JUPYTERHUB_RELEASE) --alice-token $(JUPYTERHUB_WORKBOOK_ALICE_TOKEN) --bob-token $(JUPYTERHUB_WORKBOOK_BOB_TOKEN) --carol-token $(JUPYTERHUB_WORKBOOK_CAROL_TOKEN) --mallory-token $(JUPYTERHUB_WORKBOOK_MALLORY_TOKEN)
+jupyterhub-repository-proof: jupyterhub-directory-proof
+
+jupyterhub-directory-ui-proof:
+	$(PYTHON) $(JUPYTERHUB_DIRECTORY_UI_PROOF) --stack-config $(JUPYTERHUB_STACK_CONFIG) --namespace $(HELM_NAMESPACE) --release $(HELM_RELEASE) --jupyterhub-release $(JUPYTERHUB_RELEASE) --alice-token $(JUPYTERHUB_WORKBOOK_ALICE_TOKEN) --bob-token $(JUPYTERHUB_WORKBOOK_BOB_TOKEN) --carol-token $(JUPYTERHUB_WORKBOOK_CAROL_TOKEN) --mallory-token $(JUPYTERHUB_WORKBOOK_MALLORY_TOKEN)
 
 helm-up: $(if $(filter 1 true yes,$(HELM_WITH_JUPYTERHUB)),jupyterhub-up)
-	helm upgrade --install $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE) --create-namespace --wait --timeout $(HELM_TIMEOUT) $(HELM_ARGS) $(HELM_EXTRA_ARGS) $(HELM_OPTIONAL_REPOSITORY_ARGS) $(HELM_OPTIONAL_REPOSITORY_UI_ARGS) $(if $(filter 1 true yes,$(HELM_WITH_JUPYTERHUB)),$(HELM_JUPYTERHUB_ARGS),)
+	helm upgrade --install $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE) --create-namespace --wait --timeout $(HELM_TIMEOUT) $(HELM_ARGS) $(HELM_EXTRA_ARGS) $(HELM_OPTIONAL_REPOSITORY_ARGS) $(HELM_OPTIONAL_DIRECTORY_UI_ARGS) $(if $(filter 1 true yes,$(HELM_WITH_JUPYTERHUB)),$(HELM_JUPYTERHUB_ARGS),)
 
 helm-wipe:
 	-helm uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE) --ignore-not-found

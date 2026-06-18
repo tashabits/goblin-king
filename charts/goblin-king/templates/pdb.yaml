@@ -1,7 +1,7 @@
 {{- $root := . -}}
-{{- range $component := list "api" "scheduler" "admin" "repository" }}
+{{- range $component := list "api" "scheduler" "admin" }}
 {{- $settings := index $root.Values $component }}
-{{- if and (or (ne $component "scheduler") $root.Values.scheduler.enabled) (or (ne $component "admin") $root.Values.admin.enabled) (or (ne $component "repository") $root.Values.repository.enabled) $settings.podDisruptionBudget.enabled }}
+{{- if and (or (ne $component "scheduler") $root.Values.scheduler.enabled) (or (ne $component "admin") $root.Values.admin.enabled) $settings.podDisruptionBudget.enabled }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -15,4 +15,18 @@ spec:
       app.kubernetes.io/component: {{ $component }}
       app.kubernetes.io/name: {{ include "goblin-king.name" $root }}
 {{- end }}
+{{- end }}
+{{- if and .Values.repository.enabled .Values.repository.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "goblin-king.fullname" . }}-directory-api
+spec:
+  minAvailable: {{ .Values.repository.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: directory-api
+      app.kubernetes.io/name: {{ include "goblin-king.name" . }}
 {{- end }}
