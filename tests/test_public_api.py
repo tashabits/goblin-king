@@ -24,6 +24,8 @@ def test_root_exports_adoption_primitives() -> None:
         "PROJECT_CONFIG_API_VERSION",
         "PROJECT_CONFIG_KIND",
         "ProjectSettings",
+        "RepositoryEntryRecord",
+        "RepositoryVersionRecord",
         "NotebookASGIService",
         "NotebookFunctionGoblin",
         "NotebookGoblinRecord",
