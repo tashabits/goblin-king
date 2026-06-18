@@ -123,6 +123,13 @@ def test_repository_workbooks_are_valid_and_cover_full_flow() -> None:
     assert "search_repository_entries(" in consume_source
     assert "run_repository_function(" in consume_source
     assert "repository_service(" in consume_source
+    for source in sources.values():
+        assert "GOBLIN_KING_REPOSITORY_NOTEBOOK_PACKAGE" in source
+        assert "GOBLIN_KING_NOTEBOOK_PACKAGE" in source
+        assert "--force-reinstall" in source
+        assert "if importlib.util.find_spec" not in source
+        assert 'module_name == "goblin_king"' in source
+        assert 'module_name.startswith("goblin_king.")' in source
 
 
 def test_notebook_client_declare_posts_function_source(monkeypatch) -> None:
