@@ -30,6 +30,11 @@ hub:
         secretKeyRef:
           name: goblin-king-jupyterhub-auth
           key: mallory-token
+    GOBLIN_KING_REPOSITORY_UI_SERVICE_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: goblin-king-jupyterhub-auth
+          key: repository-ui-token
   config:
     JupyterHub:
       authenticator_class: dummy
@@ -40,6 +45,7 @@ hub:
       import os
 
       service_token = os.environ["GOBLIN_KING_JUPYTERHUB_SERVICE_TOKEN"]
+      repository_ui_token = os.environ["GOBLIN_KING_REPOSITORY_UI_SERVICE_TOKEN"]
       workbook_user_token = os.environ["GOBLIN_KING_WORKBOOK_USER_TOKEN"]
       alice_token = os.environ["GOBLIN_KING_WORKBOOK_ALICE_TOKEN"]
       bob_token = os.environ["GOBLIN_KING_WORKBOOK_BOB_TOKEN"]
@@ -57,6 +63,14 @@ hub:
               "name": "goblin-king",
               "url": "http://goblin-king-admin.default.svc.cluster.local:8080",
               "api_token": service_token,
+          },
+          {
+              "name": "goblin-repository",
+              "url": "http://goblin-king-repository-ui.default.svc.cluster.local:8080",
+              "api_token": repository_ui_token,
+              "display": True,
+              "oauth_no_confirm": True,
+              "oauth_redirect_uri": "/services/goblin-repository/oauth_callback",
           }
       ]
       c.JupyterHub.load_groups = {
@@ -74,10 +88,20 @@ hub:
               ],
           },
           {
+              "name": "goblin-repository-service-auth",
+              "services": ["goblin-repository"],
+              "scopes": [
+                  "read:users",
+                  "read:users:name",
+                  "read:users:groups",
+              ],
+          },
+          {
               "name": "goblin-king-user-access",
               "groups": ["goblin-users"],
               "scopes": [
                   "access:services!service=goblin-king",
+                  "access:services!service=goblin-repository",
               ],
           },
       ]

@@ -1,0 +1,94 @@
+{{- if .Values.repositoryUi.enabled }}
+{{- $apiUrl := default (printf "http://%s-api:%v" (include "goblin-king.fullname" .) .Values.api.port) .Values.repositoryUi.apiUrl -}}
+{{- $repositoryUrl := default (include "goblin-king.repositoryUrl" .) .Values.repositoryUi.repositoryUrl -}}
+{{- $hubApiUrl := default .Values.config.jupyterhub.apiUrl .Values.repositoryUi.hubApiUrl -}}
+{{- $tokenSecretName := default .Values.config.jupyterhub.serviceTokenSecret.name .Values.repositoryUi.serviceTokenSecret.name -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "goblin-king.fullname" . }}-repository-ui
+spec:
+  replicas: {{ .Values.repositoryUi.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: repository-ui
+      app.kubernetes.io/name: {{ include "goblin-king.name" . }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: repository-ui
+        app.kubernetes.io/name: {{ include "goblin-king.name" . }}
+        {{- with .Values.repositoryUi.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "goblin-king.repositoryUiServiceAccountName" . }}
+      {{- include "goblin-king.imagePullSecrets" . | nindent 6 }}
+      {{- include "goblin-king.podSecurityContext" . | nindent 6 }}
+      containers:
+        - name: repository-ui
+          image: "{{ .Values.repositoryUi.image.repository }}:{{ .Values.repositoryUi.image.tag }}"
+          imagePullPolicy: {{ .Values.repositoryUi.image.pullPolicy }}
+          {{- include "goblin-king.containerSecurityContext" . | nindent 10 }}
+          ports:
+            - containerPort: {{ .Values.repositoryUi.port }}
+          env:
+            - name: GOBLIN_KING_REPOSITORY_UI_API_URL
+              value: {{ $apiUrl | quote }}
+            {{- if $repositoryUrl }}
+            - name: GOBLIN_KING_REPOSITORY_UI_REPOSITORY_URL
+              value: {{ $repositoryUrl | quote }}
+            {{- end }}
+            - name: GOBLIN_KING_REPOSITORY_UI_HUB_API_URL
+              value: {{ $hubApiUrl | quote }}
+            - name: GOBLIN_KING_REPOSITORY_UI_HUB_BASE_URL
+              value: {{ .Values.repositoryUi.hubBaseUrl | quote }}
+            {{- if .Values.repositoryUi.publicUrl }}
+            - name: GOBLIN_KING_REPOSITORY_UI_PUBLIC_URL
+              value: {{ .Values.repositoryUi.publicUrl | quote }}
+            {{- end }}
+            - name: GOBLIN_KING_REPOSITORY_UI_SERVICE_NAME
+              value: {{ .Values.repositoryUi.serviceName | quote }}
+            - name: GOBLIN_KING_REPOSITORY_UI_SERVICE_PREFIX
+              value: {{ .Values.repositoryUi.servicePrefix | quote }}
+            - name: GOBLIN_KING_REPOSITORY_UI_ADMIN_GROUPS
+              value: {{ join "," .Values.repositoryUi.adminGroups | quote }}
+            - name: GOBLIN_KING_REPOSITORY_UI_REQUEST_TIMEOUT_SECONDS
+              value: {{ .Values.repositoryUi.requestTimeoutSeconds | quote }}
+            - name: GOBLIN_KING_REPOSITORY_UI_SESSION_TTL_SECONDS
+              value: {{ .Values.repositoryUi.sessionTtlSeconds | quote }}
+            - name: GOBLIN_KING_REPOSITORY_UI_MAX_BUNDLE_BYTES
+              value: {{ .Values.repositoryUi.bundleLimits.maxBundleBytes | quote }}
+            - name: GOBLIN_KING_REPOSITORY_UI_MAX_SOURCE_BYTES
+              value: {{ .Values.repositoryUi.bundleLimits.maxSourceBytes | quote }}
+            - name: GOBLIN_KING_REPOSITORY_UI_MAX_REQUIREMENTS_BYTES
+              value: {{ .Values.repositoryUi.bundleLimits.maxRequirementsBytes | quote }}
+            - name: GOBLIN_KING_REPOSITORY_UI_MAX_FILES
+              value: {{ .Values.repositoryUi.bundleLimits.maxFiles | quote }}
+            - name: GOBLIN_KING_REPOSITORY_UI_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $tokenSecretName | quote }}
+                  key: {{ .Values.repositoryUi.serviceTokenSecret.key | quote }}
+          {{- with .Values.repositoryUi.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- include "goblin-king.podPlacement" .Values.repositoryUi | nindent 6 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "goblin-king.fullname" . }}-repository-ui
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: repository-ui
+    app.kubernetes.io/name: {{ include "goblin-king.name" . }}
+  ports:
+    - name: http
+      port: {{ .Values.repositoryUi.port }}
+      targetPort: {{ .Values.repositoryUi.port }}
+{{- end }}

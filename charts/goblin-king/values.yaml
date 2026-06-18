@@ -58,6 +58,43 @@ repository:
     enabled: false
     minAvailable: 1
 
+repositoryUi:
+  enabled: false
+  replicas: 1
+  image:
+    repository: goblin-king-repository-ui
+    tag: local
+    pullPolicy: IfNotPresent
+  port: 8080
+  serviceName: goblin-repository
+  servicePrefix: /services/goblin-repository/
+  apiUrl: ""
+  repositoryUrl: ""
+  hubApiUrl: ""
+  hubBaseUrl: /hub/
+  publicUrl: ""
+  serviceTokenSecret:
+    name: ""
+    key: repository-ui-token
+  adminGroups:
+    - goblin-admins
+  requestTimeoutSeconds: 10
+  sessionTtlSeconds: 28800
+  bundleLimits:
+    maxBundleBytes: "5242880"
+    maxSourceBytes: "1048576"
+    maxRequirementsBytes: "65536"
+    maxFiles: "50"
+  podLabels: {}
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
 scheduler:
   enabled: true
   replicas: 1

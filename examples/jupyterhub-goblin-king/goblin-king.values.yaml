@@ -2,6 +2,10 @@ api:
   podLabels:
     hub.jupyter.org/network-access-hub: "true"
 
+repositoryUi:
+  podLabels:
+    hub.jupyter.org/network-access-hub: "true"
+
 config:
   notebookFunctionImage: goblin-king-notebook-python-function:local
   notebookServiceImage: goblin-king-notebook-asgi-service:local
@@ -30,3 +34,5 @@ config:
 repository:
   enabled: false
   url: ""
+  podLabels:
+    hub.jupyter.org/network-access-hub: "true"
