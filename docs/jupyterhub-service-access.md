@@ -209,6 +209,18 @@ Install the default Hub and Goblin King together:
 make jupyterhub-stack-up
 ```
 
+When you are testing local branch changes, force a fresh image build and deploy those
+exact tags:
+
+```bash
+make jupyterhub-stack-up JUPYTERHUB_STACK_REBUILD=1
+```
+
+That rebuild path creates unique local tags for the API, admin UI, notebook function
+runner, notebook ASGI runner, and example long service, loads them into kind or Docker
+Desktop Kubernetes when needed, and appends the matching Helm image settings. Set
+`JUPYTERHUB_STACK_BUILD_NO_CACHE=0` if you want Docker to reuse cached layers.
+
 Run the end-to-end workbook proof with one command:
 
 ```bash
@@ -274,7 +286,8 @@ make helm-up HELM_WITH_JUPYTERHUB=1
 Browser flow:
 
 1. User logs in to JupyterHub.
-2. User opens the Goblin King service route, such as `/services/goblin-king/`.
+2. User opens the Goblin King service route, such as `/services/goblin-king/`, and
+   sees the admin UI token login through the Hub proxy.
 3. User opens `examples/jupyterhub-goblin-king/workbook-launch.ipynb` in a notebook.
    Before the branch merges, use `workbook-launch-branch.ipynb` instead.
 4. The workbook reads `JUPYTERHUB_API_TOKEN` and `GOBLIN_KING_API_URL`.

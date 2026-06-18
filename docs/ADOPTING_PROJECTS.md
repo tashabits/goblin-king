@@ -168,6 +168,11 @@ make jupyterhub-stack-up
 make jupyterhub-workbook-proof
 ```
 
+Use `make jupyterhub-stack-up JUPYTERHUB_STACK_REBUILD=1` when proving branch-local
+API, admin, or notebook runner changes so the local Kubernetes stack cannot reuse a
+stale `:local` image. The Hub service route `/services/goblin-king/` should open the
+admin token login through JupyterHub after the stack is ready.
+
 See [JupyterHub Service Access](jupyterhub-service-access.md) for the JupyterHub service
 config, Secret wiring, user/group mapping, and workbook-created goblin proof.
 

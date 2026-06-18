@@ -152,6 +152,12 @@ the chart accepts `config.jupyterhub.*` settings and `make jupyterhub-stack-up`
 installs a default zero-to-jupyterhub proof stack with an authenticated workbook.
 The default Hub values include notebook-pod egress to the Goblin King API service so
 users can launch goblins from inside JupyterHub.
+If you are testing branch changes locally, run
+`make jupyterhub-stack-up JUPYTERHUB_STACK_REBUILD=1` to build fresh local API,
+admin, notebook runner, and service images with a unique tag before Helm deploys.
+After the stack is up, the Hub service route
+`http://127.0.0.1:8080/services/goblin-king/` opens the admin UI through
+JupyterHub and should show the normal token login screen.
 `make jupyterhub-workbook-proof` brings up that stack, uses a Hub user token, declares
 and validates a short Python function goblin from workbook-style source, declares a
 FastAPI ASGI service from notebook source, validates it, starts the managed service

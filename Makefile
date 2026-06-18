@@ -22,6 +22,7 @@ HELM_CHART ?= charts/goblin-king
 HELM_NAMESPACE ?= default
 HELM_TIMEOUT ?= 5m
 HELM_ARGS ?=
+HELM_EXTRA_ARGS ?=
 HELM_PVC ?= $(HELM_RELEASE)-data
 HELM_WITH_JUPYTERHUB ?= 0
 JUPYTERHUB_STACK_CONFIG ?= examples/jupyterhub-goblin-king/local-stack.mk
@@ -35,10 +36,19 @@ JUPYTERHUB_WORKBOOK_USER_TOKEN_KEY ?= workbook-user-token
 JUPYTERHUB_WORKBOOK_USER_TOKEN ?= local-goblin-king-workbook-token
 JUPYTERHUB_WORKBOOK_PROOF ?= examples/jupyterhub-goblin-king/workbook_proof.py
 JUPYTERHUB_FULL_STACK_PROOF ?= examples/jupyterhub-goblin-king/full_stack_workbook_proof.py
+JUPYTERHUB_STACK_IMAGE_PREPARE ?= examples/jupyterhub-goblin-king/prepare_stack_images.py
+JUPYTERHUB_STACK_REBUILD ?= 0
+JUPYTERHUB_STACK_BUILD_NO_CACHE ?= 1
+JUPYTERHUB_STACK_IMAGE_TAG ?=
+ifeq ($(JUPYTERHUB_STACK_IMAGE_TAG),)
+JUPYTERHUB_STACK_IMAGE_TAG := jupyterhub-stack-$(shell $(PYTHON) -c "import time; print(int(time.time()))")
+endif
+JUPYTERHUB_KIND_CLUSTER ?= kind
 NOTEBOOK_SERVICE_DOCKER_PROOF ?= examples/jupyterhub-goblin-king/docker_notebook_service_proof.py
 JUPYTERHUB_WORKBOOK_API_URL ?= http://127.0.0.1:18000
 JUPYTERHUB_WORKBOOK_KIND ?= notebook.workbook-short-hello
 HELM_JUPYTERHUB_ARGS ?= --set config.jupyterhub.enabled=true --set config.jupyterhub.apiUrl=http://$(JUPYTERHUB_RELEASE)-hub.$(HELM_NAMESPACE).svc.cluster.local:8081/hub/api --set config.jupyterhub.hubUrl=http://$(JUPYTERHUB_RELEASE).$(HELM_NAMESPACE).svc.cluster.local --set config.jupyterhub.serviceTokenSecret.name=$(JUPYTERHUB_SERVICE_TOKEN_SECRET) --set config.jupyterhub.serviceTokenSecret.key=$(JUPYTERHUB_SERVICE_TOKEN_KEY) --set config.jupyterhub.allowedGroups[0]=goblin-users --set config.jupyterhub.projectGroups.goblin-users=default
+JUPYTERHUB_STACK_REBUILD_HELM_ARGS ?= --set image.tag=$(JUPYTERHUB_STACK_IMAGE_TAG) --set image.pullPolicy=Never --set admin.image.tag=$(JUPYTERHUB_STACK_IMAGE_TAG) --set admin.image.pullPolicy=Never --set workers.exampleLongHello.image=goblin-king-example-long-hello:$(JUPYTERHUB_STACK_IMAGE_TAG) --set workers.exampleLongHello.pullPolicy=Never --set config.notebookFunctionImage=goblin-king-notebook-python-function:$(JUPYTERHUB_STACK_IMAGE_TAG) --set config.notebookServiceImage=goblin-king-notebook-asgi-service:$(JUPYTERHUB_STACK_IMAGE_TAG)
 
 .PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean notebook-service-docker-proof jupyterhub-stack-up jupyterhub-stack-down jupyterhub-up jupyterhub-down jupyterhub-workbook-proof helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit doctor demo demo-down project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel release-check helm-template helm-admin-smoke kind-smoke clean clean-all docker-clean
 
@@ -65,6 +75,7 @@ help:
 	@echo "  notebook-service-docker-proof Prove notebook ASGI service lifecycle with Docker"
 	@echo "  helm-up        Install/upgrade the Helm stack and wait for readiness"
 	@echo "  jupyterhub-stack-up Install local Kubernetes stack with JupyterHub auth"
+	@echo "                 Set JUPYTERHUB_STACK_REBUILD=1 to build fresh local images first"
 	@echo "  jupyterhub-stack-down Remove local Kubernetes stack with JupyterHub auth"
 	@echo "  jupyterhub-up  Install default zero-to-jupyterhub for local auth proof"
 	@echo "  jupyterhub-down Uninstall the default local JupyterHub release"
@@ -167,7 +178,12 @@ notebook-service-docker-proof:
 	docker compose down --volumes --remove-orphans
 
 jupyterhub-stack-up:
+ifeq ($(filter 1 true yes,$(JUPYTERHUB_STACK_REBUILD)),)
 	$(MAKE) -f Makefile -f $(JUPYTERHUB_STACK_CONFIG) helm-up HELM_WITH_JUPYTERHUB=1
+else
+	$(PYTHON) $(JUPYTERHUB_STACK_IMAGE_PREPARE) --tag $(JUPYTERHUB_STACK_IMAGE_TAG) --kind-cluster $(JUPYTERHUB_KIND_CLUSTER) $(if $(filter 1 true yes,$(JUPYTERHUB_STACK_BUILD_NO_CACHE)),--no-cache,)
+	$(MAKE) -f Makefile -f $(JUPYTERHUB_STACK_CONFIG) helm-up HELM_WITH_JUPYTERHUB=1 HELM_EXTRA_ARGS="$(JUPYTERHUB_STACK_REBUILD_HELM_ARGS)"
+endif
 
 jupyterhub-stack-down:
 	$(MAKE) -f Makefile -f $(JUPYTERHUB_STACK_CONFIG) helm-wipe jupyterhub-down
@@ -188,7 +204,7 @@ jupyterhub-workbook-proof:
 	$(PYTHON) $(JUPYTERHUB_FULL_STACK_PROOF) --stack-config $(JUPYTERHUB_STACK_CONFIG) --namespace $(HELM_NAMESPACE) --release $(HELM_RELEASE) --token $(JUPYTERHUB_WORKBOOK_USER_TOKEN) --kind $(JUPYTERHUB_WORKBOOK_KIND) --workbook-proof $(JUPYTERHUB_WORKBOOK_PROOF)
 
 helm-up: $(if $(filter 1 true yes,$(HELM_WITH_JUPYTERHUB)),jupyterhub-up)
-	helm upgrade --install $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE) --create-namespace --wait --timeout $(HELM_TIMEOUT) $(HELM_ARGS) $(if $(filter 1 true yes,$(HELM_WITH_JUPYTERHUB)),$(HELM_JUPYTERHUB_ARGS),)
+	helm upgrade --install $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE) --create-namespace --wait --timeout $(HELM_TIMEOUT) $(HELM_ARGS) $(HELM_EXTRA_ARGS) $(if $(filter 1 true yes,$(HELM_WITH_JUPYTERHUB)),$(HELM_JUPYTERHUB_ARGS),)
 
 helm-wipe:
 	-helm uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE) --ignore-not-found
@@ -263,7 +279,7 @@ release-check: local-ci project-validate helm-template
 	cd admin-ui && npm run build
 
 helm-template:
-	helm template $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE) $(HELM_ARGS)
+	helm template $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE) $(HELM_ARGS) $(HELM_EXTRA_ARGS)
 
 helm-admin-smoke:
 	$(PYTHON) -c "import urllib.request; base='http://goblin-king.local'; token='local-dev-token'; print('admin_status=' + str(urllib.request.urlopen(base+'/admin', timeout=10).status)); req=urllib.request.Request(base+'/admin-api/goblins', headers={'Authorization':'Bearer '+token}); print(urllib.request.urlopen(req, timeout=10).read().decode())"

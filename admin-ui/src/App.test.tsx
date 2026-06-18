@@ -2,7 +2,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { App } from "./App";
+import { App, adminMountPaths } from "./App";
 
 const fixtures = {
   goblins: [
@@ -283,6 +283,22 @@ describe("App", () => {
     localStorage.clear();
     vi.restoreAllMocks();
     vi.stubGlobal("WebSocket", MockWebSocket);
+  });
+
+  it("uses direct admin paths outside the Hub service route", () => {
+    expect(adminMountPaths("/admin/", "http:", "127.0.0.1:8080")).toEqual({
+      basePath: "/admin",
+      apiBase: "/admin-api",
+      wsBase: "ws://127.0.0.1:8080/admin-ws/runs",
+    });
+  });
+
+  it("uses Hub service paths when the admin is proxied through JupyterHub", () => {
+    expect(adminMountPaths("/services/goblin-king/", "https:", "127.0.0.1:8080")).toEqual({
+      basePath: "/services/goblin-king",
+      apiBase: "/services/goblin-king/admin-api",
+      wsBase: "wss://127.0.0.1:8080/services/goblin-king/admin-ws/runs",
+    });
   });
 
   it("stores token login and loads goblins", async () => {
