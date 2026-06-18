@@ -491,6 +491,89 @@ class SQLiteStore:
         assert loaded is not None
         return loaded
 
+    def delete_repository_entry(self, entry_id: str) -> dict[str, Any]:
+        """Permanently delete a non-published repository entry and generated bundles."""
+        with self.engine.begin() as connection:
+            entry_row = (
+                connection.execute(
+                    select(repository_entries_table).where(
+                        repository_entries_table.c.id == entry_id
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if entry_row is None:
+                raise ValueError(f"repository entry not found: {entry_id}")
+            entry = _row_to_repository_entry(dict(entry_row))
+            if entry.status not in {"draft", "rejected", "retired"}:
+                raise ValueError(
+                    "repository entries must be draft, rejected, or retired before deletion"
+                )
+
+            version_rows = (
+                connection.execute(
+                    select(repository_versions_table.c.kind).where(
+                        repository_versions_table.c.entry_id == entry_id
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            version_kinds = [str(row["kind"]) for row in version_rows]
+
+            if entry.type == "notebook_service" and version_kinds:
+                active_service = (
+                    connection.execute(
+                        select(
+                            notebook_services_table.c.kind,
+                            notebook_services_table.c.runtime_status,
+                            notebook_services_table.c.active_service_id,
+                        )
+                        .where(notebook_services_table.c.kind.in_(version_kinds))
+                        .where(notebook_services_table.c.active_service_id.is_not(None))
+                    )
+                    .mappings()
+                    .first()
+                )
+                if active_service is not None:
+                    raise ValueError(
+                        "repository entry has an active service runtime; stop it before deleting"
+                    )
+
+            deleted_notebook_records = 0
+            if version_kinds:
+                if entry.type == "notebook_function":
+                    result = connection.execute(
+                        delete(notebook_goblins_table).where(
+                            notebook_goblins_table.c.kind.in_(version_kinds)
+                        )
+                    )
+                else:
+                    result = connection.execute(
+                        delete(notebook_services_table).where(
+                            notebook_services_table.c.kind.in_(version_kinds)
+                        )
+                    )
+                deleted_notebook_records = int(result.rowcount or 0)
+
+            version_result = connection.execute(
+                delete(repository_versions_table).where(
+                    repository_versions_table.c.entry_id == entry_id
+                )
+            )
+            connection.execute(
+                delete(repository_entries_table).where(repository_entries_table.c.id == entry_id)
+            )
+
+        return {
+            "entry_id": entry.id,
+            "name": entry.name,
+            "status": entry.status,
+            "deleted_versions": int(version_result.rowcount or 0),
+            "deleted_notebook_records": deleted_notebook_records,
+        }
+
     def create_repository_version(
         self,
         version: RepositoryVersionRecord,

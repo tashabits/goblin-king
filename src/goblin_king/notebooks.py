@@ -747,12 +747,80 @@ class GoblinKingNotebookClient:
             latest_response=response,
         )
 
+    def submit_directory_function(
+        self,
+        function: Callable[..., Any] | None = None,
+        *,
+        name: str,
+        source: str | None = None,
+        function_name: str | None = None,
+        display_name: str | None = None,
+        description: str | None = None,
+        tags: list[str] | None = None,
+        project_id: str | None = None,
+        image: str | None = None,
+        timeout_seconds: int | None = None,
+        max_retries: int = 0,
+        metadata: dict[str, Any] | None = None,
+    ) -> RepositoryEntryHandle:
+        """Submit a notebook-defined function to the optional Goblin Directory."""
+        return self.submit_repository_function(
+            function,
+            name=name,
+            source=source,
+            function_name=function_name,
+            display_name=display_name,
+            description=description,
+            tags=tags,
+            project_id=project_id,
+            image=image,
+            timeout_seconds=timeout_seconds,
+            max_retries=max_retries,
+            metadata=metadata,
+        )
+
+    def submit_directory_service(
+        self,
+        *,
+        source: str,
+        name: str,
+        app_name: str = "app",
+        requirements: list[str] | None = None,
+        display_name: str | None = None,
+        description: str | None = None,
+        tags: list[str] | None = None,
+        project_id: str | None = None,
+        image: str | None = None,
+        port: int = 8080,
+        probe_path: str = "/hello",
+        metadata: dict[str, Any] | None = None,
+    ) -> RepositoryEntryHandle:
+        """Submit notebook ASGI service source to the optional Goblin Directory."""
+        return self.submit_repository_service(
+            source=source,
+            name=name,
+            app_name=app_name,
+            requirements=requirements,
+            display_name=display_name,
+            description=description,
+            tags=tags,
+            project_id=project_id,
+            image=image,
+            port=port,
+            probe_path=probe_path,
+            metadata=metadata,
+        )
+
     def get_repository_entry(self, entry_id: str) -> dict[str, Any]:
         """Inspect one repository entry visible to this caller."""
         return self._repository_request(
             "GET",
             f"/repository/entries/{urlparse.quote(entry_id, safe='')}",
         )
+
+    def get_directory_entry(self, entry_id: str) -> dict[str, Any]:
+        """Inspect one directory entry visible to this caller."""
+        return self.get_repository_entry(entry_id)
 
     def list_repository_entries(
         self,
@@ -782,6 +850,26 @@ class GoblinKingNotebookClient:
             f"/repository/entries?{urlparse.urlencode(query)}",
         )
 
+    def list_directory_entries(
+        self,
+        *,
+        project_id: str | None = None,
+        entry_type: str | None = None,
+        status: str | None = "published",
+        q: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """List or search directory entries visible to this caller."""
+        return self.list_repository_entries(
+            project_id=project_id,
+            entry_type=entry_type,
+            status=status,
+            q=q,
+            limit=limit,
+            offset=offset,
+        )
+
     def search_repository_entries(
         self,
         q: str,
@@ -789,6 +877,10 @@ class GoblinKingNotebookClient:
     ) -> dict[str, Any]:
         """Search repository entries with the same filters as list."""
         return self.list_repository_entries(q=q, **filters)
+
+    def search_directory_entries(self, q: str, **filters: Any) -> dict[str, Any]:
+        """Search directory entries with the same filters as list."""
+        return self.list_directory_entries(q=q, **filters)
 
     def validate_repository_entry(
         self,
@@ -839,6 +931,28 @@ class GoblinKingNotebookClient:
         )
         return response
 
+    def validate_directory_entry(
+        self,
+        entry_id: str,
+        payload: dict[str, Any] | None = None,
+        *,
+        require_success: bool = True,
+        timeout_seconds: int | None = None,
+        version: int | None = None,
+        progress: bool = False,
+        on_progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        """Validate one submitted directory version."""
+        return self.validate_repository_entry(
+            entry_id,
+            payload,
+            require_success=require_success,
+            timeout_seconds=timeout_seconds,
+            version=version,
+            progress=progress,
+            on_progress=on_progress,
+        )
+
     def request_repository_review(
         self,
         entry_id: str,
@@ -855,6 +969,24 @@ class GoblinKingNotebookClient:
             {"note": note},
             version=version,
             phase="review_requested",
+            progress=progress,
+            on_progress=on_progress,
+        )
+
+    def request_directory_review(
+        self,
+        entry_id: str,
+        *,
+        note: str | None = None,
+        version: int | None = None,
+        progress: bool = False,
+        on_progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        """Request review for one validated directory version."""
+        return self.request_repository_review(
+            entry_id,
+            note=note,
+            version=version,
             progress=progress,
             on_progress=on_progress,
         )
@@ -879,6 +1011,24 @@ class GoblinKingNotebookClient:
             on_progress=on_progress,
         )
 
+    def approve_directory_entry(
+        self,
+        entry_id: str,
+        *,
+        note: str | None = None,
+        version: int | None = None,
+        progress: bool = False,
+        on_progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        """Approve a directory version with an admin token."""
+        return self.approve_repository_entry(
+            entry_id,
+            note=note,
+            version=version,
+            progress=progress,
+            on_progress=on_progress,
+        )
+
     def reject_repository_entry(
         self,
         entry_id: str,
@@ -895,6 +1045,24 @@ class GoblinKingNotebookClient:
             {"note": note},
             version=version,
             phase="rejected",
+            progress=progress,
+            on_progress=on_progress,
+        )
+
+    def reject_directory_entry(
+        self,
+        entry_id: str,
+        *,
+        note: str | None = None,
+        version: int | None = None,
+        progress: bool = False,
+        on_progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        """Reject a directory version with an admin token."""
+        return self.reject_repository_entry(
+            entry_id,
+            note=note,
+            version=version,
             progress=progress,
             on_progress=on_progress,
         )
@@ -923,6 +1091,22 @@ class GoblinKingNotebookClient:
         )
         return response
 
+    def publish_directory_entry(
+        self,
+        entry_id: str,
+        *,
+        version: int | None = None,
+        progress: bool = False,
+        on_progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        """Publish an approved directory version with an admin token."""
+        return self.publish_repository_entry(
+            entry_id,
+            version=version,
+            progress=progress,
+            on_progress=on_progress,
+        )
+
     def retire_repository_entry(
         self,
         entry_id: str,
@@ -937,6 +1121,22 @@ class GoblinKingNotebookClient:
             "retire",
             {"note": note},
             phase="retired",
+            progress=progress,
+            on_progress=on_progress,
+        )
+
+    def retire_directory_entry(
+        self,
+        entry_id: str,
+        *,
+        note: str | None = None,
+        progress: bool = False,
+        on_progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        """Retire a directory entry with an admin token."""
+        return self.retire_repository_entry(
+            entry_id,
+            note=note,
             progress=progress,
             on_progress=on_progress,
         )
@@ -979,11 +1179,32 @@ class GoblinKingNotebookClient:
         )
         raise TimeoutError(f"timed out waiting for repository entry {entry_id} to be {status}")
 
+    def wait_for_directory_status(
+        self,
+        entry_id: str,
+        *,
+        status: str = "published",
+        timeout_seconds: int = 300,
+        poll_seconds: float = 5.0,
+        progress: bool = False,
+        on_progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        """Poll a directory entry until it reaches the requested status."""
+        return self.wait_for_repository_status(
+            entry_id,
+            status=status,
+            timeout_seconds=timeout_seconds,
+            poll_seconds=poll_seconds,
+            progress=progress,
+            on_progress=on_progress,
+        )
+
     def run_repository_function(
         self,
         name: str,
         payload: dict[str, Any] | None = None,
         *,
+        input: dict[str, Any] | None = None,
         project_id: str | None = None,
         version: int | None = None,
         wait: bool = True,
@@ -994,11 +1215,14 @@ class GoblinKingNotebookClient:
         on_progress: ProgressCallback | None = None,
     ) -> dict[str, Any]:
         """Run an approved repository function by project-local name."""
+        if payload is not None and input is not None:
+            raise ValueError("pass either payload or input, not both")
+        request_input = input if input is not None else payload
         response = self._repository_request(
             "POST",
             f"/repository/functions/{urlparse.quote(name, safe='')}/run",
             {
-                "input": payload or {},
+                "input": request_input or {},
                 "project_id": project_id,
                 "version": version,
             },
@@ -1029,6 +1253,36 @@ class GoblinKingNotebookClient:
         )
         return {**response, **run_result}
 
+    def run_directory_function(
+        self,
+        name: str,
+        payload: dict[str, Any] | None = None,
+        *,
+        input: dict[str, Any] | None = None,
+        project_id: str | None = None,
+        version: int | None = None,
+        wait: bool = True,
+        timeout_seconds: int = 120,
+        poll_seconds: float = 1.0,
+        progress: bool = False,
+        progress_interval_seconds: float = 5.0,
+        on_progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        """Run an approved directory function by project-local name."""
+        return self.run_repository_function(
+            name,
+            payload,
+            input=input,
+            project_id=project_id,
+            version=version,
+            wait=wait,
+            timeout_seconds=timeout_seconds,
+            poll_seconds=poll_seconds,
+            progress=progress,
+            progress_interval_seconds=progress_interval_seconds,
+            on_progress=on_progress,
+        )
+
     def repository_service(
         self,
         name: str,
@@ -1043,6 +1297,16 @@ class GoblinKingNotebookClient:
             project_id=project_id,
             version=version,
         )
+
+    def directory_service(
+        self,
+        name: str,
+        *,
+        project_id: str | None = None,
+        version: int | None = None,
+    ) -> RepositoryASGIService:
+        """Return a handle for an approved directory service by name."""
+        return self.repository_service(name, project_id=project_id, version=version)
 
     def start_repository_service(
         self,

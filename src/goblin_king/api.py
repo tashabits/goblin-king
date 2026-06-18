@@ -63,6 +63,7 @@ from goblin_king.api_models import (
     NotebookServiceValidateResponse,
     PageMeta,
     ProjectCreateRequest,
+    RepositoryDeleteResponse,
     RepositoryEntryDetailResponse,
     RepositoryFunctionRunRequest,
     RepositoryFunctionRunResponse,
@@ -2231,8 +2232,6 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         _require_repository_enabled(state)
         scoped_project = project_for_request(principal, project_id)
         requested_status = None if status in {None, "all"} else status
-        if status == "all" and principal.role != "admin":
-            requested_status = "published"
         entries = state.store.list_repository_entries(
             project_id=scoped_project,
             status=requested_status,
@@ -2614,6 +2613,60 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             detail={"note": request.note},
         )
         return _repository_entry_detail(state, updated)
+
+    @app.delete(
+        "/repository/entries/{entry_id}",
+        response_model=RepositoryDeleteResponse,
+        tags=["repository"],
+        operation_id="deleteRepositoryEntry",
+    )
+    def delete_repository_entry(
+        entry_id: str,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> RepositoryDeleteResponse:
+        """Permanently delete a draft, rejected, or retired repository entry."""
+        _require_repository_enabled(state)
+        entry = state.store.get_repository_entry(entry_id)
+        if entry is None:
+            raise HTTPException(status_code=404, detail=f"repository entry not found: {entry_id}")
+        project_for_request(principal, entry.project_id)
+        if entry.status not in {"draft", "rejected", "retired"}:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "repository entry must be draft, rejected, or retired before permanent "
+                    "deletion; retire published entries first"
+                ),
+            )
+        for version_record in state.store.list_repository_versions(entry.id):
+            if entry.type != "notebook_service":
+                continue
+            record = state.store.get_notebook_service(version_record.kind)
+            if record is not None and record.active_service_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail="repository service is still running; stop it before deleting",
+                )
+        try:
+            deleted = state.store.delete_repository_entry(entry.id)
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        audit(
+            state.store,
+            action="repository.delete",
+            outcome="success",
+            principal=principal,
+            project_id=entry.project_id,
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            detail={
+                "name": entry.name,
+                "status": entry.status,
+                "deleted_versions": deleted["deleted_versions"],
+                "deleted_notebook_records": deleted["deleted_notebook_records"],
+            },
+        )
+        return RepositoryDeleteResponse(deleted=True, **deleted)
 
     @app.post(
         "/repository/functions/{name}/run",
