@@ -214,6 +214,7 @@ def _user_server_json(
     headers = {"Accept": "application/json"}
     if data is not None:
         headers["Content-Type"] = "application/json"
+        headers.update(_xsrf_headers(opener, path))
     request = urlrequest.Request(
         f"{proxy_url}{path}",
         data=data,
@@ -227,6 +228,24 @@ def _user_server_json(
         detail = error.read().decode("utf-8", errors="replace")
         raise RuntimeError(f"{method} {path} failed with {error.code}: {detail}") from error
     return json.loads(text) if text else {}
+
+
+def _xsrf_headers(opener: urlrequest.OpenerDirector, request_path: str) -> dict[str, str]:
+    jar = getattr(opener, "_gk_cookiejar", None)
+    if jar is None:
+        return {}
+    matches = [
+        cookie
+        for cookie in jar
+        if cookie.name == "_xsrf" and request_path.startswith(cookie.path)
+    ]
+    if matches:
+        cookie = max(matches, key=lambda item: len(item.path))
+        return {"X-XSRFToken": cookie.value}
+    for cookie in jar:
+        if cookie.name == "_xsrf":
+            return {"X-XSRFToken": cookie.value}
+    return {}
 
 
 def _wait_for_user_url(

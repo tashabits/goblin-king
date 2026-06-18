@@ -8,11 +8,13 @@
   "style": "style/index.css",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:labextension": "jupyter labextension build .",
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@jupyterlab/application": "^4.2.0",
     "@jupyterlab/apputils": "^4.2.0",
+    "@jupyterlab/builder": "^4.2.0",
     "@jupyterlab/coreutils": "^6.2.0",
     "@jupyterlab/services": "^7.2.0",
     "@lumino/widgets": "^2.4.0"

@@ -172,6 +172,7 @@ def main() -> None:
 def _hub_login(proxy_url: str, username: str, password: str) -> urlrequest.OpenerDirector:
     jar = CookieJar()
     opener = urlrequest.build_opener(urlrequest.HTTPCookieProcessor(jar))
+    opener._gk_cookiejar = jar
     login_url = f"{proxy_url}/hub/login"
     login_page = opener.open(login_url, timeout=30).read().decode("utf-8", errors="replace")
     xsrf = _extract_xsrf(login_page)
