@@ -321,6 +321,50 @@ That proof uses the same local Hub users as the workbook proof: `bob` submits bu
 `alice` approves and publishes, `carol` discovers and invokes the published entries,
 and `mallory` is denied.
 
+## JupyterLab Goblin Directory Picker
+
+The local Hub stack can also install a real JupyterLab extension into user notebook
+servers. The extension appears as a left-sidebar panel named **Goblin Directory** and
+talks only to the user's own notebook server:
+
+```text
+/goblin-directory/api
+```
+
+The Python Jupyter server extension reads `JUPYTERHUB_API_TOKEN` and forwards requests
+to `GOBLIN_KING_DIRECTORY_URL` as the signed-in Hub user. If that URL is not set, it
+falls back to the existing API URL behavior. The browser never receives or asks for a
+token.
+
+The picker lists published entries visible to the Hub user. Each option shows display
+name, Directory name, type, project, version, and tags. Function entries expose a JSON
+input box and `Run Function`. Service entries expose `Start Service`, `Probe`, `Proxy`,
+and `Stop`, with proof JSON shown directly in the panel.
+
+Enable the picker locally by rebuilding the Hub stack with the Directory UI enabled:
+
+```bash
+make jupyterhub-stack-up \
+  JUPYTERHUB_STACK_REBUILD=1 \
+  GOBLIN_REPOSITORY_ENABLED=1 \
+  GOBLIN_DIRECTORY_UI_ENABLED=1
+```
+
+That build includes `examples/jupyterhub-goblin-king/singleuser/Dockerfile`, which
+installs the Python user-server extension and the JupyterLab frontend package
+`jupyterlab-goblin-directory/`.
+
+The one-command proof is:
+
+```bash
+make jupyterhub-directory-picker-proof
+```
+
+It brings up Hub, Goblin King, the Directory API, the Directory browser app, and the
+custom single-user image. The proof has `bob` submit function and service entries,
+`alice` approve and publish them, `carol` invoke both through the user-server picker
+proxy, and `mallory` fail to discover entries through the same path.
+
 ## Upload Bundle v1
 
 The browser UI accepts a `.zip` bundle. The required root manifest is

@@ -250,7 +250,8 @@ The default zero-to-jupyterhub values use JupyterHub's dummy authenticator, regi
 Goblin King admin and Goblin Directory browser services, create a starter
 `goblin-users` group containing `alice`, `bob`, and `carol`, make `alice` a
 `goblin-admins` member, leave `mallory` unauthorized for negative proof, and set
-`GOBLIN_KING_API_URL` plus `GOBLIN_KING_NOTEBOOK_PACKAGE` in notebook
+`GOBLIN_KING_API_URL`, `GOBLIN_KING_DIRECTORY_URL`, and
+`GOBLIN_KING_NOTEBOOK_PACKAGE` in notebook
 servers. The local make target injects a branch-aware
 `GOBLIN_KING_NOTEBOOK_PACKAGE` such as
 `git+https://github.com/tashabits/goblin-king.git@develop`; override
@@ -327,6 +328,20 @@ separate directory UI service. It opens the UI through the Hub proxy route
 confirms `mallory` is denied, has `bob` upload v1 zip bundles for a function and ASGI
 service, has `alice` approve and publish them, has `carol` discover and invoke both by
 directory name, then tears down the stack and audits Kubernetes and Docker resources.
+
+Run the JupyterLab picker proof with one command:
+
+```bash
+make jupyterhub-directory-picker-proof
+```
+
+That proof uses the same submit/review/publish setup, but also builds the custom
+single-user image, verifies the Python user-server extension and JupyterLab
+`Goblin Directory` extension are installed in Carol's server, opens Carol's Lab route,
+lists published entries through `/goblin-directory/api/entries`, runs the function by
+name, starts/probes/proxies/stops the ASGI service by name, confirms `mallory` cannot
+discover entries through the same user-server route, and then tears down all stack and
+runtime resources.
 
 That target:
 
@@ -448,6 +463,30 @@ Directory browser flow:
 8. Authorized users search the Directory and run function goblins or start/probe/proxy
    and stop service goblins by repository name.
 
+JupyterLab picker flow:
+
+1. Enable the Directory API and UI with a rebuild so the custom single-user image is
+   built and loaded:
+
+   ```bash
+   make jupyterhub-stack-up \
+     JUPYTERHUB_STACK_REBUILD=1 \
+     GOBLIN_REPOSITORY_ENABLED=1 \
+     GOBLIN_DIRECTORY_UI_ENABLED=1
+   ```
+
+2. A contributor submits and validates entries through a workbook or the Directory UI.
+3. An admin approves and publishes the entries.
+4. A consumer opens JupyterLab and uses the left-sidebar **Goblin Directory** panel.
+5. The panel lists published entries available to the Hub user and shows display name,
+   Directory name, type, project, version, and tags.
+6. Selecting a function enables `Run Function` with JSON input and displays job/run
+   proof.
+7. Selecting a service enables `Start Service`, `Probe`, `Proxy`, and `Stop`, all routed
+   through the user's notebook server at `/goblin-directory/api/...`.
+8. The panel never asks for a token; the notebook server uses `JUPYTERHUB_API_TOKEN`
+   and `GOBLIN_KING_DIRECTORY_URL`.
+
 Notebook function flow:
 
 ```python
@@ -550,6 +589,9 @@ curl -X POST http://goblin-king.default.example/services/long-running \
 | Directory UI redirects to Hub and then returns `invalid OAuth state` | Browser cookies were blocked or the service prefix changed while logging in. | Reload `/services/goblin-directory/`, keep cookies enabled for the Hub origin, and verify `directoryUi.servicePrefix`. |
 | Directory UI returns `directory UI service token is required` | The UI service token Secret was not mounted into the directory UI pod. | Check `directoryUi.serviceTokenSecret` and the `directory-ui-token` key in `goblin-king-jupyterhub-auth`. |
 | `/services/goblin-directory/` is missing from the Hub services menu | The Hub service was not registered or the user lacks the service access scope. | Add the `goblin-directory` service and grant `access:services!service=goblin-directory` to the Hub group. |
+| JupyterLab does not show the `Goblin Directory` panel | The single-user image is not the custom Directory image or the Lab extension was not installed. | Rebuild with `make jupyterhub-stack-up JUPYTERHUB_STACK_REBUILD=1 GOBLIN_REPOSITORY_ENABLED=1 GOBLIN_DIRECTORY_UI_ENABLED=1`, then restart the user server. |
+| The JupyterLab picker says `JUPYTERHUB_API_TOKEN is required` | The user server was not launched by JupyterHub or the token env var was stripped. | Launch the server through JupyterHub and keep the default single-user env. |
+| The JupyterLab picker says `GOBLIN_KING_DIRECTORY_URL or GOBLIN_KING_API_URL is required` | The user server does not know where to send Directory API requests. | Set `singleuser.extraEnv.GOBLIN_KING_DIRECTORY_URL` to the in-cluster Directory API URL. |
 | Bundle preview says `bundle path is not safe` | The zip contains an absolute path or `..` traversal segment. | Recreate the zip with relative paths rooted at the bundle directory. |
 | Bundle preview says `entrypoint must be UTF-8 text` | The configured entrypoint is binary or encoded differently. | Use one UTF-8 Python source file for upload bundle schema v1. |
 | `JupyterHub is unavailable for token validation` | Hub API URL or cluster DNS is wrong. | Confirm `config.jupyterhub.apiUrl` from inside the API pod. |

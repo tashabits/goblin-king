@@ -160,7 +160,7 @@ deploys.
 After the stack is up, the Hub service route
 `http://127.0.0.1:8080/services/goblin-king/` opens the admin UI through
 JupyterHub and should show the normal token login screen.
-Enable the optional repository service and Hub browser UI with:
+Enable the optional Directory API and Hub browser UI with:
 
 ```bash
 make jupyterhub-stack-up \
@@ -174,7 +174,10 @@ Directory app through Hub OAuth. Directory users can upload a v1 zip bundle, sub
 and validate it, request review, and later discover/run/start approved goblins by name
 without pasting tokens into the browser. `make jupyterhub-stack-up` also pre-populates
 Alice, Bob, and Carol notebook servers with role-specific examples under
-`/home/jovyan/examples`.
+`/home/jovyan/examples`. With the Directory UI enabled, the rebuilt single-user image
+also installs the JupyterLab **Goblin Directory** picker. Carol can open JupyterLab,
+select a published function or service from the left sidebar, and run/start/probe/proxy
+or stop it without copying names or tokens.
 `make jupyterhub-workbook-proof` brings up that stack, uses a Hub user token, declares
 and validates a short Python function goblin from workbook-style source, declares a
 FastAPI ASGI service from notebook source, validates it, starts the managed service
@@ -182,6 +185,9 @@ pod, probes/proxies it, stops it, then tears the stack back down.
 `make jupyterhub-directory-ui-proof` brings up Hub, Goblin King, the directory API,
 and the directory UI; proves bob submit, alice review/publish, carol consume, and
 mallory denial through the Hub service route; then tears everything down.
+`make jupyterhub-directory-picker-proof` additionally proves the JupyterLab picker path:
+bob publishes examples, alice approves them, carol invokes both published goblins from
+the user-server Directory proxy, and teardown audits the managed runtime resources.
 `make notebook-service-docker-proof` exercises the same source-authored service
 lifecycle through the local Docker runtime. See
 [`docs/jupyterhub-service-access.md`](docs/jupyterhub-service-access.md) for the exact
