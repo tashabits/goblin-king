@@ -48,6 +48,14 @@ securityContext:
 {{- end -}}
 {{- end -}}
 
+{{- define "goblin-king.repositoryUrl" -}}
+{{- if .Values.repository.url -}}
+{{- .Values.repository.url -}}
+{{- else if .Values.repository.enabled -}}
+{{- printf "http://%s-repository:%v" (include "goblin-king.fullname" .) .Values.repository.port -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "goblin-king.podPlacement" -}}
 {{- with .nodeSelector }}
 nodeSelector:

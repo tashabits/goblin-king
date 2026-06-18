@@ -291,6 +291,7 @@ repository_versions_table = Table(
     Column("id", String, primary_key=True),
     Column("entry_id", String, ForeignKey("repository_entries.id"), nullable=False),
     Column("version", Integer, nullable=False),
+    Column("kind", String, nullable=False),
     Column("source_hash", String, nullable=False),
     Column("runner_image", Text, nullable=False),
     Column("validation_proof_json", Text, nullable=False, default="{}"),

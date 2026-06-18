@@ -2,9 +2,10 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-from goblin_king.contracts import GoblinDefinition
+from goblin_king import api as api_module
+from goblin_king.contracts import GoblinDefinition, GoblinResult, NotebookGoblinRecord, utc_now
 from goblin_king.registry import GoblinRegistry
-from goblin_king.validation import validate_workers
+from goblin_king.validation import WorkerValidationResult, _validate_one, validate_workers
 from goblin_king.workers import WorkerImageDefinition, WorkerImageMap
 
 
@@ -99,3 +100,139 @@ def test_validate_workers_reports_missing_prebuilt_image(monkeypatch) -> None:
 
     assert results[0].ok is False
     assert "worker image unavailable: missing-prebuilt:local" in (results[0].error or "")
+
+
+def test_validate_workers_uses_shared_run_root_for_docker_volume(monkeypatch) -> None:
+    captured = {}
+
+    class FakeDockerRuntime:
+        def __init__(self, *, workers, redis_url, run_root):
+            captured["run_root"] = Path(run_root)
+
+    def fake_validate_one(**kwargs):
+        return WorkerValidationResult(kind=kwargs["kind"], ok=True)
+
+    monkeypatch.setenv("GOBLIN_KING_DOCKER_DATA_VOLUME", "goblin-king-data")
+    monkeypatch.setattr("goblin_king.validation.DockerRuntime", FakeDockerRuntime)
+    monkeypatch.setattr("goblin_king.validation._validate_one", fake_validate_one)
+    registry = GoblinRegistry.from_definitions(
+        [
+            GoblinDefinition(
+                kind="example.prebuilt",
+                display_name="Example Prebuilt",
+                module="goblin_king.container_only",
+            )
+        ]
+    )
+    workers = WorkerImageMap.from_definitions(
+        {
+            "example.prebuilt": WorkerImageDefinition(
+                context=Path("."),
+                image="prebuilt:local",
+            )
+        }
+    )
+
+    results = validate_workers(
+        registry=registry,
+        workers=workers,
+        input_payload={},
+        prebuilt_image=True,
+    )
+
+    assert results[0].ok is True
+    assert captured["run_root"] == Path(".goblin-king") / "runs"
+
+
+def test_validate_one_uses_short_label_safe_job_id_for_long_kinds(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    captured = {}
+    kind = (
+        "repository.1bb95a63-e66f-4a04-9eb2-3bbcc57ec4e7."
+        "k8s.repository.hello.1781754363.v1"
+    )
+
+    class FakeRuntime:
+        def __init__(self) -> None:
+            self.run_root = tmp_path / "runs"
+            self.docker_executable = "docker"
+
+        def run(self, *, context, **_kwargs):
+            captured["job_id"] = context.metadata["job_id"]
+            captured["kind"] = context.metadata["kind"]
+            result_dir = self.run_root / context.run_id
+            result_dir.mkdir(parents=True)
+            result = GoblinResult.ok(data={"ok": True})
+            (result_dir / "result.json").write_text(
+                result.model_dump_json(),
+                encoding="utf-8",
+            )
+            return result
+
+    monkeypatch.setattr(
+        "goblin_king.validation.inspect_image_identity",
+        lambda _docker_executable, image: (f"sha256:{image}", None),
+    )
+
+    result = _validate_one(
+        kind=kind,
+        workers=WorkerImageMap.from_definitions(
+            {kind: WorkerImageDefinition(context=Path("."), image="worker:local")}
+        ),
+        runtime=FakeRuntime(),
+        input_payload={},
+        build=False,
+        require_success=True,
+        prebuilt_image=True,
+        timeout_seconds=30,
+    )
+
+    assert result.ok is True
+    assert captured["kind"] == kind
+    assert len(captured["job_id"]) <= 63
+    assert captured["job_id"].startswith("validation-repository")
+
+
+def test_api_kubernetes_notebook_validation_uses_short_job_id(monkeypatch) -> None:
+    captured = {}
+    kind = (
+        "repository.e9f3043b-e1ed-40f5-b2d1-a6edc27f8541."
+        "k8s.repository.hello.1781754711.v1"
+    )
+    record = NotebookGoblinRecord(
+        kind=kind,
+        display_name="Repository Hello",
+        image="goblin-king-notebook-python-function:local",
+        source="def run(payload):\n    return {'ok': True}\n",
+        source_hash="sha256-source",
+        function_name="run",
+        created_at=utc_now(),
+        updated_at=utc_now(),
+    )
+
+    class FakeKubernetesRuntime:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def run(self, _definition, _entrypoint, _payload, context, **_kwargs):
+            captured["job_id"] = context.metadata["job_id"]
+            captured["kind"] = context.metadata["kind"]
+            return GoblinResult.ok(data={"ok": True})
+
+    monkeypatch.setattr(api_module, "KubernetesRuntime", FakeKubernetesRuntime)
+
+    result = api_module._validate_notebook_with_kubernetes(
+        record=record,
+        input_payload={},
+        require_success=True,
+        timeout_seconds=30,
+        redis_url="redis://redis:6379/0",
+        event_bus=None,
+    )
+
+    assert result.ok is True
+    assert captured["kind"] == kind
+    assert len(captured["job_id"]) <= 63
+    assert captured["job_id"].startswith("validation-repository")

@@ -3,6 +3,9 @@
 from datetime import timedelta
 from pathlib import Path
 
+from sqlalchemy.exc import OperationalError
+
+import goblin_king.store as store_module
 from goblin_king.contracts import (
     DeploymentRecord,
     EventRecord,
@@ -17,6 +20,33 @@ from goblin_king.contracts import (
     utc_now,
 )
 from goblin_king.store import SQLiteStore
+
+
+def test_sqlite_store_retries_concurrent_schema_startup(tmp_path: Path, monkeypatch) -> None:
+    """Verify parallel control-plane startup can tolerate a benign schema race."""
+    original_create_all = store_module.metadata.create_all
+    calls = {"count": 0}
+
+    def flaky_create_all(engine):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise OperationalError(
+                "CREATE TABLE repository_entries",
+                {},
+                Exception("table repository_entries already exists"),
+            )
+        return original_create_all(engine)
+
+    monkeypatch.setattr(store_module.metadata, "create_all", flaky_create_all)
+    monkeypatch.setattr(store_module.time, "sleep", lambda _seconds: None)
+
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    store.save_event(
+        EventRecord(id="event-1", event_type="test", source="api", created_at=utc_now())
+    )
+
+    assert calls["count"] == 2
+    assert store.list_events()[0].id == "event-1"
 
 
 def test_sqlite_store_creates_schema_and_round_trips_completed_run(tmp_path: Path) -> None:

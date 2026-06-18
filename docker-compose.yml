@@ -77,6 +77,8 @@ services:
       GOBLIN_KING_DOCKER_DATA_VOLUME: ${COMPOSE_PROJECT_NAME:-goblin-king}_goblin-king-data
       GOBLIN_KING_DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-goblin-king}_default
       GOBLIN_KING_NOTEBOOK_SERVICE_RUNTIME: docker
+      GOBLIN_KING_REPOSITORY_ENABLED: ${GOBLIN_REPOSITORY_ENABLED:-false}
+      GOBLIN_KING_REPOSITORY_URL: ${GOBLIN_KING_REPOSITORY_URL:-http://repository:8000}
     volumes:
       - .:/app
       - goblin-king-data:/app/.goblin-king
@@ -105,6 +107,40 @@ services:
       LONG_HELLO_URL: http://long-hello:8080
     ports:
       - "8080:8080"
+
+  repository:
+    image: goblin-king:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["repository"]
+    working_dir: /app
+    entrypoint: []
+    depends_on:
+      - redis
+    ports:
+      - "8010:8000"
+    environment:
+      GOBLIN_KING_API_TOKEN: local-dev-token
+      GOBLIN_KING_BOOTSTRAP_ADMIN_TOKEN: local-dev-token
+      GOBLIN_KING_DOCKER_DATA_VOLUME: ${COMPOSE_PROJECT_NAME:-goblin-king}_goblin-king-data
+      GOBLIN_KING_DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-goblin-king}_default
+      GOBLIN_KING_NOTEBOOK_SERVICE_RUNTIME: docker
+      GOBLIN_KING_REPOSITORY_ENABLED: "true"
+      GOBLIN_KING_REPOSITORY_URL: ${GOBLIN_KING_REPOSITORY_URL:-http://repository:8000}
+    volumes:
+      - .:/app
+      - goblin-king-data:/app/.goblin-king
+      - /var/run/docker.sock:/var/run/docker.sock
+    command:
+      - sh
+      - -c
+      - >
+        pip install -e . &&
+        goblin-king api run
+        --settings goblin-king-api.json
+        --host 0.0.0.0
+        --port 8000
 
   worker-example-echo:
     image: goblin-king-example-echo:local

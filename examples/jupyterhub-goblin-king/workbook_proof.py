@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 
 from goblin_king.notebooks import GoblinKingNotebookClient
@@ -34,7 +35,11 @@ def workbook_short_hello(payload):
 def main() -> None:
     """Run the documented declare/validate/run/service flow."""
     args = _parse_args()
-    client = GoblinKingNotebookClient(api_url=args.api_url, token=args.token)
+    client = GoblinKingNotebookClient(
+        api_url=args.api_url,
+        token=args.token,
+        repository_url=args.repository_url,
+    )
     service = None
     try:
         goblin = client.declare(
@@ -88,6 +93,7 @@ def main() -> None:
                     "service_probe": service_probe["response"],
                     "service_proxy": service_proxy,
                     "service_stop": service_stop["notebook_service"]["runtime_status"],
+                    "repository_url": client.repository_url,
                 },
                 indent=2,
             )
@@ -117,6 +123,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--kind", default="notebook.workbook-short-hello")
     parser.add_argument("--generated-service-kind", default="notebook.workbook-long-hello")
     parser.add_argument("--service-probe-path", default="/hello")
+    parser.add_argument(
+        "--repository-url",
+        default=os.environ.get("GOBLIN_KING_REPOSITORY_URL", ""),
+    )
     parser.add_argument("--timeout-seconds", type=int, default=180)
     return parser.parse_args()
 

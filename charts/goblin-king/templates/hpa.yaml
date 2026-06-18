@@ -1,7 +1,7 @@
 {{- $root := . -}}
-{{- range $component := list "api" "scheduler" "admin" }}
+{{- range $component := list "api" "scheduler" "admin" "repository" }}
 {{- $settings := index $root.Values $component }}
-{{- if and (or (ne $component "scheduler") $root.Values.scheduler.enabled) (or (ne $component "admin") $root.Values.admin.enabled) $settings.autoscaling.enabled }}
+{{- if and (or (ne $component "scheduler") $root.Values.scheduler.enabled) (or (ne $component "admin") $root.Values.admin.enabled) (or (ne $component "repository") $root.Values.repository.enabled) $settings.autoscaling.enabled }}
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler

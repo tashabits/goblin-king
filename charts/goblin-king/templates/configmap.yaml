@@ -1,3 +1,4 @@
+{{- $repositoryUrl := include "goblin-king.repositoryUrl" . -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -15,6 +16,10 @@ data:
       "notebook_service_image": "{{ .Values.config.notebookServiceImage }}",
       "notebook_service_runtime": "{{ .Values.config.notebookServiceRuntime }}",
       "bootstrap_admin_token": "{{ .Values.api.bootstrapAdminToken }}",
+      "repository": {
+        "enabled": {{ .Values.repository.enabled }},
+        "url": {{ if $repositoryUrl }}{{ $repositoryUrl | quote }}{{ else }}null{{ end }}
+      },
       "oidc": {
         "enabled": {{ .Values.config.oidc.enabled }},
         "issuer": {{ if .Values.config.oidc.issuer }}{{ .Values.config.oidc.issuer | quote }}{{ else }}null{{ end }},
