@@ -104,6 +104,70 @@ curl -X POST \
   http://127.0.0.1:8000/repository/entries/<entry-id>/publish
 ```
 
+## Invoke Published Goblins By Name
+
+After approval and publication, callers do not need to copy notebook source. They call
+the project-scoped repository name, which resolves to the latest published immutable
+version unless a specific `version` is supplied.
+
+Run a published function goblin:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer <project-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"input":{"name":"Ada"}}' \
+  http://127.0.0.1:8000/repository/functions/demo.hello/run
+```
+
+Start, probe, proxy, and stop a published ASGI service goblin:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer <project-token>" \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  http://127.0.0.1:8000/repository/services/demo.long-hello/start
+```
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer <project-token>" \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  http://127.0.0.1:8000/repository/services/demo.long-hello/probe
+```
+
+```bash
+curl -H "Authorization: Bearer <project-token>" \
+  http://127.0.0.1:8000/repository/services/demo.long-hello/proxy/hello
+```
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer <project-token>" \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  http://127.0.0.1:8000/repository/services/demo.long-hello/stop
+```
+
+The notebook helper exposes the same invocation path:
+
+```python
+result = client.run_repository_function("demo.hello", {"name": "Ada"})
+
+service = client.repository_service("demo.long-hello")
+service.start(progress=True)
+service.probe()
+service.proxy("/hello")
+service.stop()
+```
+
+Normal users only resolve entries in their project scope. Admins can specify
+`project_id` to resolve a different project, and any caller can specify `version` to use
+a particular published version. Draft, rejected, retired, and unpublished versions are
+not invokable by normal callers.
+
 ## Docker Compose Enablement
 
 For local Compose, add the repository block to the API settings file used by the `api`

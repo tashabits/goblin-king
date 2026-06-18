@@ -51,4 +51,9 @@ def test_repository_operator_docs_cover_stack_enablement() -> None:
     assert "## Docker Compose Enablement" in repository_doc
     assert "## Helm Enablement" in repository_doc
     assert "## JupyterHub Stack Enablement" in repository_doc
+    assert "## Invoke Published Goblins By Name" in repository_doc
+    assert "/repository/functions/demo.hello/run" in repository_doc
+    assert "/repository/services/demo.long-hello/start" in repository_doc
+    assert "client.run_repository_function" in repository_doc
+    assert "client.repository_service" in repository_doc
     assert "Non-admin callers cannot request another `project_id`" in repository_doc
