@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import time
@@ -51,21 +52,21 @@ def main() -> None:
         api_url = f"http://127.0.0.1:{args.local_port}"
         _wait_for_api(f"{api_url}/health")
         _wait_for_authenticated_api(api_url, args.token)
-        subprocess.run(
-            [
-                sys.executable,
-                args.workbook_proof,
-                "--api-url",
-                api_url,
-                "--token",
-                args.token,
-                "--project-id",
-                args.project_id,
-                "--kind",
-                args.kind,
-            ],
-            check=True,
-        )
+        proof_command = [
+            sys.executable,
+            args.workbook_proof,
+            "--api-url",
+            api_url,
+            "--token",
+            args.token,
+            "--project-id",
+            args.project_id,
+            "--kind",
+            args.kind,
+        ]
+        if args.repository_url:
+            proof_command.extend(["--repository-url", args.repository_url])
+        subprocess.run(proof_command, check=True)
     finally:
         if port_forward is not None:
             port_forward.terminate()
@@ -160,6 +161,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--project-id", default="default")
     parser.add_argument("--kind", default="notebook.workbook-short-hello")
     parser.add_argument("--kind-cluster", default="kind")
+    parser.add_argument(
+        "--repository-url",
+        default=os.environ.get("GOBLIN_KING_REPOSITORY_URL", ""),
+    )
     parser.add_argument(
         "--workbook-proof",
         default="examples/jupyterhub-goblin-king/workbook_proof.py",

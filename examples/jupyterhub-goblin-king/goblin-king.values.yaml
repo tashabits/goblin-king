@@ -26,3 +26,7 @@ config:
       goblin-admins: default
     defaultProjectId: default
     cacheTtlSeconds: 60
+
+repository:
+  enabled: false
+  url: ""

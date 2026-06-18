@@ -227,11 +227,16 @@ class GoblinKingNotebookClient:
         self,
         api_url: str | None = None,
         token: str | None = None,
+        repository_url: str | None = None,
         request_timeout_seconds: float = 120.0,
     ) -> None:
         self.api_url = (api_url or os.environ.get("GOBLIN_KING_API_URL") or "").rstrip("/")
         if not self.api_url:
             self.api_url = "http://127.0.0.1:8000"
+        configured_repository_url = (
+            repository_url or os.environ.get("GOBLIN_KING_REPOSITORY_URL") or ""
+        ).rstrip("/")
+        self.repository_url = configured_repository_url or None
         self.request_timeout_seconds = request_timeout_seconds
         self.token = (
             token

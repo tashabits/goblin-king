@@ -35,6 +35,29 @@ api:
     enabled: false
     minAvailable: 1
 
+repository:
+  enabled: false
+  replicas: 1
+  port: 8000
+  url: ""
+  podLabels: {}
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 80
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
+
 scheduler:
   enabled: true
   replicas: 1

@@ -20,5 +20,9 @@
     "role_claim": "goblin_king_role",
     "project_claim": "goblin_king_project_id",
     "admin_roles": ["admin"]
+  },
+  "repository": {
+    "enabled": false,
+    "url": null
   }
 }
