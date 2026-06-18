@@ -114,6 +114,7 @@ proxy:
 singleuser:
   extraEnv:
     GOBLIN_KING_API_URL: http://goblin-king-api.default.svc.cluster.local:8000
+    GOBLIN_KING_DIRECTORY_URL: ""
     GOBLIN_KING_REPOSITORY_URL: ""
     GOBLIN_KING_NOTEBOOK_PACKAGE: git+https://github.com/tashabits/goblin-king.git
   networkPolicy:

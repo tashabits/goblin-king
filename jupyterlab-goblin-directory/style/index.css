@@ -1,0 +1,82 @@
+.gk-directory-picker {
+  min-width: 320px;
+  overflow: auto;
+  padding: 12px;
+  color: var(--jp-ui-font-color1);
+  background: var(--jp-layout-color1);
+}
+
+.gk-directory-picker button,
+.gk-directory-picker input,
+.gk-directory-picker select,
+.gk-directory-picker textarea {
+  font: var(--jp-ui-font-size1) var(--jp-ui-font-family);
+}
+
+.gk-directory-picker button {
+  min-height: 28px;
+  padding: 3px 8px;
+}
+
+.gk-directory-picker button:disabled {
+  opacity: 0.45;
+}
+
+.gk-directory-picker__toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
+.gk-directory-picker__label {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0;
+  font-weight: 600;
+}
+
+.gk-directory-picker select,
+.gk-directory-picker input,
+.gk-directory-picker textarea {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--jp-border-color1);
+  border-radius: 4px;
+  padding: 5px 6px;
+  color: var(--jp-ui-font-color1);
+  background: var(--jp-layout-color0);
+}
+
+.gk-directory-picker textarea {
+  min-height: 84px;
+  resize: vertical;
+  font-family: var(--jp-code-font-family);
+  font-size: var(--jp-code-font-size);
+}
+
+.gk-directory-picker__summary,
+.gk-directory-picker__output {
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid var(--jp-border-color2);
+  border-radius: 4px;
+  padding: 8px;
+  background: var(--jp-layout-color0);
+}
+
+.gk-directory-picker__summary {
+  min-height: 92px;
+}
+
+.gk-directory-picker__output {
+  min-height: 120px;
+  margin-top: 12px;
+  font-family: var(--jp-code-font-family);
+  font-size: var(--jp-code-font-size);
+}
+
+.gk-directory-picker__actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
