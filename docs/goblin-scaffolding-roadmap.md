@@ -11,7 +11,7 @@ Scaffolding creates a starter. Validation decides whether it can run.
 
 ## Goals
 
-- Plan starter folders for contract-compliant Docker goblins.
+- Plan starter folders for contract-compliant task and service goblins.
 - Share one future template engine between CLI scaffolding and Goblin Designer.
 - Keep generated goblins representable in `GoblinProject`.
 - Make validation the handoff from generated files to schedulable work.
@@ -24,7 +24,7 @@ Scaffolding creates a starter. Validation decides whether it can run.
   explicitly accepted.
 - No browser-based IDE in the first scaffolding pass.
 - No freeform browser-based AI code generation in the first pass.
-- Goblins remain contract-compliant OCI/Docker containers.
+- Scaffolded goblins remain validated container-backed workloads.
 - Project config remains the primary adopter interface.
 
 ## Scaffold Phase 1: Template Manifest Format

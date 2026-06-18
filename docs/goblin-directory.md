@@ -1,8 +1,26 @@
 # Goblin Directory Contract
 
-The Goblin Directory is an optional service for sharing approved notebook-authored
-goblins. It is off by default and must be enabled explicitly in API settings or in the
-deployment values that render those settings.
+The Goblin Directory is an optional deployment-local service for sharing approved
+notebook-authored goblins inside one Goblin King deployment. It is off by default and
+must be enabled explicitly in API settings or in the deployment values that render those
+settings.
+
+## Directory Scope
+
+The Goblin Directory belongs to one Goblin King deployment. It is intended for teams,
+classrooms, labs, research groups, and trusted internal deployments where users share
+validated goblins with each other.
+
+It is not a public marketplace, public registry, or app store. Published goblins are
+approved for use within this deployment only.
+
+Users in the same deployment can define goblins, validate them, and request review.
+Admins or maintainers can approve and publish them. Other authorized deployment users
+can discover and invoke published goblins by name.
+
+Approval is a sharing gate rather than a security certification. Validation proves
+contract compliance, not trustworthiness. Deployment operators remain responsible for
+runner images, auth, resource policy, secrets, networking, and trust boundaries.
 
 The first durable contract is a two-part model:
 
@@ -106,9 +124,9 @@ curl -X POST \
 
 ## Invoke Published Goblins By Name
 
-After approval and publication, callers do not need to copy notebook source. They call
-the project-scoped repository name, which resolves to the latest published immutable
-version unless a specific `version` is supplied.
+After approval and publication, callers in the same deployment do not need to copy
+notebook source. They call the project-scoped Directory name, which resolves to the
+latest published immutable version unless a specific `version` is supplied.
 
 Run a published function goblin:
 
@@ -171,9 +189,11 @@ not invokable by normal callers.
 ## Notebook Directory Workflow
 
 The JupyterHub workbook path can use the notebook helper instead of hand-written HTTP
-requests. The helper reads `GOBLIN_KING_API_URL`, `GOBLIN_KING_REPOSITORY_URL`, and
-`JUPYTERHUB_API_TOKEN` from the notebook server environment, or accepts explicit
-constructor arguments:
+requests. Notebook authors may submit source without writing a Dockerfile for each
+goblin, but Goblin King still validates and runs that source inside configured runner
+containers controlled by the deployment. The helper reads `GOBLIN_KING_API_URL`,
+`GOBLIN_KING_REPOSITORY_URL`, and `JUPYTERHUB_API_TOKEN` from the notebook server
+environment, or accepts explicit constructor arguments:
 
 ```python
 from goblin_king.notebooks import GoblinKingNotebookClient
@@ -270,8 +290,8 @@ operator fix instead of failing as an opaque 404.
 
 ## Browser Goblin Directory UI
 
-The optional directory UI is a separate JupyterHub service from the admin panel. It is
-mounted at:
+The optional directory UI is a separate JupyterHub service from the admin panel for the
+same deployment-local Directory. It is mounted at:
 
 ```text
 /services/goblin-directory/

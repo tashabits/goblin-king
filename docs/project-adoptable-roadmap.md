@@ -574,7 +574,8 @@ No GitHub Actions proof is required or sufficient.
 - Do not introduce cloud-specific assumptions.
 - Docker Compose/local Docker remains the default adopter proof path.
 - Helm remains optional and cloud-neutral.
-- Short-lived self-terminating task containers remain the primary worker model.
+- Short-lived task goblins remain the primary adopter workflow, while service and
+  notebook-authored goblins use the same container-backed validation model.
 - Validation should test the container contract, not language implementation
   details.
 - Security docs must be honest: project-adoptable alpha does not mean safe for
@@ -807,11 +808,11 @@ sufficient.
 - Confirm the adopter position:
 
 ```text
-Goblin King can be used by trusted self-hosted projects as a local/project
-scheduler for contract-compliant Docker task containers. Adopters can run the
-local/dev stack and use the admin panel to validate, submit, and inspect their
-own project goblins. This remains project-adoptable alpha software and is not
-intended for untrusted third-party container execution.
+Goblin King can be used by trusted self-hosted projects as a local/project control
+plane for validated container-backed workloads. Adopters can run the local/dev stack
+and use the admin panel to validate, submit, and inspect their own project goblins.
+This remains project-adoptable alpha software and is not intended for untrusted
+third-party container execution.
 ```
 
 ## Deferred After Phase 58
