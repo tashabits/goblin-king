@@ -220,6 +220,91 @@ class NotebookASGIService:
         return service_id
 
 
+@dataclass
+class RepositoryASGIService:
+    """Client-side handle for an approved repository ASGI service."""
+
+    client: GoblinKingNotebookClient
+    name: str
+    project_id: str | None = None
+    version: int | None = None
+    record: dict[str, Any] | None = None
+
+    def start(
+        self,
+        *,
+        timeout_seconds: int = 120,
+        progress: bool = False,
+        on_progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        """Start this approved repository service by name."""
+        started_at = time.monotonic()
+        self.client._emit_service_progress(
+            phase="starting",
+            kind=self.name,
+            service=self.record or {},
+            elapsed_seconds=0.0,
+            progress=progress,
+            on_progress=on_progress,
+        )
+        try:
+            response = self.client.start_repository_service(
+                self.name,
+                project_id=self.project_id,
+                version=self.version,
+                timeout_seconds=timeout_seconds,
+            )
+        except Exception:
+            self.client._emit_service_progress(
+                phase="failed",
+                kind=self.name,
+                service=self.record or {},
+                elapsed_seconds=time.monotonic() - started_at,
+                progress=progress,
+                on_progress=on_progress,
+            )
+            raise
+        self.record = response["notebook_service"]
+        self.client._emit_service_progress(
+            phase="running",
+            kind=self.name,
+            service=self.record,
+            elapsed_seconds=time.monotonic() - started_at,
+            progress=progress,
+            on_progress=on_progress,
+        )
+        return response
+
+    def probe(self) -> dict[str, Any]:
+        """Probe this approved repository service by name."""
+        response = self.client.probe_repository_service(
+            self.name,
+            project_id=self.project_id,
+            version=self.version,
+        )
+        self.record = response["notebook_service"]
+        return response
+
+    def proxy(self, path: str) -> dict[str, Any]:
+        """Proxy one GET request to this approved repository service by name."""
+        return self.client.proxy_repository_service(
+            self.name,
+            path,
+            project_id=self.project_id,
+            version=self.version,
+        )
+
+    def stop(self) -> dict[str, Any]:
+        """Stop this approved repository service by name."""
+        response = self.client.stop_repository_service(
+            self.name,
+            project_id=self.project_id,
+            version=self.version,
+        )
+        self.record = response["notebook_service"]
+        return response
+
+
 class GoblinKingNotebookClient:
     """Tiny HTTP client intended for JupyterHub workbooks."""
 
@@ -355,6 +440,142 @@ class GoblinKingNotebookClient:
             f"/notebooks/services/{urlparse.quote(kind, safe='')}/stop",
         )
 
+    def run_repository_function(
+        self,
+        name: str,
+        payload: dict[str, Any] | None = None,
+        *,
+        project_id: str | None = None,
+        version: int | None = None,
+        wait: bool = True,
+        timeout_seconds: int = 120,
+        poll_seconds: float = 1.0,
+        progress: bool = False,
+        progress_interval_seconds: float = 5.0,
+        on_progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        """Run an approved repository function by project-local name."""
+        response = self._repository_request(
+            "POST",
+            f"/repository/functions/{urlparse.quote(name, safe='')}/run",
+            {
+                "input": payload or {},
+                "project_id": project_id,
+                "version": version,
+            },
+        )
+        job = response["job"]
+        kind = str(response["version"]["kind"])
+        start = time.monotonic()
+        self._emit_progress(
+            phase="submitted",
+            kind=kind,
+            job=job,
+            run=None,
+            elapsed_seconds=0.0,
+            progress=progress,
+            on_progress=on_progress,
+        )
+        if not wait:
+            return {**response, "run": None}
+        run_result = self._wait_for_job(
+            job,
+            kind,
+            started_at=start,
+            timeout_seconds=timeout_seconds,
+            poll_seconds=poll_seconds,
+            progress=progress,
+            progress_interval_seconds=progress_interval_seconds,
+            on_progress=on_progress,
+        )
+        return {**response, **run_result}
+
+    def repository_service(
+        self,
+        name: str,
+        *,
+        project_id: str | None = None,
+        version: int | None = None,
+    ) -> RepositoryASGIService:
+        """Return a handle for an approved repository service by name."""
+        return RepositoryASGIService(
+            client=self,
+            name=name,
+            project_id=project_id,
+            version=version,
+        )
+
+    def start_repository_service(
+        self,
+        name: str,
+        *,
+        project_id: str | None = None,
+        version: int | None = None,
+        timeout_seconds: int = 120,
+    ) -> dict[str, Any]:
+        """Start an approved repository service by name."""
+        return self._repository_request(
+            "POST",
+            f"/repository/services/{urlparse.quote(name, safe='')}/start",
+            {
+                "project_id": project_id,
+                "version": version,
+                "timeout_seconds": timeout_seconds,
+            },
+        )
+
+    def probe_repository_service(
+        self,
+        name: str,
+        *,
+        project_id: str | None = None,
+        version: int | None = None,
+    ) -> dict[str, Any]:
+        """Probe an approved repository service by name."""
+        return self._repository_request(
+            "POST",
+            f"/repository/services/{urlparse.quote(name, safe='')}/probe",
+            {"project_id": project_id, "version": version},
+        )
+
+    def proxy_repository_service(
+        self,
+        name: str,
+        path: str,
+        *,
+        project_id: str | None = None,
+        version: int | None = None,
+    ) -> dict[str, Any]:
+        """Proxy one GET request to an approved repository service by name."""
+        clean_path = path if path.startswith("/") else f"/{path}"
+        query: dict[str, str] = {}
+        if project_id is not None:
+            query["project_id"] = project_id
+        if version is not None:
+            query["version"] = str(version)
+        suffix = ""
+        if query:
+            suffix = f"?{urlparse.urlencode(query)}"
+        return self._repository_request(
+            "GET",
+            f"/repository/services/{urlparse.quote(name, safe='')}/proxy"
+            f"{urlparse.quote(clean_path, safe='/')}{suffix}",
+        )
+
+    def stop_repository_service(
+        self,
+        name: str,
+        *,
+        project_id: str | None = None,
+        version: int | None = None,
+    ) -> dict[str, Any]:
+        """Stop an approved repository service by name."""
+        return self._repository_request(
+            "POST",
+            f"/repository/services/{urlparse.quote(name, safe='')}/stop",
+            {"project_id": project_id, "version": version},
+        )
+
     def run(
         self,
         kind: str,
@@ -381,8 +602,32 @@ class GoblinKingNotebookClient:
         )
         if not wait:
             return {"job": job, "run": None}
-        deadline = start + timeout_seconds
-        next_progress = start + progress_interval_seconds
+        return self._wait_for_job(
+            job,
+            kind,
+            started_at=start,
+            timeout_seconds=timeout_seconds,
+            poll_seconds=poll_seconds,
+            progress=progress,
+            progress_interval_seconds=progress_interval_seconds,
+            on_progress=on_progress,
+        )
+
+    def _wait_for_job(
+        self,
+        job: dict[str, Any],
+        kind: str,
+        *,
+        started_at: float,
+        timeout_seconds: int,
+        poll_seconds: float,
+        progress: bool,
+        progress_interval_seconds: float,
+        on_progress: ProgressCallback | None,
+    ) -> dict[str, Any]:
+        """Poll one submitted job until it reaches a terminal state."""
+        deadline = started_at + timeout_seconds
+        next_progress = started_at + progress_interval_seconds
         latest_job = job
         latest_run = None
         while time.monotonic() < deadline:
@@ -396,7 +641,7 @@ class GoblinKingNotebookClient:
                     kind=kind,
                     job=latest_job,
                     run=latest_run,
-                    elapsed_seconds=now - start,
+                    elapsed_seconds=now - started_at,
                     progress=progress,
                     on_progress=on_progress,
                 )
@@ -407,7 +652,7 @@ class GoblinKingNotebookClient:
                     kind=kind,
                     job=latest_job,
                     run=latest_run,
-                    elapsed_seconds=now - start,
+                    elapsed_seconds=now - started_at,
                     progress=progress,
                     on_progress=on_progress,
                 )
@@ -491,6 +736,8 @@ class GoblinKingNotebookClient:
         method: str,
         path: str,
         payload: dict[str, Any] | None = None,
+        *,
+        base_url: str | None = None,
     ) -> dict[str, Any]:
         data = None if payload is None else json.dumps(payload).encode("utf-8")
         headers = {
@@ -500,7 +747,7 @@ class GoblinKingNotebookClient:
         if data is not None:
             headers["Content-Type"] = "application/json"
         request = urlrequest.Request(
-            f"{self.api_url}{path}",
+            f"{base_url or self.api_url}{path}",
             data=data,
             headers=headers,
             method=method,
@@ -521,6 +768,20 @@ class GoblinKingNotebookClient:
                 f"{method} {path} failed with {error.code}: {body}{hint}"
             ) from error
         return json.loads(raw) if raw else {}
+
+    def _repository_request(
+        self,
+        method: str,
+        path: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Send a repository request to the configured repository endpoint."""
+        return self._request(
+            method,
+            path,
+            payload,
+            base_url=self.repository_url or self.api_url,
+        )
 
 
 def _function_source(function: Callable[..., Any]) -> str:

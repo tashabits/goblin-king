@@ -353,6 +353,136 @@ def test_notebook_client_run_progress_callback_does_not_print(monkeypatch, capsy
     }
 
 
+def test_notebook_client_runs_repository_function_by_name(monkeypatch) -> None:
+    """Verify approved repository functions can be invoked through the helper."""
+    client = GoblinKingNotebookClient(
+        api_url="http://goblin.local",
+        repository_url="http://repository.local",
+        token="token",
+    )
+    repository_requests = []
+    api_requests = []
+
+    def fake_repository_request(_method, path, payload=None):
+        repository_requests.append((_method, path, payload))
+        return {
+            "entry": {"name": "shared.hello"},
+            "version": {"kind": "repository.project.shared.hello.v1", "version": 1},
+            "job": {"id": "job-1", "status": "queued"},
+        }
+
+    def fake_request(_method, path, _payload=None):
+        api_requests.append((_method, path))
+        if path == "/jobs/job-1":
+            return {"id": "job-1", "status": "completed"}
+        if path.startswith("/runs"):
+            return {"items": [{"id": "run-1", "job_id": "job-1", "status": "completed"}]}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(client, "_repository_request", fake_repository_request)
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    result = client.run_repository_function(
+        "shared.hello",
+        {"name": "Ada"},
+        project_id="project-1",
+        version=1,
+        poll_seconds=0,
+    )
+
+    assert repository_requests == [
+        (
+            "POST",
+            "/repository/functions/shared.hello/run",
+            {"input": {"name": "Ada"}, "project_id": "project-1", "version": 1},
+        )
+    ]
+    assert api_requests == [
+        ("GET", "/jobs/job-1"),
+        ("GET", "/runs?kind=repository.project.shared.hello.v1&limit=100"),
+    ]
+    assert result["entry"]["name"] == "shared.hello"
+    assert result["job"]["status"] == "completed"
+    assert result["run"]["id"] == "run-1"
+
+
+def test_notebook_client_repository_service_handle_calls_name_routes(monkeypatch) -> None:
+    """Verify repository service handles use name-based lifecycle routes."""
+    client = GoblinKingNotebookClient(api_url="http://goblin.local", token="token")
+    requests = []
+
+    def fake_repository_request(_method, path, payload=None):
+        requests.append((_method, path, payload))
+        if path.endswith("/start"):
+            return {
+                "notebook_service": {
+                    "kind": "repository.project.shared.long-hello.v1",
+                    "runtime_status": "running",
+                    "active_service_id": "service-1",
+                },
+                "service": {"id": "service-1"},
+                "runtime": {},
+                "probe": {},
+            }
+        if path.endswith("/probe"):
+            return {
+                "notebook_service": {
+                    "kind": "repository.project.shared.long-hello.v1",
+                    "runtime_status": "running",
+                    "active_service_id": "service-1",
+                },
+                "probe": {},
+            }
+        if "/proxy/" in path:
+            return {"ok": True}
+        if path.endswith("/stop"):
+            return {
+                "notebook_service": {
+                    "kind": "repository.project.shared.long-hello.v1",
+                    "runtime_status": "stopped",
+                    "active_service_id": None,
+                },
+                "runtime": {"stopped": True},
+            }
+        raise AssertionError(path)
+
+    monkeypatch.setattr(client, "_repository_request", fake_repository_request)
+
+    service = client.repository_service(
+        "shared.long-hello",
+        project_id="project-1",
+        version=1,
+    )
+    service.start(timeout_seconds=10)
+    service.probe()
+    service.proxy("/hello")
+    service.stop()
+
+    assert requests == [
+        (
+            "POST",
+            "/repository/services/shared.long-hello/start",
+            {"project_id": "project-1", "version": 1, "timeout_seconds": 10},
+        ),
+        (
+            "POST",
+            "/repository/services/shared.long-hello/probe",
+            {"project_id": "project-1", "version": 1},
+        ),
+        (
+            "GET",
+            "/repository/services/shared.long-hello/proxy/hello?project_id=project-1&version=1",
+            None,
+        ),
+        (
+            "POST",
+            "/repository/services/shared.long-hello/stop",
+            {"project_id": "project-1", "version": 1},
+        ),
+    ]
+    assert service.record["runtime_status"] == "stopped"
+
+
 def test_api_builds_lists_and_submits_notebook_goblin(tmp_path: Path) -> None:
     """Verify the API stores notebook function bundles and submits them by custom kind."""
     client, store, _artifact_root = build_api_client(tmp_path)
