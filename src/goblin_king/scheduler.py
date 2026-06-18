@@ -21,7 +21,13 @@ from goblin_king.contracts import (
 )
 from goblin_king.events import EventBus
 from goblin_king.metadata import goblin_job_metadata
-from goblin_king.registry import GoblinRegistry
+from goblin_king.notebooks import (
+    notebook_definition,
+    notebook_validation_identity,
+    notebook_worker_input,
+    notebook_worker_map,
+)
+from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.resource_policies import ResourcePolicySet, policy_from_job_metadata
 from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRuntime, new_run_context
 from goblin_king.store import SQLiteStore
@@ -106,6 +112,25 @@ class Scheduler:
                 event_bus=self.event_bus,
             )
         return InProcessRuntime()
+
+    def _build_runtime_for_workers(
+        self,
+        workers: WorkerImageMap,
+    ) -> DockerRuntime | KubernetesRuntime | InProcessRuntime:
+        """Build a one-off runtime for dynamic worker mappings."""
+        if self.runtime_mode == "docker":
+            return DockerRuntime(
+                workers=workers,
+                redis_url=self.redis_url,
+                event_bus=self.event_bus,
+            )
+        if self.runtime_mode == "kubernetes":
+            return KubernetesRuntime(
+                workers=workers,
+                redis_url=self.redis_url,
+                event_bus=self.event_bus,
+            )
+        return self.runtime
 
     def materialize_due_schedules(self, now: datetime | None = None) -> list[JobRecord]:
         """Create queued jobs for enabled schedules whose next run is due."""
@@ -276,11 +301,34 @@ class Scheduler:
             payload={"kind": job.kind, "attempt": attempt},
         )
 
+        runtime = self.runtime
+        runtime_workers = self.workers
+        runtime_registry = self.registry
+        runtime_input = job.input
+        notebook_record = None
         if self.runtime_mode in {"docker", "kubernetes"}:
-            definition = self.registry.get(job.kind)
+            try:
+                definition = self.registry.get(job.kind)
+            except RegistryError:
+                notebook_record = self.store.get_notebook_goblin(job.kind)
+                if notebook_record is None:
+                    raise
+                definition = notebook_definition(notebook_record)
+                runtime_workers = notebook_worker_map(notebook_record)
+                runtime_registry = GoblinRegistry.from_definitions([definition])
+                runtime = self._build_runtime_for_workers(runtime_workers)
+                runtime_input = notebook_worker_input(notebook_record, job.input)
             entrypoint = None
         else:
-            definition, entrypoint = self.registry.resolve(job.kind)
+            try:
+                definition, entrypoint = self.registry.resolve(job.kind)
+            except RegistryError:
+                notebook_record = self.store.get_notebook_goblin(job.kind)
+                if notebook_record is None:
+                    raise
+                definition = notebook_definition(notebook_record)
+                entrypoint = None
+                runtime_input = notebook_worker_input(notebook_record, job.input)
         context = new_run_context(job.id, job.kind, attempt)
         resource_policy = policy_from_job_metadata(job.metadata)
         source_metadata = {
@@ -308,10 +356,17 @@ class Scheduler:
                     }
                 }
             )
-        if isinstance(self.runtime, DockerRuntime | KubernetesRuntime):
+        if isinstance(runtime, DockerRuntime | KubernetesRuntime):
             validation_error = self._validate_before_container_run(
                 job,
                 definition.kind,
+                registry=runtime_registry,
+                workers=runtime_workers,
+                runtime=runtime,
+                input_payload=runtime_input,
+                notebook_source_hash=(
+                    notebook_record.source_hash if notebook_record is not None else None
+                ),
                 resource_policy=resource_policy.compact() if resource_policy else {},
             )
             if validation_error is not None:
@@ -356,16 +411,20 @@ class Scheduler:
                     detail={"kind": job.kind, "error": validation_error},
                 )
                 return run
-            result = self.runtime.run(
+            result = runtime.run(
                 definition,
                 entrypoint,
-                job.input,
+                runtime_input,
                 context,
                 timeout_seconds=job.timeout_seconds,
                 resource_policy=resource_policy,
             )
+        elif notebook_record is not None:
+            result = GoblinResult.failed(
+                error="notebook-defined goblins require docker or kubernetes runtime"
+            )
         else:
-            result = self.runtime.run(definition, entrypoint, job.input, context)
+            result = runtime.run(definition, entrypoint, runtime_input, context)
         finished_at = utc_now()
         status = _status_for_result(result, started_at, finished_at, job.timeout_seconds)
         error = result.error
@@ -429,17 +488,26 @@ class Scheduler:
         job: JobRecord,
         kind: str,
         *,
+        registry: GoblinRegistry | None = None,
+        workers: WorkerImageMap | None = None,
+        runtime: DockerRuntime | KubernetesRuntime | InProcessRuntime | None = None,
+        input_payload: dict | None = None,
+        notebook_source_hash: str | None = None,
         resource_policy: dict,
     ) -> str | None:
         """Ensure the current worker image identity has passed contract validation."""
-        if self.workers is None:
+        worker_map = workers or self.workers
+        active_registry = registry or self.registry
+        active_runtime = runtime or self.runtime
+        payload = job.input if input_payload is None else input_payload
+        if worker_map is None:
             return format_validation_gate_error(
                 kind=kind,
                 image=None,
                 reason="worker image map is required for validation",
             )
         try:
-            worker = self.workers.get(kind)
+            worker = worker_map.get(kind)
         except WorkerConfigError as error:
             return format_validation_gate_error(
                 kind=kind,
@@ -447,50 +515,73 @@ class Scheduler:
                 reason=str(error),
             )
         validation_run_root = (
-            self.runtime.run_root if isinstance(self.runtime, DockerRuntime) else None
+            active_runtime.run_root if isinstance(active_runtime, DockerRuntime) else None
         )
         docker_executable = (
-            self.runtime.docker_executable
-            if isinstance(self.runtime, DockerRuntime)
+            active_runtime.docker_executable
+            if isinstance(active_runtime, DockerRuntime)
             else "docker"
         )
-        image_digest, image_error = inspect_image_identity(docker_executable, worker.image)
+        if isinstance(active_runtime, KubernetesRuntime):
+            image_digest, image_error = f"kubernetes:{worker.image}", None
+        else:
+            image_digest, image_error = inspect_image_identity(docker_executable, worker.image)
+        validation_identity = (
+            notebook_validation_identity(image_digest, notebook_source_hash)
+            if notebook_source_hash is not None
+            else image_digest
+        )
         latest_for_kind = self.store.latest_worker_validation_for_kind(kind)
         if image_error is not None or image_digest is None:
             error = image_error or f"worker image digest unavailable: {worker.image}"
-            self.store.save_worker_validation(
-                validation_record(
-                    validate_workers(
-                        registry=self.registry,
-                        workers=self.workers,
-                        input_payload=job.input,
-                        kinds=[kind],
-                        prebuilt_image=True,
-                        redis_url=self.redis_url,
-                        run_root=validation_run_root,
-                    )[0],
-                    effective_policy=resource_policy,
+            result = validate_workers(
+                registry=active_registry,
+                workers=worker_map,
+                input_payload=payload,
+                kinds=[kind],
+                prebuilt_image=True,
+                redis_url=self.redis_url,
+                run_root=validation_run_root,
+            )[0]
+            if notebook_source_hash is not None:
+                result = result.model_copy(
+                    update={
+                        "image_digest": notebook_validation_identity(
+                            result.image_digest,
+                            notebook_source_hash,
+                        )
+                    }
                 )
+            self.store.save_worker_validation(
+                validation_record(result, effective_policy=resource_policy)
             )
             return format_validation_gate_error(
                 kind=kind,
                 image=worker.image,
-                image_digest=image_digest,
+                image_digest=validation_identity,
                 stale_from_digest=latest_for_kind.image_digest if latest_for_kind else None,
                 reason=error,
             )
         cached = self.store.get_latest_worker_validation(
             kind=kind,
-            image_digest=image_digest,
+            image_digest=validation_identity or image_digest,
             contract_version=GOBLIN_CONTAINER_CONTRACT_VERSION,
             validator_version=VALIDATOR_VERSION,
         )
         if cached is not None and cached.status == "passed":
             return None
+        if isinstance(active_runtime, KubernetesRuntime):
+            return format_validation_gate_error(
+                kind=kind,
+                image=worker.image,
+                image_digest=validation_identity or image_digest,
+                stale_from_digest=latest_for_kind.image_digest if latest_for_kind else None,
+                reason="no current Kubernetes validation proof exists; validate first",
+            )
         results = validate_workers(
-            registry=self.registry,
-            workers=self.workers,
-            input_payload=job.input,
+            registry=active_registry,
+            workers=worker_map,
+            input_payload=payload,
             kinds=[kind],
             prebuilt_image=True,
             timeout_seconds=job.timeout_seconds,
@@ -498,6 +589,15 @@ class Scheduler:
             run_root=validation_run_root,
         )
         result = results[0]
+        if notebook_source_hash is not None:
+            result = result.model_copy(
+                update={
+                    "image_digest": notebook_validation_identity(
+                        result.image_digest,
+                        notebook_source_hash,
+                    )
+                }
+            )
         self.store.save_worker_validation(
             validation_record(result, effective_policy=resource_policy)
         )
@@ -512,7 +612,7 @@ class Scheduler:
             return format_validation_gate_error(
                 kind=kind,
                 image=result.image or worker.image,
-                image_digest=result.image_digest or image_digest,
+                image_digest=result.image_digest or validation_identity or image_digest,
                 stale_from_digest=stale_from_digest,
                 contract_version=result.contract_version,
                 validator_version=result.validator_version,

@@ -51,8 +51,22 @@ import type {
   TrafficEntry,
 } from "./types";
 
-const API_BASE = "/admin-api";
-const WS_BASE = `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/admin-ws/runs`;
+export const HUB_SERVICE_PREFIX = "/services/goblin-king";
+
+export function adminMountPaths(
+  pathname = window.location.pathname,
+  protocol = window.location.protocol,
+  host = window.location.host,
+) {
+  const hubServiceMount = pathname === HUB_SERVICE_PREFIX || pathname.startsWith(`${HUB_SERVICE_PREFIX}/`);
+  const basePath = hubServiceMount ? HUB_SERVICE_PREFIX : "/admin";
+  const apiBase = hubServiceMount ? `${HUB_SERVICE_PREFIX}/admin-api` : "/admin-api";
+  const wsPath = hubServiceMount ? `${HUB_SERVICE_PREFIX}/admin-ws/runs` : "/admin-ws/runs";
+  const wsBase = `${protocol === "https:" ? "wss" : "ws"}://${host}${wsPath}`;
+  return { basePath, apiBase, wsBase };
+}
+
+const { basePath: ADMIN_BASE, apiBase: API_BASE, wsBase: WS_BASE } = adminMountPaths();
 const TOKEN_KEY = "goblinKingAdminToken";
 const DEFAULT_LONG_HELLO_URL = "http://long-hello:8080";
 
@@ -129,7 +143,7 @@ export function App() {
   useEffect(() => {
     async function loadConfig() {
       try {
-        const response = await fetch("/admin/config.json", { cache: "no-store" });
+        const response = await fetch(`${ADMIN_BASE}/config.json`, { cache: "no-store" });
         if (!response.ok) return;
         const payload = (await response.json()) as Partial<AdminConfig>;
         const nextUrl = payload.longHelloUrl || DEFAULT_LONG_HELLO_URL;

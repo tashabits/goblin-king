@@ -48,6 +48,7 @@ intended for untrusted third-party container execution.
   - [Language-Agnostic Workers](docs/language-agnostic-workers.md)
   - [Security Policy](SECURITY.md)
   - [Security Model](docs/security-model.md)
+  - [JupyterHub Service Access](docs/jupyterhub-service-access.md)
   - [API Roadmap](docs/api-roadmap.md)
   - [Scheduler Plan](docs/goblin-king-plan.md)
   - [Adopting Projects](docs/ADOPTING_PROJECTS.md)
@@ -142,6 +143,29 @@ and project claims into the same RBAC model:
   }
 }
 ```
+
+JupyterHub can also be enabled as an optional auth provider for service workloads. The
+same local-token precedence applies, then Goblin King can validate Hub user API tokens,
+map Hub groups to Goblin King roles/projects, and gate access to registered services
+through `/services/long-running/<service-id>/proxy/...`. For same-cluster Kubernetes,
+the chart accepts `config.jupyterhub.*` settings and `make jupyterhub-stack-up`
+installs a default zero-to-jupyterhub proof stack with an authenticated workbook.
+The default Hub values include notebook-pod egress to the Goblin King API service so
+users can launch goblins from inside JupyterHub.
+If you are testing branch changes locally, run
+`make jupyterhub-stack-up JUPYTERHUB_STACK_REBUILD=1` to build fresh local API,
+admin, notebook runner, and service images with a unique tag before Helm deploys.
+After the stack is up, the Hub service route
+`http://127.0.0.1:8080/services/goblin-king/` opens the admin UI through
+JupyterHub and should show the normal token login screen.
+`make jupyterhub-workbook-proof` brings up that stack, uses a Hub user token, declares
+and validates a short Python function goblin from workbook-style source, declares a
+FastAPI ASGI service from notebook source, validates it, starts the managed service
+pod, probes/proxies it, stops it, then tears the stack back down.
+`make notebook-service-docker-proof` exercises the same source-authored service
+lifecycle through the local Docker runtime. See
+[`docs/jupyterhub-service-access.md`](docs/jupyterhub-service-access.md) for the exact
+JupyterHub config, Secret wiring, and local Kubernetes walkthrough.
 
 OpenAPI metadata is available at `/openapi.json` with bearer auth schemes, stable
 operation IDs, response models, and error response shapes for generated clients.

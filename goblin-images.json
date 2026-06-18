@@ -34,6 +34,16 @@
       "context": "workers/example.progress",
       "dockerfile": "Dockerfile",
       "image": "goblin-king-example-progress:local"
+    },
+    "notebook.python-function": {
+      "context": "workers/notebook.python-function",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-king-notebook-python-function:local"
+    },
+    "notebook.asgi-service": {
+      "context": "workers/notebook.asgi-service",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-king-notebook-asgi-service:local"
     }
   }
 }

@@ -157,7 +157,24 @@ The pattern is:
 - Set `config.projectSettingsPath` so API and scheduler both load the host project.
 - Keep `config.registryPath` and `config.imagesPath` as fallback/direct paths.
 - Add long-running service workers with `workers.extraLongServices`.
+- Enable optional same-cluster Hub auth with `config.jupyterhub.*` when JupyterHub
+  should gate access to registered services.
 - Reload discovery after deploy or upgrade so the admin goblin list updates at runtime.
+
+For local Kubernetes proof with a default zero-to-jupyterhub install:
+
+```bash
+make jupyterhub-stack-up
+make jupyterhub-workbook-proof
+```
+
+Use `make jupyterhub-stack-up JUPYTERHUB_STACK_REBUILD=1` when proving branch-local
+API, admin, or notebook runner changes so the local Kubernetes stack cannot reuse a
+stale `:local` image. The Hub service route `/services/goblin-king/` should open the
+admin token login through JupyterHub after the stack is ready.
+
+See [JupyterHub Service Access](jupyterhub-service-access.md) for the JupyterHub service
+config, Secret wiring, user/group mapping, and workbook-created goblin proof.
 
 ## Reload Discovery After Deploy
 

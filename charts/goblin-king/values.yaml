@@ -17,6 +17,7 @@ api:
   bootstrapAdminToken: local-dev-token
   existingSecret: ""
   existingSecretBootstrapTokenKey: bootstrap-admin-token
+  podLabels: {}
   serviceAccount:
     create: true
     name: ""
@@ -79,6 +80,9 @@ config:
   dbPath: /data/goblin-king.sqlite3
   artifactRoot: /data/artifacts
   redisUrl: redis://goblin-king-redis:6379/0
+  notebookFunctionImage: goblin-king-notebook-python-function:local
+  notebookServiceImage: goblin-king-notebook-asgi-service:local
+  notebookServiceRuntime: auto
   oidc:
     enabled: false
     issuer: ""
@@ -91,6 +95,25 @@ config:
     projectClaim: goblin_king_project_id
     adminRoles:
       - admin
+  jupyterhub:
+    enabled: false
+    apiUrl: ""
+    hubUrl: ""
+    serviceName: goblin-king
+    servicePrefix: /services/goblin-king/
+    publicUrl: ""
+    serviceTokenEnv: GOBLIN_KING_JUPYTERHUB_SERVICE_TOKEN
+    serviceTokenSecret:
+      name: ""
+      key: service-token
+    requestTimeoutSeconds: 5
+    cacheTtlSeconds: 60
+    allowedUsers: []
+    allowedGroups: []
+    adminGroups: []
+    viewerGroups: []
+    projectGroups: {}
+    defaultProjectId: ""
 
 resourcePolicies:
   version: 1

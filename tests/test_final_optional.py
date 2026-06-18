@@ -143,6 +143,9 @@ def test_helm_chart_includes_optional_default_on_ingress() -> None:
     host_values = Path("examples/adopting-project/helm-values.yaml").read_text(
         encoding="utf-8"
     )
+    hub_values = Path(
+        "examples/jupyterhub-goblin-king/zero-to-jupyterhub.values.yaml"
+    ).read_text(encoding="utf-8")
     compose_extension = Path(
         "examples/adopting-project/docker-compose.host-project.yml"
     ).read_text(encoding="utf-8")
@@ -155,6 +158,15 @@ def test_helm_chart_includes_optional_default_on_ingress() -> None:
     assert '"project": "{{ .Values.config.projectSettingsPath }}"' in config
     assert '"oidc"' in config
     assert "jwks_url" in config
+    assert '"jupyterhub"' in config
+    assert "serviceTokenSecret" in values
+    assert ".Values.config.jupyterhub.serviceTokenEnv" in api
+    assert "zero-to-jupyterhub.values.yaml" in Path("Makefile").read_text(encoding="utf-8")
+    assert "GOBLIN_KING_API_URL" in hub_values
+    assert "networkPolicy:" in hub_values
+    assert "app.kubernetes.io/component: api" in hub_values
+    assert "app.kubernetes.io/instance: goblin-king" in hub_values
+    assert "port: 8000" in hub_values
     assert "--project" in scheduler
     assert "extraVolumeMounts" in api
     assert "extraLongServices" in long_hello

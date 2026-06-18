@@ -217,11 +217,53 @@ long_services_table = Table(
     Column("project_id", String, nullable=True),
     Column("image", String, nullable=True),
     Column("base_url", Text, nullable=False),
+    Column("probe_path", Text, nullable=False, default="/hello"),
     Column("status", String, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("created_by", String, nullable=False),
     Column("last_probe_at", DateTime(timezone=True), nullable=True),
     Column("last_probe_json", Text, nullable=True),
+)
+
+notebook_goblins_table = Table(
+    "notebook_goblins",
+    metadata,
+    Column("kind", String, primary_key=True),
+    Column("project_id", String, nullable=True),
+    Column("display_name", Text, nullable=False),
+    Column("image", Text, nullable=False),
+    Column("source", Text, nullable=False),
+    Column("source_hash", String, nullable=False),
+    Column("function_name", String, nullable=False, default="run"),
+    Column("timeout_seconds", Integer, nullable=True),
+    Column("max_retries", Integer, nullable=False, default=0),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column("created_by", String, nullable=False),
+    Column("metadata_json", Text, nullable=False, default="{}"),
+)
+
+notebook_services_table = Table(
+    "notebook_services",
+    metadata,
+    Column("kind", String, primary_key=True),
+    Column("project_id", String, nullable=True),
+    Column("display_name", Text, nullable=False),
+    Column("image", Text, nullable=False),
+    Column("source", Text, nullable=False),
+    Column("source_hash", String, nullable=False),
+    Column("app_name", String, nullable=False, default="app"),
+    Column("requirements_json", Text, nullable=False, default="[]"),
+    Column("port", Integer, nullable=False, default=8080),
+    Column("probe_path", Text, nullable=False, default="/hello"),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
+    Column("created_by", String, nullable=False),
+    Column("metadata_json", Text, nullable=False, default="{}"),
+    Column("runtime_backend", String, nullable=True),
+    Column("runtime_name", String, nullable=True),
+    Column("runtime_status", String, nullable=False, default="declared"),
+    Column("active_service_id", String, nullable=True),
 )
 
 image_promotions_table = Table(

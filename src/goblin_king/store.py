@@ -23,6 +23,8 @@ from goblin_king.contracts import (
     JobRecord,
     LongServiceRecord,
     MembershipRecord,
+    NotebookGoblinRecord,
+    NotebookServiceRecord,
     ProjectRecord,
     RateLimitRecord,
     RunRecord,
@@ -43,6 +45,8 @@ from goblin_king.store_rows import (
     _row_to_image_promotion,
     _row_to_job,
     _row_to_long_service,
+    _row_to_notebook_goblin,
+    _row_to_notebook_service,
     _row_to_project,
     _row_to_run,
     _row_to_schedule,
@@ -63,6 +67,8 @@ from goblin_king.store_schema import (
     long_services_table,
     memberships_table,
     metadata,
+    notebook_goblins_table,
+    notebook_services_table,
     projects_table,
     rate_limits_table,
     runs_table,
@@ -149,6 +155,147 @@ class SQLiteStore:
                     effective_policy_json=json.dumps(validation.effective_policy),
                 )
             )
+
+    def save_notebook_goblin(self, record: NotebookGoblinRecord) -> None:
+        """Insert or replace one notebook-defined Python function goblin."""
+        values = {
+            "kind": record.kind,
+            "project_id": record.project_id,
+            "display_name": record.display_name,
+            "image": record.image,
+            "source": record.source,
+            "source_hash": record.source_hash,
+            "function_name": record.function_name,
+            "timeout_seconds": record.timeout_seconds,
+            "max_retries": record.max_retries,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+            "created_by": record.created_by,
+            "metadata_json": json.dumps(record.metadata),
+        }
+        with self.engine.begin() as connection:
+            existing = connection.execute(
+                select(notebook_goblins_table.c.created_at).where(
+                    notebook_goblins_table.c.kind == record.kind
+                )
+            ).scalar_one_or_none()
+            if existing is None:
+                connection.execute(notebook_goblins_table.insert().values(**values))
+            else:
+                values["created_at"] = existing
+                connection.execute(
+                    update(notebook_goblins_table)
+                    .where(notebook_goblins_table.c.kind == record.kind)
+                    .values(**values)
+                )
+
+    def get_notebook_goblin(self, kind: str) -> NotebookGoblinRecord | None:
+        """Return one notebook-defined goblin by kind."""
+        with self.engine.begin() as connection:
+            row = connection.execute(
+                select(notebook_goblins_table).where(notebook_goblins_table.c.kind == kind)
+            ).first()
+        return _row_to_notebook_goblin(dict(row._mapping)) if row else None
+
+    def list_notebook_goblins(
+        self,
+        *,
+        project_id: str | None = None,
+    ) -> list[NotebookGoblinRecord]:
+        """Return notebook-defined goblins visible to API and scheduler surfaces."""
+        query = select(notebook_goblins_table).order_by(notebook_goblins_table.c.kind)
+        if project_id is not None:
+            query = query.where(notebook_goblins_table.c.project_id == project_id)
+        with self.engine.begin() as connection:
+            rows = connection.execute(query).fetchall()
+        return [_row_to_notebook_goblin(dict(row._mapping)) for row in rows]
+
+    def save_notebook_service(self, record: NotebookServiceRecord) -> None:
+        """Insert or replace one notebook-defined ASGI service bundle."""
+        values = {
+            "kind": record.kind,
+            "project_id": record.project_id,
+            "display_name": record.display_name,
+            "image": record.image,
+            "source": record.source,
+            "source_hash": record.source_hash,
+            "app_name": record.app_name,
+            "requirements_json": json.dumps(record.requirements),
+            "port": record.port,
+            "probe_path": record.probe_path,
+            "created_at": record.created_at,
+            "updated_at": record.updated_at,
+            "created_by": record.created_by,
+            "metadata_json": json.dumps(record.metadata),
+            "runtime_backend": record.runtime_backend,
+            "runtime_name": record.runtime_name,
+            "runtime_status": record.runtime_status,
+            "active_service_id": record.active_service_id,
+        }
+        with self.engine.begin() as connection:
+            existing = connection.execute(
+                select(notebook_services_table.c.created_at).where(
+                    notebook_services_table.c.kind == record.kind
+                )
+            ).scalar_one_or_none()
+            if existing is None:
+                connection.execute(notebook_services_table.insert().values(**values))
+            else:
+                values["created_at"] = existing
+                connection.execute(
+                    update(notebook_services_table)
+                    .where(notebook_services_table.c.kind == record.kind)
+                    .values(**values)
+                )
+
+    def get_notebook_service(self, kind: str) -> NotebookServiceRecord | None:
+        """Return one notebook-defined ASGI service by kind."""
+        with self.engine.begin() as connection:
+            row = connection.execute(
+                select(notebook_services_table).where(notebook_services_table.c.kind == kind)
+            ).first()
+        return _row_to_notebook_service(dict(row._mapping)) if row else None
+
+    def list_notebook_services(
+        self,
+        *,
+        project_id: str | None = None,
+    ) -> list[NotebookServiceRecord]:
+        """Return notebook-defined ASGI services visible to API surfaces."""
+        query = select(notebook_services_table).order_by(notebook_services_table.c.kind)
+        if project_id is not None:
+            query = query.where(notebook_services_table.c.project_id == project_id)
+        with self.engine.begin() as connection:
+            rows = connection.execute(query).fetchall()
+        return [_row_to_notebook_service(dict(row._mapping)) for row in rows]
+
+    def update_notebook_service_runtime(
+        self,
+        kind: str,
+        *,
+        runtime_status: str,
+        runtime_backend: str | None = None,
+        runtime_name: str | None = None,
+        active_service_id: str | None = None,
+        updated_at: datetime | None = None,
+    ) -> NotebookServiceRecord | None:
+        """Persist managed runtime status for a notebook-defined ASGI service."""
+        values = {
+            "runtime_status": runtime_status,
+            "runtime_backend": runtime_backend,
+            "runtime_name": runtime_name,
+            "active_service_id": active_service_id,
+            "updated_at": updated_at,
+        }
+        if updated_at is None:
+            values.pop("updated_at")
+        with self.engine.begin() as connection:
+            connection.execute(
+                update(notebook_services_table)
+                .where(notebook_services_table.c.kind == kind)
+                .values(**values)
+            )
+        return self.get_notebook_service(kind)
 
     def get_latest_worker_validation(
         self,
@@ -521,6 +668,7 @@ class SQLiteStore:
                     project_id=service.project_id,
                     image=service.image,
                     base_url=service.base_url,
+                    probe_path=service.probe_path,
                     status=service.status,
                     created_at=service.created_at,
                     created_by=service.created_by,
@@ -1310,5 +1458,6 @@ __all__ = [
     "HandoffRecord",
     "ImagePromotionRecord",
     "LongServiceRecord",
+    "NotebookServiceRecord",
     "SQLiteStore",
 ]

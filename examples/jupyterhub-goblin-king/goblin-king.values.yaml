@@ -1,0 +1,28 @@
+api:
+  podLabels:
+    hub.jupyter.org/network-access-hub: "true"
+
+config:
+  notebookFunctionImage: goblin-king-notebook-python-function:local
+  notebookServiceImage: goblin-king-notebook-asgi-service:local
+  notebookServiceRuntime: kubernetes
+  jupyterhub:
+    enabled: true
+    apiUrl: http://hub.default.svc.cluster.local:8081/hub/api
+    hubUrl: http://jupyterhub.default.svc.cluster.local
+    serviceName: goblin-king
+    servicePrefix: /services/goblin-king/
+    publicUrl: http://goblin-king.local
+    serviceTokenSecret:
+      name: goblin-king-jupyterhub-auth
+      key: service-token
+    allowedGroups:
+      - goblin-users
+      - goblin-admins
+    adminGroups:
+      - goblin-admins
+    projectGroups:
+      goblin-users: default
+      goblin-admins: default
+    defaultProjectId: default
+    cacheTtlSeconds: 60

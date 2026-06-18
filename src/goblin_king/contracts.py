@@ -208,11 +208,75 @@ class LongServiceRecord(BaseModel):
     project_id: str | None = None
     image: str | None = None
     base_url: str = Field(min_length=1)
+    probe_path: str = Field(default="/hello", min_length=1)
     status: LongServiceStatus = "registered"
     created_at: datetime
     created_by: str = "api"
     last_probe_at: datetime | None = None
     last_probe_json: dict[str, Any] | None = None
+
+
+class NotebookGoblinRecord(BaseModel):
+    """Track a notebook-defined Python function goblin bundle."""
+
+    kind: str
+    project_id: str | None = None
+    display_name: str
+    image: str
+    source: str
+    source_hash: str
+    function_name: str = "run"
+    timeout_seconds: int | None = Field(default=None, gt=0)
+    max_retries: int = Field(default=0, ge=0)
+    created_at: datetime
+    updated_at: datetime
+    created_by: str = "api"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("kind")
+    @classmethod
+    def validate_kind(cls, value: str) -> str:
+        """Use the same kind format as registry-backed goblins."""
+        if not GOBLIN_KIND_PATTERN.match(value):
+            raise ValueError("kind must use lowercase letters, digits, dots, or dashes")
+        return value
+
+
+class NotebookServiceRecord(BaseModel):
+    """Track a notebook-defined ASGI service bundle and its managed runtime."""
+
+    kind: str
+    project_id: str | None = None
+    display_name: str
+    image: str
+    source: str
+    source_hash: str
+    app_name: str = "app"
+    requirements: list[str] = Field(default_factory=list)
+    port: int = Field(default=8080, gt=0)
+    probe_path: str = Field(default="/hello", min_length=1)
+    created_at: datetime
+    updated_at: datetime
+    created_by: str = "api"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    runtime_backend: str | None = None
+    runtime_name: str | None = None
+    runtime_status: str = "declared"
+    active_service_id: str | None = None
+
+    @field_validator("kind")
+    @classmethod
+    def validate_kind(cls, value: str) -> str:
+        """Use the same kind format as registry-backed goblins."""
+        if not GOBLIN_KIND_PATTERN.match(value):
+            raise ValueError("kind must use lowercase letters, digits, dots, or dashes")
+        return value
+
+    @field_validator("probe_path")
+    @classmethod
+    def validate_probe_path(cls, value: str) -> str:
+        """Persist probe paths as absolute HTTP paths."""
+        return value if value.startswith("/") else f"/{value}"
 
 
 class ImagePromotionRecord(BaseModel):

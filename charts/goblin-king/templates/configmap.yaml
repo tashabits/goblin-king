@@ -11,6 +11,9 @@ data:
       "redis_url": "{{ .Values.config.redisUrl }}",
       "artifact_root": "{{ .Values.config.artifactRoot }}",
       "resource_policies": "{{ .Values.config.resourcePoliciesPath }}",
+      "notebook_function_image": "{{ .Values.config.notebookFunctionImage }}",
+      "notebook_service_image": "{{ .Values.config.notebookServiceImage }}",
+      "notebook_service_runtime": "{{ .Values.config.notebookServiceRuntime }}",
       "bootstrap_admin_token": "{{ .Values.api.bootstrapAdminToken }}",
       "oidc": {
         "enabled": {{ .Values.config.oidc.enabled }},
@@ -23,6 +26,23 @@ data:
         "role_claim": {{ .Values.config.oidc.roleClaim | quote }},
         "project_claim": {{ .Values.config.oidc.projectClaim | quote }},
         "admin_roles": {{ .Values.config.oidc.adminRoles | toJson }}
+      },
+      "jupyterhub": {
+        "enabled": {{ .Values.config.jupyterhub.enabled }},
+        "api_url": {{ if .Values.config.jupyterhub.apiUrl }}{{ .Values.config.jupyterhub.apiUrl | quote }}{{ else }}null{{ end }},
+        "hub_url": {{ if .Values.config.jupyterhub.hubUrl }}{{ .Values.config.jupyterhub.hubUrl | quote }}{{ else }}null{{ end }},
+        "service_name": {{ .Values.config.jupyterhub.serviceName | quote }},
+        "service_prefix": {{ .Values.config.jupyterhub.servicePrefix | quote }},
+        "public_url": {{ if .Values.config.jupyterhub.publicUrl }}{{ .Values.config.jupyterhub.publicUrl | quote }}{{ else }}null{{ end }},
+        "service_token_env": {{ .Values.config.jupyterhub.serviceTokenEnv | quote }},
+        "request_timeout_seconds": {{ .Values.config.jupyterhub.requestTimeoutSeconds }},
+        "cache_ttl_seconds": {{ .Values.config.jupyterhub.cacheTtlSeconds }},
+        "allowed_users": {{ .Values.config.jupyterhub.allowedUsers | toJson }},
+        "allowed_groups": {{ .Values.config.jupyterhub.allowedGroups | toJson }},
+        "admin_groups": {{ .Values.config.jupyterhub.adminGroups | toJson }},
+        "viewer_groups": {{ .Values.config.jupyterhub.viewerGroups | toJson }},
+        "project_groups": {{ .Values.config.jupyterhub.projectGroups | toJson }},
+        "default_project_id": {{ if .Values.config.jupyterhub.defaultProjectId }}{{ .Values.config.jupyterhub.defaultProjectId | quote }}{{ else }}null{{ end }}
       }
       {{- if .Values.config.projectSettingsPath }},
       "project": "{{ .Values.config.projectSettingsPath }}"
