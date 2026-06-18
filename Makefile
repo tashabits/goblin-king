@@ -40,8 +40,13 @@ JUPYTERHUB_SERVICE_TOKEN_KEY ?= service-token
 JUPYTERHUB_SERVICE_TOKEN ?= local-goblin-king-hub-token
 JUPYTERHUB_WORKBOOK_USER_TOKEN_KEY ?= workbook-user-token
 JUPYTERHUB_WORKBOOK_USER_TOKEN ?= local-goblin-king-workbook-token
+JUPYTERHUB_WORKBOOK_ALICE_TOKEN ?= local-goblin-king-alice-token
+JUPYTERHUB_WORKBOOK_BOB_TOKEN ?= local-goblin-king-bob-token
+JUPYTERHUB_WORKBOOK_CAROL_TOKEN ?= local-goblin-king-carol-token
+JUPYTERHUB_WORKBOOK_MALLORY_TOKEN ?= local-goblin-king-mallory-token
 JUPYTERHUB_WORKBOOK_PROOF ?= examples/jupyterhub-goblin-king/workbook_proof.py
 JUPYTERHUB_FULL_STACK_PROOF ?= examples/jupyterhub-goblin-king/full_stack_workbook_proof.py
+JUPYTERHUB_REPOSITORY_FULL_STACK_PROOF ?= examples/jupyterhub-goblin-king/full_stack_repository_proof.py
 JUPYTERHUB_STACK_IMAGE_PREPARE ?= examples/jupyterhub-goblin-king/prepare_stack_images.py
 JUPYTERHUB_STACK_REBUILD ?= 0
 JUPYTERHUB_STACK_BUILD_NO_CACHE ?= 1
@@ -61,7 +66,7 @@ NOTEBOOK_REPOSITORY_PROOF_ARGS = $(if $(filter 1 true yes,$(GOBLIN_REPOSITORY_EN
 HELM_OPTIONAL_REPOSITORY_ARGS = $(if $(filter 1 true yes,$(GOBLIN_REPOSITORY_ENABLED)),$(HELM_REPOSITORY_ARGS),)
 JUPYTERHUB_OPTIONAL_REPOSITORY_ARGS = $(if $(filter 1 true yes,$(GOBLIN_REPOSITORY_ENABLED)),$(JUPYTERHUB_REPOSITORY_ARGS),)
 
-.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean notebook-service-docker-proof jupyterhub-stack-up jupyterhub-stack-down jupyterhub-up jupyterhub-down jupyterhub-workbook-proof helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit doctor demo demo-down project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel release-check helm-template helm-admin-smoke kind-smoke clean clean-all docker-clean
+.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean notebook-service-docker-proof jupyterhub-stack-up jupyterhub-stack-down jupyterhub-up jupyterhub-down jupyterhub-workbook-proof jupyterhub-repository-proof helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit doctor demo demo-down project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel release-check helm-template helm-admin-smoke kind-smoke clean clean-all docker-clean
 
 help:
 	@echo "Targets:"
@@ -92,6 +97,7 @@ help:
 	@echo "  jupyterhub-up  Install default zero-to-jupyterhub for local auth proof"
 	@echo "  jupyterhub-down Uninstall the default local JupyterHub release"
 	@echo "  jupyterhub-workbook-proof Run full Hub workbook declare/validate/run/service proof"
+	@echo "  jupyterhub-repository-proof Run full Hub repository submit/review/consume proof"
 	@echo "  helm-wipe      Uninstall Helm release and delete its PVC/data"
 	@echo "  helm-restart-clean Wipe Helm data, then install/upgrade and wait"
 	@echo "  stack-wipe     Wipe both Docker Compose and Helm data"
@@ -202,7 +208,7 @@ jupyterhub-stack-down:
 
 jupyterhub-up:
 	kubectl create namespace $(HELM_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
-	kubectl create secret generic $(JUPYTERHUB_SERVICE_TOKEN_SECRET) --namespace $(HELM_NAMESPACE) --from-literal=$(JUPYTERHUB_SERVICE_TOKEN_KEY)=$(JUPYTERHUB_SERVICE_TOKEN) --from-literal=$(JUPYTERHUB_WORKBOOK_USER_TOKEN_KEY)=$(JUPYTERHUB_WORKBOOK_USER_TOKEN) --dry-run=client -o yaml | kubectl apply -f -
+	kubectl create secret generic $(JUPYTERHUB_SERVICE_TOKEN_SECRET) --namespace $(HELM_NAMESPACE) --from-literal=$(JUPYTERHUB_SERVICE_TOKEN_KEY)=$(JUPYTERHUB_SERVICE_TOKEN) --from-literal=$(JUPYTERHUB_WORKBOOK_USER_TOKEN_KEY)=$(JUPYTERHUB_WORKBOOK_USER_TOKEN) --from-literal=alice-token=$(JUPYTERHUB_WORKBOOK_ALICE_TOKEN) --from-literal=bob-token=$(JUPYTERHUB_WORKBOOK_BOB_TOKEN) --from-literal=carol-token=$(JUPYTERHUB_WORKBOOK_CAROL_TOKEN) --from-literal=mallory-token=$(JUPYTERHUB_WORKBOOK_MALLORY_TOKEN) --dry-run=client -o yaml | kubectl apply -f -
 	helm repo add jupyterhub https://hub.jupyter.org/helm-chart/
 	helm repo update jupyterhub
 	helm upgrade --install $(JUPYTERHUB_RELEASE) $(JUPYTERHUB_CHART) --namespace $(HELM_NAMESPACE) --create-namespace --wait --timeout $(HELM_TIMEOUT) -f $(JUPYTERHUB_VALUES) $(JUPYTERHUB_EXTRA_ARGS) $(JUPYTERHUB_OPTIONAL_REPOSITORY_ARGS)
@@ -210,10 +216,14 @@ jupyterhub-up:
 jupyterhub-down:
 	-kubectl delete pod --namespace $(HELM_NAMESPACE) -l app.kubernetes.io/instance=$(JUPYTERHUB_RELEASE),app.kubernetes.io/component=singleuser-server --ignore-not-found
 	-helm uninstall $(JUPYTERHUB_RELEASE) --namespace $(HELM_NAMESPACE) --ignore-not-found
+	-kubectl delete pvc hub-db-dir --namespace $(HELM_NAMESPACE) --ignore-not-found
 	-kubectl delete secret $(JUPYTERHUB_SERVICE_TOKEN_SECRET) --namespace $(HELM_NAMESPACE) --ignore-not-found
 
 jupyterhub-workbook-proof:
 	$(PYTHON) $(JUPYTERHUB_FULL_STACK_PROOF) --stack-config $(JUPYTERHUB_STACK_CONFIG) --namespace $(HELM_NAMESPACE) --release $(HELM_RELEASE) --token $(JUPYTERHUB_WORKBOOK_USER_TOKEN) --kind $(JUPYTERHUB_WORKBOOK_KIND) --workbook-proof $(JUPYTERHUB_WORKBOOK_PROOF) $(if $(filter 1 true yes,$(GOBLIN_REPOSITORY_ENABLED)),--repository-url $(JUPYTERHUB_REPOSITORY_URL),)
+
+jupyterhub-repository-proof:
+	$(PYTHON) $(JUPYTERHUB_REPOSITORY_FULL_STACK_PROOF) --stack-config $(JUPYTERHUB_STACK_CONFIG) --namespace $(HELM_NAMESPACE) --release $(HELM_RELEASE) --jupyterhub-release $(JUPYTERHUB_RELEASE) --alice-token $(JUPYTERHUB_WORKBOOK_ALICE_TOKEN) --bob-token $(JUPYTERHUB_WORKBOOK_BOB_TOKEN) --carol-token $(JUPYTERHUB_WORKBOOK_CAROL_TOKEN) --mallory-token $(JUPYTERHUB_WORKBOOK_MALLORY_TOKEN)
 
 helm-up: $(if $(filter 1 true yes,$(HELM_WITH_JUPYTERHUB)),jupyterhub-up)
 	helm upgrade --install $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE) --create-namespace --wait --timeout $(HELM_TIMEOUT) $(HELM_ARGS) $(HELM_EXTRA_ARGS) $(HELM_OPTIONAL_REPOSITORY_ARGS) $(if $(filter 1 true yes,$(HELM_WITH_JUPYTERHUB)),$(HELM_JUPYTERHUB_ARGS),)
