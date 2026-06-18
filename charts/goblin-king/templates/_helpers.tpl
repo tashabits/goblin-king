@@ -48,6 +48,14 @@ securityContext:
 {{- end -}}
 {{- end -}}
 
+{{- define "goblin-king.repositoryUiServiceAccountName" -}}
+{{- if .Values.repositoryUi.serviceAccount.create -}}
+{{- default (printf "%s-repository-ui" (include "goblin-king.fullname" .)) .Values.repositoryUi.serviceAccount.name -}}
+{{- else -}}
+{{- default "default" .Values.repositoryUi.serviceAccount.name -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "goblin-king.repositoryUrl" -}}
 {{- if .Values.repository.url -}}
 {{- .Values.repository.url -}}

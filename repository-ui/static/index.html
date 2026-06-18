@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Goblin Repository</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Goblin Repository</h1>
+        <p id="sessionSummary"></p>
+      </div>
+      <button id="logoutButton" type="button">Log Out</button>
+    </header>
+
+    <nav class="tabs" aria-label="Repository views">
+      <button type="button" data-tab="directory" class="active">Directory</button>
+      <button type="button" data-tab="submit">Submit Bundle</button>
+      <button type="button" data-tab="mine">My Submissions</button>
+      <button type="button" data-tab="review">Review Queue</button>
+      <button type="button" data-tab="detail">Entry Detail</button>
+      <button type="button" data-tab="runtime">Runtime Results</button>
+    </nav>
+
+    <main>
+      <section data-view="directory" class="view active">
+        <div class="toolbar">
+          <label>
+            Search
+            <input id="directoryQuery" type="search" placeholder="name, tag, description" />
+          </label>
+          <label>
+            Type
+            <select id="directoryType">
+              <option value="">All</option>
+              <option value="notebook_function">Functions</option>
+              <option value="notebook_service">Services</option>
+            </select>
+          </label>
+          <button id="refreshDirectory" type="button">Refresh</button>
+        </div>
+        <div id="directoryList" class="list"></div>
+      </section>
+
+      <section data-view="submit" class="view">
+        <div class="split">
+          <form id="bundleForm" class="panel">
+            <h2>Upload Bundle</h2>
+            <label>
+              Zip Bundle
+              <input id="bundleFile" type="file" accept=".zip,application/zip" />
+            </label>
+            <div class="actions">
+              <button id="previewBundle" type="button">Preview</button>
+              <button id="submitBundle" type="button">Submit Draft</button>
+            </div>
+          </form>
+          <section class="panel">
+            <h2>Preview</h2>
+            <pre id="bundlePreview"></pre>
+          </section>
+        </div>
+      </section>
+
+      <section data-view="mine" class="view">
+        <div class="toolbar">
+          <button id="refreshMine" type="button">Refresh</button>
+        </div>
+        <div id="mineList" class="list"></div>
+      </section>
+
+      <section data-view="review" class="view">
+        <div class="toolbar">
+          <button id="refreshReview" type="button">Refresh</button>
+        </div>
+        <p id="reviewHint"></p>
+        <div id="reviewList" class="list"></div>
+      </section>
+
+      <section data-view="detail" class="view">
+        <div class="toolbar">
+          <label>
+            Entry ID
+            <input id="entryIdInput" type="text" placeholder="repository entry id" />
+          </label>
+          <button id="loadEntry" type="button">Load</button>
+        </div>
+        <div id="entryDetail" class="detail"></div>
+      </section>
+
+      <section data-view="runtime" class="view">
+        <div class="split">
+          <form id="runtimeForm" class="panel">
+            <h2>Invoke Published Entry</h2>
+            <label>
+              Name
+              <input id="runtimeName" type="text" placeholder="shared.hello" />
+            </label>
+            <label>
+              Type
+              <select id="runtimeType">
+                <option value="notebook_function">Function</option>
+                <option value="notebook_service">Service</option>
+              </select>
+            </label>
+            <label>
+              JSON Input
+              <textarea id="runtimeInput" rows="6">{"name":"Repository"}</textarea>
+            </label>
+            <label>
+              Proxy Path
+              <input id="runtimeProxyPath" type="text" value="/hello" />
+            </label>
+            <div class="actions">
+              <button id="runFunction" type="button">Run</button>
+              <button id="startService" type="button">Start</button>
+              <button id="probeService" type="button">Probe</button>
+              <button id="proxyService" type="button">Proxy</button>
+              <button id="stopService" type="button">Stop</button>
+            </div>
+          </form>
+          <section class="panel">
+            <h2>Runtime Proof</h2>
+            <pre id="runtimeOutput"></pre>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <aside id="toast" role="status" aria-live="polite"></aside>
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>

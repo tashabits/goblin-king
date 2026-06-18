@@ -96,19 +96,25 @@ def _prepare_local_images(kind_cluster: str, tag: str) -> dict[str, str]:
     images = {
         "app": f"goblin-king:{tag}",
         "admin": f"goblin-king-admin-ui:{tag}",
+        "repository_ui": f"goblin-king-repository-ui:{tag}",
         "notebook_runner": f"goblin-king-notebook-python-function:{tag}",
         "notebook_service_runner": f"goblin-king-notebook-asgi-service:{tag}",
         "long_hello": f"goblin-king-example-long-hello:{tag}",
     }
     contexts = {
-        images["app"]: ".",
-        images["admin"]: "admin-ui",
-        images["notebook_runner"]: "workers/notebook.python-function",
-        images["notebook_service_runner"]: "workers/notebook.asgi-service",
-        images["long_hello"]: "workers/example.long-hello",
+        images["app"]: (".", None),
+        images["admin"]: ("admin-ui", None),
+        images["repository_ui"]: (".", "repository-ui/Dockerfile"),
+        images["notebook_runner"]: ("workers/notebook.python-function", None),
+        images["notebook_service_runner"]: ("workers/notebook.asgi-service", None),
+        images["long_hello"]: ("workers/example.long-hello", None),
     }
-    for image, context in contexts.items():
-        subprocess.run(["docker", "build", "-t", image, context], check=True)
+    for image, (context, dockerfile) in contexts.items():
+        command = ["docker", "build", "-t", image]
+        if dockerfile:
+            command.extend(["-f", dockerfile])
+        command.append(context)
+        subprocess.run(command, check=True)
     load_images_for_current_context(list(contexts), kind_cluster)
     return images
 

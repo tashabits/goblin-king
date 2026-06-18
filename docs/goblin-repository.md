@@ -268,6 +268,110 @@ If repository routes are not enabled, helper errors include the repository base 
 `repository.enabled=true`, and `GOBLIN_KING_REPOSITORY_URL` so the workbook points at the
 operator fix instead of failing as an opaque 404.
 
+## Browser Repository UI
+
+The optional repository UI is a separate JupyterHub service from the admin panel. It is
+mounted at:
+
+```text
+/services/goblin-repository/
+```
+
+The UI uses Hub OAuth for browser login and keeps the Hub OAuth token in the service
+backend. Browser requests go through relative `ui-api/...` routes, and the service
+forwards only authenticated repository/job/run requests to the Goblin King API or
+repository API as the signed-in Hub user. There is no token-paste login in this path.
+
+The UI exposes:
+
+- Directory: search approved published entries by name, type, tag, owner, or text.
+- Submit Bundle: upload and preview a v1 zip bundle, then submit a draft.
+- My Submissions: validate owned drafts and request review.
+- Review Queue: admin-only approve, reject, publish, and retire actions.
+- Entry Detail: version, source hash, validation proof, owner, status, and tags.
+- Runtime Results: run function goblins and start/probe/proxy/stop service goblins by
+  repository name.
+
+Enable it locally with the repository API:
+
+```bash
+make jupyterhub-stack-up \
+  JUPYTERHUB_STACK_REBUILD=1 \
+  GOBLIN_REPOSITORY_ENABLED=1 \
+  GOBLIN_REPOSITORY_UI_ENABLED=1
+```
+
+Then port-forward the Hub proxy and open the UI:
+
+```bash
+kubectl port-forward -n default svc/proxy-public 8080:http
+```
+
+```text
+http://127.0.0.1:8080/services/goblin-repository/
+```
+
+The one-command proof is:
+
+```bash
+make jupyterhub-repository-ui-proof
+```
+
+That proof uses the same local Hub users as the workbook proof: `bob` submits bundles,
+`alice` approves and publishes, `carol` discovers and invokes the published entries,
+and `mallory` is denied.
+
+## Upload Bundle v1
+
+The browser UI accepts a `.zip` bundle. The required root manifest is
+`goblin-repository.json`, and v1 executes exactly one Python entrypoint source file.
+Extra files are shown in preview for reviewer context but are not executed.
+
+Function bundle example:
+
+```json
+{
+  "schema_version": 1,
+  "name": "demo.hello",
+  "type": "notebook_function",
+  "entrypoint": "hello.py",
+  "display_name": "Demo Hello",
+  "description": "Shared hello-world function",
+  "tags": ["demo", "hello"],
+  "function_name": "run",
+  "timeout_seconds": 30,
+  "max_retries": 0
+}
+```
+
+Service bundle example:
+
+```json
+{
+  "schema_version": 1,
+  "name": "demo.long-hello",
+  "type": "notebook_service",
+  "entrypoint": "service.py",
+  "display_name": "Demo Long Hello",
+  "description": "Shared ASGI hello-world service",
+  "tags": ["demo", "service"],
+  "app_name": "app",
+  "requirements": ["fastapi>=0.115,<1"],
+  "requirements_file": "requirements.txt",
+  "port": 8080,
+  "probe_path": "/hello"
+}
+```
+
+The UI backend rejects unsafe bundles before submitting to the repository API:
+
+- path traversal or absolute paths
+- missing manifest or missing entrypoint
+- invalid names, tags, schema versions, or goblin types
+- oversized bundles, source files, requirements files, or file counts
+- binary or non-UTF-8 entrypoint files
+- unsafe or missing requirements file paths
+
 ## Docker Compose Enablement
 
 For local Compose, add the repository block to the API settings file used by the `api`
@@ -342,6 +446,19 @@ config:
 repository:
   enabled: true
   url: http://goblin-king-repository.default.svc.cluster.local:8000
+  podLabels:
+    hub.jupyter.org/network-access-hub: "true"
+repositoryUi:
+  enabled: true
+  podLabels:
+    hub.jupyter.org/network-access-hub: "true"
+  serviceTokenSecret:
+    name: goblin-king-jupyterhub-auth
+    key: repository-ui-token
+  apiUrl: http://goblin-king-api.default.svc.cluster.local:8000
+  repositoryUrl: http://goblin-king-repository.default.svc.cluster.local:8000
+  hubApiUrl: http://hub.default.svc.cluster.local:8081/hub/api
+  hubBaseUrl: /hub/
 ```
 
 With that mapping:
@@ -350,6 +467,10 @@ With that mapping:
 - Users in `goblin-admins` can review and publish entries.
 - Users outside allowed Hub groups receive the normal JupyterHub auth denial before any
   repository lookup happens.
+
+When zero-to-jupyterhub network policies are enabled, the repository API and repository
+UI pods need `hub.jupyter.org/network-access-hub: "true"` so they can validate Hub user
+tokens and complete OAuth token exchange against the Hub API.
 
 The local stack proof should enable the repository in
 `examples/jupyterhub-goblin-king/goblin-king.values.yaml` and then run:
@@ -372,3 +493,13 @@ It brings up JupyterHub, Goblin King, and the optional repository service; uses 
 tokens for `bob`, `alice`, `carol`, and an unauthorized `mallory`; proves submit,
 validate, review, publish, discover, run, start, probe, proxy, stop; and tears the stack
 down with a resource audit.
+
+For the Hub browser UI proof, use:
+
+```bash
+make jupyterhub-repository-ui-proof
+```
+
+It brings up the repository UI service at `/services/goblin-repository/`, completes Hub
+OAuth for the proof users, uploads v1 bundles through the UI backend, publishes them,
+invokes the published goblins by name, and tears the stack down.
