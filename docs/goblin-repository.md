@@ -361,3 +361,14 @@ make jupyterhub-stack-up JUPYTERHUB_STACK_REBUILD=1
 After the stack is up, call the repository API with a Hub user token from a notebook or
 from the Hub service route. Do not use the Hub service token for user search flows; it is
 only for the API to validate Hub user tokens.
+
+For the full local proof, use the one-command target:
+
+```bash
+make jupyterhub-repository-proof
+```
+
+It brings up JupyterHub, Goblin King, and the optional repository service; uses Hub user
+tokens for `bob`, `alice`, `carol`, and an unauthorized `mallory`; proves submit,
+validate, review, publish, discover, run, start, probe, proxy, stop; and tears the stack
+down with a resource audit.

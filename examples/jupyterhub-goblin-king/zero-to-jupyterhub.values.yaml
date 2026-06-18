@@ -10,6 +10,26 @@ hub:
         secretKeyRef:
           name: goblin-king-jupyterhub-auth
           key: workbook-user-token
+    GOBLIN_KING_WORKBOOK_ALICE_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: goblin-king-jupyterhub-auth
+          key: alice-token
+    GOBLIN_KING_WORKBOOK_BOB_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: goblin-king-jupyterhub-auth
+          key: bob-token
+    GOBLIN_KING_WORKBOOK_CAROL_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: goblin-king-jupyterhub-auth
+          key: carol-token
+    GOBLIN_KING_WORKBOOK_MALLORY_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: goblin-king-jupyterhub-auth
+          key: mallory-token
   config:
     JupyterHub:
       authenticator_class: dummy
@@ -21,8 +41,16 @@ hub:
 
       service_token = os.environ["GOBLIN_KING_JUPYTERHUB_SERVICE_TOKEN"]
       workbook_user_token = os.environ["GOBLIN_KING_WORKBOOK_USER_TOKEN"]
+      alice_token = os.environ["GOBLIN_KING_WORKBOOK_ALICE_TOKEN"]
+      bob_token = os.environ["GOBLIN_KING_WORKBOOK_BOB_TOKEN"]
+      carol_token = os.environ["GOBLIN_KING_WORKBOOK_CAROL_TOKEN"]
+      mallory_token = os.environ["GOBLIN_KING_WORKBOOK_MALLORY_TOKEN"]
       c.JupyterHub.api_tokens = {
           workbook_user_token: "alice",
+          alice_token: "alice",
+          bob_token: "bob",
+          carol_token: "carol",
+          mallory_token: "mallory",
       }
       c.JupyterHub.services = [
           {
@@ -32,7 +60,8 @@ hub:
           }
       ]
       c.JupyterHub.load_groups = {
-          "goblin-users": ["alice", "bob"],
+          "goblin-users": ["alice", "bob", "carol"],
+          "goblin-admins": ["alice"],
       }
       c.JupyterHub.load_roles = [
           {

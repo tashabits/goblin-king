@@ -37,31 +37,39 @@ def main() -> None:
     """Run the submitter, admin, and consumer helper flow."""
     args = _parse_args()
     suffix = str(int(time.time()))
-    project = _create_project(args.api_url, args.admin_token, f"Repository Proof {suffix}")
-    bob_token = _create_user_token(
-        args.api_url,
-        args.admin_token,
-        email=f"bob-{suffix}@example.test",
-        display_name=f"Bob {suffix}",
-        project_id=project["id"],
-        role="member",
-    )
-    alice_token = _create_user_token(
-        args.api_url,
-        args.admin_token,
-        email=f"alice-{suffix}@example.test",
-        display_name=f"Alice {suffix}",
-        project_id=project["id"],
-        role="admin",
-    )
-    carol_token = _create_user_token(
-        args.api_url,
-        args.admin_token,
-        email=f"carol-{suffix}@example.test",
-        display_name=f"Carol {suffix}",
-        project_id=project["id"],
-        role="member",
-    )
+    if args.bob_token and args.alice_token and args.carol_token:
+        project = {"id": args.project_id}
+        bob_token = args.bob_token
+        alice_token = args.alice_token
+        carol_token = args.carol_token
+        token_source = "jupyterhub"
+    else:
+        project = _create_project(args.api_url, args.admin_token, f"Repository Proof {suffix}")
+        bob_token = _create_user_token(
+            args.api_url,
+            args.admin_token,
+            email=f"bob-{suffix}@example.test",
+            display_name=f"Bob {suffix}",
+            project_id=project["id"],
+            role="member",
+        )
+        alice_token = _create_user_token(
+            args.api_url,
+            args.admin_token,
+            email=f"alice-{suffix}@example.test",
+            display_name=f"Alice {suffix}",
+            project_id=project["id"],
+            role="admin",
+        )
+        carol_token = _create_user_token(
+            args.api_url,
+            args.admin_token,
+            email=f"carol-{suffix}@example.test",
+            display_name=f"Carol {suffix}",
+            project_id=project["id"],
+            role="member",
+        )
+        token_source = "local-api"
     function_name = f"workbook.proof-hello.{suffix}"
     service_name = f"workbook.proof-long-hello.{suffix}"
     repository_url = args.repository_url or None
@@ -148,6 +156,7 @@ def main() -> None:
             json.dumps(
                 {
                     "ok": True,
+                    "token_source": token_source,
                     "project_id": project["id"],
                     "function_name": function_name,
                     "function_entry_id": function_submission.entry_id,
@@ -247,6 +256,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--api-url", required=True)
     parser.add_argument("--admin-token", default="local-dev-token")
     parser.add_argument("--repository-url", default="")
+    parser.add_argument("--project-id", default="default")
+    parser.add_argument("--bob-token", default="")
+    parser.add_argument("--alice-token", default="")
+    parser.add_argument("--carol-token", default="")
     parser.add_argument("--timeout-seconds", type=int, default=180)
     return parser.parse_args()
 
