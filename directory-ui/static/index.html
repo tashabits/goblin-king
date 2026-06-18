@@ -3,19 +3,19 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Goblin Repository</title>
+    <title>Goblin Directory</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <header class="topbar">
       <div>
-        <h1>Goblin Repository</h1>
+        <h1>Goblin Directory</h1>
         <p id="sessionSummary"></p>
       </div>
       <button id="logoutButton" type="button">Log Out</button>
     </header>
 
-    <nav class="tabs" aria-label="Repository views">
+    <nav class="tabs" aria-label="Goblin directory views">
       <button type="button" data-tab="directory" class="active">Directory</button>
       <button type="button" data-tab="submit">Submit Bundle</button>
       <button type="button" data-tab="mine">My Submissions</button>
@@ -83,7 +83,7 @@
         <div class="toolbar">
           <label>
             Entry ID
-            <input id="entryIdInput" type="text" placeholder="repository entry id" />
+            <input id="entryIdInput" type="text" placeholder="goblin entry id" />
           </label>
           <button id="loadEntry" type="button">Load</button>
         </div>
@@ -107,7 +107,7 @@
             </label>
             <label>
               JSON Input
-              <textarea id="runtimeInput" rows="6">{"name":"Repository"}</textarea>
+              <textarea id="runtimeInput" rows="6">{"name":"Directory"}</textarea>
             </label>
             <label>
               Proxy Path
@@ -130,6 +130,18 @@
     </main>
 
     <aside id="toast" role="status" aria-live="polite"></aside>
+    <section id="snippetModal" class="modal" hidden>
+      <div class="modal-panel">
+        <div class="modal-head">
+          <h2>Notebook Cell</h2>
+          <button id="closeSnippet" type="button">Close</button>
+        </div>
+        <textarea id="snippetText" rows="20" spellcheck="false"></textarea>
+        <div class="actions">
+          <button id="copySnippetAgain" type="button" class="primary">Copy</button>
+        </div>
+      </div>
+    </section>
     <script src="./app.js" type="module"></script>
   </body>
 </html>

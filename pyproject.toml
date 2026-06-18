@@ -36,7 +36,7 @@ goblin-king = "goblin_king.cli:app"
 packages = ["src/goblin_king"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"repository-ui/static" = "goblin_king/repository_ui_static"
+"directory-ui/static" = "goblin_king/directory_ui_static"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

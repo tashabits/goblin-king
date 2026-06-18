@@ -240,6 +240,11 @@ button.danger {
   color: var(--danger);
 }
 
+.status-note {
+  color: var(--muted);
+  margin: 0;
+}
+
 pre {
   background: #151a21;
   border-radius: 8px;
@@ -270,6 +275,49 @@ pre {
 
 #toast.visible {
   display: block;
+}
+
+.modal[hidden] {
+  display: none;
+}
+
+.modal {
+  align-items: center;
+  background: rgb(18 24 32 / 68%);
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  left: 0;
+  padding: 24px;
+  position: fixed;
+  right: 0;
+  top: 0;
+  z-index: 20;
+}
+
+.modal-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 18px 70px rgb(18 24 32 / 25%);
+  display: grid;
+  gap: 12px;
+  max-height: calc(100vh - 48px);
+  max-width: 920px;
+  overflow: auto;
+  padding: 16px;
+  width: min(920px, 100%);
+}
+
+.modal-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+#snippetText {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  min-height: 420px;
 }
 
 @media (max-width: 840px) {

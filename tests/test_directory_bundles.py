@@ -6,10 +6,10 @@ from io import BytesIO
 
 import pytest
 
-from goblin_king.repository_bundles import (
-    RepositoryBundleError,
-    RepositoryBundleLimits,
-    parse_repository_bundle,
+from goblin_king.directory_bundles import (
+    DirectoryBundleError,
+    DirectoryBundleLimits,
+    parse_directory_bundle,
 )
 
 
@@ -38,10 +38,10 @@ def _manifest(**overrides: object) -> str:
 
 
 def test_function_bundle_preview_builds_repository_submit_payload() -> None:
-    preview = parse_repository_bundle(
+    preview = parse_directory_bundle(
         _bundle(
             {
-                "goblin-repository.json": _manifest(),
+                "goblin-directory.json": _manifest(),
                 "hello.py": (
                     "def run(payload):\n"
                     "    return {'hello': payload.get('name', 'world')}\n"
@@ -63,10 +63,10 @@ def test_function_bundle_preview_builds_repository_submit_payload() -> None:
 
 
 def test_service_bundle_combines_inline_and_file_requirements() -> None:
-    preview = parse_repository_bundle(
+    preview = parse_directory_bundle(
         _bundle(
             {
-                "goblin-repository.json": _manifest(
+                "goblin-directory.json": _manifest(
                     name="shared.long-hello",
                     type="notebook_service",
                     entrypoint="service/app.py",
@@ -99,11 +99,11 @@ def test_service_bundle_combines_inline_and_file_requirements() -> None:
     ],
 )
 def test_bundle_rejects_unsafe_member_paths(path: str, message: str) -> None:
-    with pytest.raises((RepositoryBundleError, ValueError), match=message):
-        parse_repository_bundle(
+    with pytest.raises((DirectoryBundleError, ValueError), match=message):
+        parse_directory_bundle(
             _bundle(
                 {
-                    "goblin-repository.json": _manifest(entrypoint=path),
+                    "goblin-directory.json": _manifest(entrypoint=path),
                     path: "def run(payload): return payload",
                 }
             )
@@ -111,21 +111,21 @@ def test_bundle_rejects_unsafe_member_paths(path: str, message: str) -> None:
 
 
 def test_bundle_rejects_missing_manifest() -> None:
-    with pytest.raises(RepositoryBundleError, match="goblin-repository.json"):
-        parse_repository_bundle(_bundle({"hello.py": "def run(payload): return payload"}))
+    with pytest.raises(DirectoryBundleError, match="goblin-directory.json"):
+        parse_directory_bundle(_bundle({"hello.py": "def run(payload): return payload"}))
 
 
 def test_bundle_rejects_missing_entrypoint() -> None:
-    with pytest.raises(RepositoryBundleError, match="entrypoint is missing"):
-        parse_repository_bundle(_bundle({"goblin-repository.json": _manifest()}))
+    with pytest.raises(DirectoryBundleError, match="entrypoint is missing"):
+        parse_directory_bundle(_bundle({"goblin-directory.json": _manifest()}))
 
 
 def test_bundle_rejects_binary_entrypoint() -> None:
-    with pytest.raises(RepositoryBundleError, match="entrypoint must be UTF-8 text"):
-        parse_repository_bundle(
+    with pytest.raises(DirectoryBundleError, match="entrypoint must be UTF-8 text"):
+        parse_directory_bundle(
             _bundle(
                 {
-                    "goblin-repository.json": _manifest(),
+                    "goblin-directory.json": _manifest(),
                     "hello.py": b"\xff\xfe\x00",
                 }
             )
@@ -135,10 +135,10 @@ def test_bundle_rejects_binary_entrypoint() -> None:
 def test_bundle_rejects_oversized_content() -> None:
     data = _bundle(
         {
-            "goblin-repository.json": _manifest(),
+            "goblin-directory.json": _manifest(),
             "hello.py": "def run(payload): return payload",
         }
     )
 
-    with pytest.raises(RepositoryBundleError, match="bundle is too large"):
-        parse_repository_bundle(data, limits=RepositoryBundleLimits(max_bundle_bytes=8))
+    with pytest.raises(DirectoryBundleError, match="bundle is too large"):
+        parse_directory_bundle(data, limits=DirectoryBundleLimits(max_bundle_bytes=8))
