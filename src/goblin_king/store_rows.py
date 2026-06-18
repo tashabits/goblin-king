@@ -18,6 +18,7 @@ from goblin_king.contracts import (
     JobRecord,
     LongServiceRecord,
     NotebookGoblinRecord,
+    NotebookServiceRecord,
     ProjectRecord,
     RunRecord,
     ScheduleRecord,
@@ -237,6 +238,30 @@ def _row_to_notebook_goblin(payload: dict[str, Any]) -> NotebookGoblinRecord:
         updated_at=_coerce_datetime(payload["updated_at"]),
         created_by=payload["created_by"],
         metadata=json.loads(payload.get("metadata_json") or "{}"),
+    )
+
+
+def _row_to_notebook_service(payload: dict[str, Any]) -> NotebookServiceRecord:
+    """Convert a SQLAlchemy row mapping into a NotebookServiceRecord."""
+    return NotebookServiceRecord(
+        kind=payload["kind"],
+        project_id=payload.get("project_id"),
+        display_name=payload["display_name"],
+        image=payload["image"],
+        source=payload["source"],
+        source_hash=payload["source_hash"],
+        app_name=payload["app_name"],
+        requirements=json.loads(payload.get("requirements_json") or "[]"),
+        port=payload.get("port") or 8080,
+        probe_path=payload.get("probe_path") or "/hello",
+        created_at=_coerce_datetime(payload["created_at"]),
+        updated_at=_coerce_datetime(payload["updated_at"]),
+        created_by=payload["created_by"],
+        metadata=json.loads(payload.get("metadata_json") or "{}"),
+        runtime_backend=payload.get("runtime_backend"),
+        runtime_name=payload.get("runtime_name"),
+        runtime_status=payload.get("runtime_status") or "declared",
+        active_service_id=payload.get("active_service_id"),
     )
 
 

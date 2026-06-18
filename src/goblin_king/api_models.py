@@ -14,6 +14,7 @@ from goblin_king.contracts import (
     JobRecord,
     LongServiceRecord,
     NotebookGoblinRecord,
+    NotebookServiceRecord,
     RunRecord,
 )
 from goblin_king.termination import RuntimeTarget
@@ -187,6 +188,58 @@ class NotebookGoblinValidateResponse(BaseModel):
 
     goblin: NotebookGoblinRecord
     validation: WorkerValidationResult
+
+
+class NotebookServiceCreateRequest(BaseModel):
+    """Request body for declaring a notebook-defined ASGI service."""
+
+    kind: str
+    source: str = Field(min_length=1)
+    app_name: str = Field(default="app", min_length=1)
+    requirements: list[str] = Field(default_factory=list)
+    display_name: str | None = None
+    image: str | None = None
+    project_id: str | None = None
+    port: int = Field(default=8080, gt=0)
+    probe_path: str = Field(default="/hello", min_length=1)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class NotebookServiceValidateRequest(BaseModel):
+    """Request body for validating a notebook-defined ASGI service."""
+
+    timeout_seconds: int = Field(default=120, gt=0)
+
+
+class NotebookServiceValidateResponse(BaseModel):
+    """Validation proof for a notebook-defined ASGI service."""
+
+    service: NotebookServiceRecord
+    ok: bool
+    runtime: dict[str, Any]
+
+
+class NotebookServiceStartRequest(BaseModel):
+    """Request body for starting a notebook-defined ASGI service."""
+
+    timeout_seconds: int = Field(default=120, gt=0)
+
+
+class NotebookServiceStartResponse(BaseModel):
+    """Runtime proof for a started notebook-defined ASGI service."""
+
+    notebook_service: NotebookServiceRecord
+    service: LongServiceRecord
+    runtime: dict[str, Any]
+    probe: LongServiceProbeResponse
+
+
+class NotebookServiceStopResponse(BaseModel):
+    """Proof that a notebook-defined ASGI service was stopped and cleaned up."""
+
+    notebook_service: NotebookServiceRecord
+    service: LongServiceRecord | None = None
+    runtime: dict[str, Any]
 
 
 class RuntimeCleanupRequest(BaseModel):

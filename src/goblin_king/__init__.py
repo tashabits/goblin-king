@@ -15,13 +15,18 @@ from goblin_king.contracts import (
     JobRecord,
     LongServiceRecord,
     NotebookGoblinRecord,
+    NotebookServiceRecord,
     ProjectRecord,
     RunRecord,
     ScheduleRecord,
     UserRecord,
     WorkerValidationRecord,
 )
-from goblin_king.notebooks import GoblinKingNotebookClient, NotebookFunctionGoblin
+from goblin_king.notebooks import (
+    GoblinKingNotebookClient,
+    NotebookASGIService,
+    NotebookFunctionGoblin,
+)
 from goblin_king.project import ProjectSettings, ProjectSettingsError
 from goblin_king.registry import (
     ENTRY_POINT_GROUP,
@@ -72,8 +77,10 @@ __all__ = [
     "HeartbeatRecord",
     "JobRecord",
     "LongServiceRecord",
+    "NotebookASGIService",
     "NotebookFunctionGoblin",
     "NotebookGoblinRecord",
+    "NotebookServiceRecord",
     "ProjectRecord",
     "PROJECT_CONFIG_API_VERSION",
     "PROJECT_CONFIG_KIND",

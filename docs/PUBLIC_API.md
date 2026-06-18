@@ -23,6 +23,8 @@ Use these imports from `goblin_king` in host projects and generated goblin packa
 - Worker image settings: `WorkerImageMap`, `WorkerImageDefinition`, and
   `WorkerConfigError`.
 - API settings: `ApiSettings` and `ApiSettingsError`.
+- Notebook helpers: `GoblinKingNotebookClient`, `NotebookFunctionGoblin`, and
+  `NotebookASGIService`.
 - Template helpers: `init_package` and `TemplateError`.
 
 Generated goblin packages should normally need only:

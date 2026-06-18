@@ -5,7 +5,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from goblin_king.contracts import GoblinResult, JobRecord, NotebookGoblinRecord, utc_now
+from goblin_king.api_models import LongServiceProbeResponse
+from goblin_king.contracts import (
+    GoblinResult,
+    JobRecord,
+    LongServiceRecord,
+    NotebookGoblinRecord,
+    utc_now,
+)
+from goblin_king.notebook_services import (
+    NotebookServiceRuntimeError,
+    NotebookServiceRuntimeProof,
+    notebook_service_source_hash,
+)
 from goblin_king.notebooks import (
     GoblinKingNotebookClient,
     notebook_source_hash,
@@ -46,7 +58,8 @@ def test_branch_workbook_is_valid_and_branch_pinned() -> None:
     assert "JUPYTERHUB_API_TOKEN is required" in source
     assert "from goblin_king.notebooks import GoblinKingNotebookClient" in source
     assert "progress=True" in source
-    assert "/services/long-running/{service['id']}/stop" in source
+    assert "declare_service(" in source
+    assert "/services/long-running" not in source
 
 
 def test_default_workbook_uses_progress_without_branch_pin() -> None:
@@ -67,6 +80,7 @@ def test_default_workbook_uses_progress_without_branch_pin() -> None:
     assert "git+https://github.com/tashabits/goblin-king.git" in source
     assert "--no-deps" in source
     assert "progress=True" in source
+    assert "declare_service(" in source
     assert "site.getusersitepackages()" in source
     assert 'module_name == "goblin_king"' in source
     assert 'module_name.startswith("goblin_king.")' in source
@@ -99,6 +113,44 @@ def test_notebook_client_declare_posts_function_source(monkeypatch) -> None:
     assert requests[0][2]["function_name"] == "hello"
 
 
+def test_notebook_client_declare_service_posts_source(monkeypatch) -> None:
+    """Verify notebook users can declare an ASGI service through the public helper."""
+    requests = []
+    source = "async def app(scope, receive, send):\n    pass\n"
+
+    def fake_request(self, method, path, payload=None):
+        requests.append((method, path, payload))
+        return {
+            "kind": payload["kind"],
+            "source_hash": notebook_service_source_hash(
+                payload["source"],
+                payload["app_name"],
+                payload["requirements"],
+            ),
+            "runtime_status": "declared",
+            "active_service_id": None,
+        }
+
+    monkeypatch.setenv("GOBLIN_KING_API_TOKEN", "token")
+    monkeypatch.setattr(GoblinKingNotebookClient, "_request", fake_request)
+
+    client = GoblinKingNotebookClient(api_url="http://goblin.local")
+    service = client.declare_service(
+        source=source,
+        kind="notebook.long-hello",
+        app_name="app",
+        requirements=["fastapi>=0.115,<1"],
+        probe_path="/hello",
+    )
+
+    assert service.kind == "notebook.long-hello"
+    assert requests[0][0] == "POST"
+    assert requests[0][1] == "/notebooks/services"
+    assert requests[0][2]["source"] == source
+    assert requests[0][2]["app_name"] == "app"
+    assert requests[0][2]["requirements"] == ["fastapi>=0.115,<1"]
+
+
 def test_notebook_client_request_uses_configured_timeout(monkeypatch) -> None:
     """Verify notebook HTTP calls use the client-level request timeout."""
     seen = {}
@@ -128,6 +180,45 @@ def test_notebook_client_request_uses_configured_timeout(monkeypatch) -> None:
     assert client._request("GET", "/health") == {"ok": True}
 
     assert seen == {"url": "http://goblin.local/health", "timeout": 321}
+
+
+def test_notebook_client_service_start_prints_progress(monkeypatch, capsys) -> None:
+    """Verify service start progress is visible when requested."""
+    client = GoblinKingNotebookClient(api_url="http://goblin.local", token="token")
+
+    def fake_request(_method, path, _payload=None):
+        if path == "/notebooks/services":
+            return {
+                "kind": "notebook.long-hello",
+                "runtime_status": "declared",
+                "active_service_id": None,
+            }
+        if path.endswith("/start"):
+            return {
+                "notebook_service": {
+                    "kind": "notebook.long-hello",
+                    "runtime_status": "running",
+                    "runtime_backend": "kubernetes",
+                    "runtime_name": "gk-nbsvc",
+                    "active_service_id": "service-1",
+                },
+                "service": {"id": "service-1"},
+                "runtime": {},
+                "probe": {},
+            }
+        raise AssertionError(path)
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    service = client.declare_service(
+        source="async def app(scope, receive, send):\n    pass\n",
+        kind="notebook.long-hello",
+    )
+
+    service.start(progress=True)
+
+    output = capsys.readouterr().out
+    assert "notebook.long-hello service=none status=declared" in output
+    assert "notebook.long-hello service=service-1 status=running" in output
 
 
 def test_notebook_client_run_is_silent_by_default(monkeypatch, capsys) -> None:
@@ -362,3 +453,141 @@ def test_scheduler_runs_notebook_goblin_with_stored_bundle(tmp_path: Path, monke
     assert run.result and run.result.data == {"message": "Ada"}
     assert captured["definition"].kind == "notebook.hello"
     assert captured["input_payload"] == notebook_worker_input(record, {"name": "Ada"})
+
+
+def test_api_manages_notebook_asgi_service_lifecycle(tmp_path: Path, monkeypatch) -> None:
+    """Verify the API declares, validates, starts, registers, probes, and stops a service."""
+    client, store, _artifact_root = build_api_client(tmp_path)
+    source = "from fastapi import FastAPI\napp = FastAPI()\n"
+    manager = _FakeNotebookServiceManager()
+    monkeypatch.setattr("goblin_king.api._notebook_service_runtime_manager", lambda _state: manager)
+    monkeypatch.setattr("goblin_king.api._probe_long_service_record", _fake_probe_service)
+
+    declared = client.post(
+        "/notebooks/services",
+        headers=auth_headers(),
+        json={
+            "kind": "notebook.long-hello",
+            "display_name": "Notebook Long Hello",
+            "source": source,
+            "app_name": "app",
+            "requirements": ["fastapi>=0.115,<1"],
+            "probe_path": "/hello",
+        },
+    )
+    validated = client.post(
+        "/notebooks/services/notebook.long-hello/validate",
+        headers=auth_headers(),
+        json={"timeout_seconds": 10},
+    )
+    started = client.post(
+        "/notebooks/services/notebook.long-hello/start",
+        headers=auth_headers(),
+        json={"timeout_seconds": 10},
+    )
+    stopped = client.post(
+        "/notebooks/services/notebook.long-hello/stop",
+        headers=auth_headers(),
+    )
+
+    assert declared.status_code == 200
+    assert declared.json()["source_hash"] == notebook_service_source_hash(
+        source,
+        "app",
+        ["fastapi>=0.115,<1"],
+    )
+    assert validated.status_code == 200
+    assert validated.json()["ok"] is True
+    assert manager.validated == ["notebook.long-hello"]
+    assert started.status_code == 200
+    service_id = started.json()["service"]["id"]
+    assert started.json()["notebook_service"]["active_service_id"] == service_id
+    assert started.json()["service"]["status"] == "running"
+    assert stopped.status_code == 200
+    assert stopped.json()["notebook_service"]["runtime_status"] == "stopped"
+    assert store.get_long_service(service_id).status == "stopped"
+    assert manager.stopped == [("kubernetes", "gk-nbsvc-notebook-long-hello")]
+
+
+def test_api_notebook_asgi_service_validation_failure_is_actionable(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Verify bad notebook ASGI services return a clear validation failure."""
+    client, store, _artifact_root = build_api_client(tmp_path)
+    manager = _FakeNotebookServiceManager(validate_error="ASGI app symbol not found: app")
+    monkeypatch.setattr("goblin_king.api._notebook_service_runtime_manager", lambda _state: manager)
+    client.post(
+        "/notebooks/services",
+        headers=auth_headers(),
+        json={
+            "kind": "notebook.bad-service",
+            "source": "not_an_app = object()\n",
+            "app_name": "app",
+        },
+    )
+
+    response = client.post(
+        "/notebooks/services/notebook.bad-service/validate",
+        headers=auth_headers(),
+        json={"timeout_seconds": 10},
+    )
+
+    assert response.status_code == 422
+    assert "ASGI app symbol not found" in response.json()["detail"]
+    assert store.get_notebook_service("notebook.bad-service").runtime_status == "failed"
+
+
+class _FakeNotebookServiceManager:
+    def __init__(self, *, validate_error: str | None = None) -> None:
+        self.validate_error = validate_error
+        self.validated = []
+        self.started = []
+        self.stopped = []
+
+    def validate(self, record, *, timeout_seconds):
+        if self.validate_error:
+            raise NotebookServiceRuntimeError(self.validate_error)
+        self.validated.append(record.kind)
+        return NotebookServiceRuntimeProof(
+            backend="kubernetes",
+            name="gk-nbsvc-notebook-long-hello-validate",
+            base_url="http://validate.default.svc.cluster.local:8080",
+            probe={"ok": True, "status_code": 200},
+        )
+
+    def start(self, record, *, timeout_seconds):
+        self.started.append(record.kind)
+        return NotebookServiceRuntimeProof(
+            backend="kubernetes",
+            name="gk-nbsvc-notebook-long-hello",
+            base_url="http://gk-nbsvc-notebook-long-hello.default.svc.cluster.local:8080",
+            probe={"ok": True, "status_code": 200},
+        )
+
+    def stop(self, record):
+        if record.runtime_backend and record.runtime_name:
+            self.stop_by_backend(record.runtime_backend, record.runtime_name)
+        return {
+            "backend": record.runtime_backend,
+            "name": record.runtime_name,
+            "stopped": bool(record.runtime_name),
+        }
+
+    def stop_by_backend(self, backend, name):
+        self.stopped.append((backend, name))
+
+
+def _fake_probe_service(state, service: LongServiceRecord) -> LongServiceProbeResponse:
+    updated = state.store.update_long_service_probe(
+        service.id,
+        status="running",
+        last_probe_at=utc_now(),
+        last_probe_json={"status_code": 200, "json": {"message": "Hello World"}},
+    )
+    assert updated is not None
+    return LongServiceProbeResponse(
+        service=updated,
+        request={"method": "GET", "url": f"{service.base_url}/hello"},
+        response={"status_code": 200, "json": {"message": "Hello World"}},
+    )

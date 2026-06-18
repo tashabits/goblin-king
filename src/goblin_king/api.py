@@ -55,6 +55,12 @@ from goblin_king.api_models import (
     NotebookGoblinCreateRequest,
     NotebookGoblinValidateRequest,
     NotebookGoblinValidateResponse,
+    NotebookServiceCreateRequest,
+    NotebookServiceStartRequest,
+    NotebookServiceStartResponse,
+    NotebookServiceStopResponse,
+    NotebookServiceValidateRequest,
+    NotebookServiceValidateResponse,
     PageMeta,
     ProjectCreateRequest,
     RunListResponse,
@@ -100,6 +106,7 @@ from goblin_king.contracts import (
     JobRecord,
     LongServiceRecord,
     NotebookGoblinRecord,
+    NotebookServiceRecord,
     ProjectRecord,
     ScheduleRecord,
     UserRecord,
@@ -117,6 +124,11 @@ from goblin_king.fanout import (
     retry_job,
 )
 from goblin_king.metadata import goblin_job_metadata
+from goblin_king.notebook_services import (
+    NotebookServiceRuntimeError,
+    NotebookServiceRuntimeManager,
+    notebook_service_source_hash,
+)
 from goblin_king.notebooks import (
     notebook_definition,
     notebook_source_hash,
@@ -200,6 +212,78 @@ def _proxy_response_headers(headers: Any) -> dict[str, str]:
     }
 
 
+def _probe_long_service_record(
+    state: AppState,
+    service: LongServiceRecord,
+) -> LongServiceProbeResponse:
+    """Probe one registered service and persist its latest proof."""
+    probe_url = _service_probe_url(service)
+    request_payload = {"method": "GET", "url": probe_url}
+    try:
+        with urlrequest.urlopen(probe_url, timeout=5) as response:
+            response_text = response.read().decode("utf-8")
+            response_payload = {
+                "status_code": response.status,
+                "headers": dict(response.headers.items()),
+            }
+            try:
+                response_payload["json"] = json.loads(response_text)
+            except json.JSONDecodeError:
+                response_payload["json"] = None
+                response_payload["text"] = response_text
+    except urlerror.HTTPError as error:
+        response_payload = {
+            "status_code": error.code,
+            "headers": dict(error.headers.items()) if error.headers else {},
+            "text": error.read().decode("utf-8", errors="replace"),
+            "json": None,
+        }
+    except OSError as error:
+        response_payload = {
+            "status_code": None,
+            "headers": {},
+            "text": str(error),
+            "json": None,
+        }
+    status = (
+        "running"
+        if isinstance(response_payload.get("status_code"), int)
+        and 200 <= response_payload["status_code"] < 300
+        else "failed"
+    )
+    updated = state.store.update_long_service_probe(
+        service.id,
+        status=status,
+        last_probe_at=utc_now(),
+        last_probe_json=response_payload,
+    )
+    assert updated is not None
+    state.event_bus.emit(
+        "admin.service.probed",
+        source="api",
+        project_id=service.project_id,
+        worker_id=service.id,
+        payload={
+            "kind": service.kind,
+            "status": status,
+            "status_code": response_payload.get("status_code"),
+        },
+    )
+    if status == "failed":
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "service_id": service.id,
+                "probe": response_payload,
+            },
+        )
+    return LongServiceProbeResponse(
+        service=updated,
+        request=request_payload,
+        response=response_payload,
+    )
+
+
 def _forbid_viewer_write(principal: Principal) -> None:
     """Prevent read-only principals from creating runnable notebook bundles."""
     if principal.role == "viewer":
@@ -262,6 +346,39 @@ def _validate_notebook_with_kubernetes(
         error=None if ok else run_result.error or "worker returned failed status",
         checks=["kubernetes-job", "result-envelope"],
     )
+
+
+def _notebook_service_runtime_manager(state: AppState) -> NotebookServiceRuntimeManager:
+    """Build the configured notebook ASGI service runtime manager."""
+    return NotebookServiceRuntimeManager(
+        image=state.settings.notebook_service_image,
+        runtime=state.settings.notebook_service_runtime,
+        work_root=state.settings.artifact_root.parent / "notebook-services",
+    )
+
+
+def _stop_existing_notebook_service_runtime(
+    state: AppState,
+    manager: NotebookServiceRuntimeManager,
+    record: NotebookServiceRecord,
+) -> None:
+    """Best-effort cleanup for a previously started notebook service runtime."""
+    if record.active_service_id:
+        state.store.update_long_service_status(
+            record.active_service_id,
+            status="stopped",
+            last_probe_json={"stopped_by": "notebook_service.restart"},
+        )
+    if record.runtime_backend and record.runtime_name:
+        manager.stop_by_backend(record.runtime_backend, record.runtime_name)
+        state.store.update_notebook_service_runtime(
+            record.kind,
+            runtime_status="stopped",
+            runtime_backend=None,
+            runtime_name=None,
+            active_service_id=None,
+            updated_at=utc_now(),
+        )
 
 
 def create_app(settings: ApiSettings | None = None) -> FastAPI:
@@ -960,46 +1077,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         project_for_request(principal, service.project_id)
         if service.status == "stopped":
             raise HTTPException(status_code=409, detail=f"long service is stopped: {service_id}")
-        probe_url = _service_probe_url(service)
-        request_payload = {"method": "GET", "url": probe_url}
-        try:
-            with urlrequest.urlopen(probe_url, timeout=5) as response:
-                response_text = response.read().decode("utf-8")
-                response_payload = {
-                    "status_code": response.status,
-                    "headers": dict(response.headers.items()),
-                    "json": json.loads(response_text),
-                }
-        except (OSError, urlerror.URLError, json.JSONDecodeError) as error:
-            response_payload = {"status_code": 0, "error": str(error)}
-            updated = state.store.update_long_service_probe(
-                service.id,
-                status="failed",
-                last_probe_at=utc_now(),
-                last_probe_json=response_payload,
-            )
-            state.event_bus.emit(
-                "admin.service.probe_failed",
-                source="api",
-                project_id=service.project_id,
-                worker_id=service.id,
-                payload={"request": request_payload, "response": response_payload},
-            )
-            raise HTTPException(status_code=502, detail=str(error)) from error
-        updated = state.store.update_long_service_probe(
-            service.id,
-            status="running",
-            last_probe_at=utc_now(),
-            last_probe_json=response_payload,
-        )
-        assert updated is not None
-        state.event_bus.emit(
-            "admin.service.probed",
-            source="api",
-            project_id=service.project_id,
-            worker_id=service.id,
-            payload={"request": request_payload, "response": response_payload},
-        )
+        proof = _probe_long_service_record(state, service)
         audit(
             state.store,
             action="service.probed",
@@ -1008,13 +1086,9 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             project_id=service.project_id,
             resource_type="long_service",
             resource_id=service.id,
-            detail={"url": probe_url},
+            detail={"url": proof.request["url"]},
         )
-        return LongServiceProbeResponse(
-            service=updated,
-            request=request_payload,
-            response=response_payload,
-        )
+        return proof
 
     @app.api_route(
         "/services/long-running/{service_id}/proxy",
@@ -1404,6 +1478,314 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             detail={"image": record.image, "source_hash": record.source_hash, "ok": result.ok},
         )
         return NotebookGoblinValidateResponse(goblin=record, validation=result)
+
+    @app.post(
+        "/notebooks/services",
+        response_model=NotebookServiceRecord,
+        tags=["notebooks"],
+        operation_id="createNotebookService",
+    )
+    def create_notebook_service(
+        request: NotebookServiceCreateRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> NotebookServiceRecord:
+        """Declare a notebook-defined ASGI service bundle."""
+        _forbid_viewer_write(principal)
+        try:
+            state.registry.get(request.kind)
+        except RegistryError:
+            pass
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail=f"goblin kind already exists in registry: {request.kind}",
+            )
+        if state.store.get_notebook_goblin(request.kind) is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"notebook function goblin already exists: {request.kind}",
+            )
+        project_id = project_for_request(principal, request.project_id)
+        now = utc_now()
+        existing = state.store.get_notebook_service(request.kind)
+        if existing is not None:
+            project_for_request(principal, existing.project_id)
+            if existing.project_id != project_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail="notebook service kind already belongs to another project",
+                )
+            if existing.active_service_id and existing.runtime_status == "running":
+                raise HTTPException(
+                    status_code=409,
+                    detail="stop the notebook service before declaring new source",
+                )
+        probe_path = _normalize_probe_path(request.probe_path)
+        record = NotebookServiceRecord(
+            kind=request.kind,
+            project_id=project_id,
+            display_name=request.display_name or request.kind,
+            image=request.image or state.settings.notebook_service_image,
+            source=request.source,
+            source_hash=notebook_service_source_hash(
+                request.source,
+                request.app_name,
+                request.requirements,
+            ),
+            app_name=request.app_name,
+            requirements=request.requirements,
+            port=request.port,
+            probe_path=probe_path,
+            created_at=existing.created_at if existing else now,
+            updated_at=now,
+            created_by=existing.created_by if existing else principal.user_id,
+            metadata=request.metadata,
+        )
+        state.store.save_notebook_service(record)
+        audit(
+            state.store,
+            action="notebook_service.declared",
+            outcome="success",
+            principal=principal,
+            project_id=project_id,
+            resource_type="notebook_service",
+            resource_id=record.kind,
+            detail={
+                "image": record.image,
+                "source_hash": record.source_hash,
+                "app_name": record.app_name,
+                "probe_path": record.probe_path,
+            },
+        )
+        return record
+
+    @app.get(
+        "/notebooks/services",
+        response_model=list[NotebookServiceRecord],
+        tags=["notebooks"],
+        operation_id="listNotebookServices",
+    )
+    def list_notebook_services(
+        principal: Principal = Depends(require_principal),
+    ) -> list[NotebookServiceRecord]:
+        """Return notebook-defined ASGI services visible to the caller."""
+        records = []
+        for record in state.store.list_notebook_services():
+            try:
+                project_for_request(principal, record.project_id)
+            except HTTPException:
+                continue
+            records.append(record)
+        return records
+
+    @app.post(
+        "/notebooks/services/{kind}/validate",
+        response_model=NotebookServiceValidateResponse,
+        tags=["notebooks"],
+        operation_id="validateNotebookService",
+    )
+    def validate_notebook_service(
+        kind: str,
+        request: NotebookServiceValidateRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> NotebookServiceValidateResponse:
+        """Validate a notebook-defined ASGI service by starting and probing it."""
+        _forbid_viewer_write(principal)
+        record = state.store.get_notebook_service(kind)
+        if record is None:
+            raise HTTPException(status_code=404, detail=f"notebook service not found: {kind}")
+        project_for_request(principal, record.project_id)
+        manager = _notebook_service_runtime_manager(state)
+        try:
+            runtime = manager.validate(record, timeout_seconds=request.timeout_seconds)
+        except NotebookServiceRuntimeError as error:
+            state.store.update_notebook_service_runtime(
+                record.kind,
+                runtime_status="failed",
+                updated_at=utc_now(),
+            )
+            audit(
+                state.store,
+                action="notebook_service.validated",
+                outcome="failure",
+                principal=principal,
+                project_id=record.project_id,
+                resource_type="notebook_service",
+                resource_id=record.kind,
+                detail={"error": str(error), "source_hash": record.source_hash},
+            )
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        updated = state.store.update_notebook_service_runtime(
+            record.kind,
+            runtime_status="validated",
+            updated_at=utc_now(),
+        )
+        assert updated is not None
+        audit(
+            state.store,
+            action="notebook_service.validated",
+            outcome="success",
+            principal=principal,
+            project_id=updated.project_id,
+            resource_type="notebook_service",
+            resource_id=updated.kind,
+            detail={"runtime": runtime.model(), "source_hash": updated.source_hash},
+        )
+        return NotebookServiceValidateResponse(
+            service=updated,
+            ok=True,
+            runtime=runtime.model(),
+        )
+
+    @app.post(
+        "/notebooks/services/{kind}/start",
+        response_model=NotebookServiceStartResponse,
+        tags=["notebooks"],
+        operation_id="startNotebookService",
+    )
+    def start_notebook_service(
+        kind: str,
+        request: NotebookServiceStartRequest,
+        principal: Principal = Depends(require_principal),
+    ) -> NotebookServiceStartResponse:
+        """Start a notebook-defined ASGI service and register it for gated access."""
+        _forbid_viewer_write(principal)
+        record = state.store.get_notebook_service(kind)
+        if record is None:
+            raise HTTPException(status_code=404, detail=f"notebook service not found: {kind}")
+        project_for_request(principal, record.project_id)
+        manager = _notebook_service_runtime_manager(state)
+        _stop_existing_notebook_service_runtime(state, manager, record)
+        try:
+            runtime = manager.start(record, timeout_seconds=request.timeout_seconds)
+        except NotebookServiceRuntimeError as error:
+            state.store.update_notebook_service_runtime(
+                record.kind,
+                runtime_status="failed",
+                updated_at=utc_now(),
+            )
+            audit(
+                state.store,
+                action="notebook_service.started",
+                outcome="failure",
+                principal=principal,
+                project_id=record.project_id,
+                resource_type="notebook_service",
+                resource_id=record.kind,
+                detail={"error": str(error), "source_hash": record.source_hash},
+            )
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        service = LongServiceRecord(
+            id=str(uuid4()),
+            kind=record.kind,
+            project_id=record.project_id,
+            image=record.image,
+            base_url=runtime.base_url.rstrip("/"),
+            probe_path=record.probe_path,
+            status="registered",
+            created_at=utc_now(),
+            created_by=principal.user_id,
+        )
+        state.store.save_long_service(service)
+        updated = state.store.update_notebook_service_runtime(
+            record.kind,
+            runtime_status="running",
+            runtime_backend=runtime.backend,
+            runtime_name=runtime.name,
+            active_service_id=service.id,
+            updated_at=utc_now(),
+        )
+        assert updated is not None
+        try:
+            probe = _probe_long_service_record(state, service)
+        except HTTPException:
+            manager.stop_by_backend(runtime.backend, runtime.name)
+            state.store.update_notebook_service_runtime(
+                record.kind,
+                runtime_status="failed",
+                runtime_backend=runtime.backend,
+                runtime_name=runtime.name,
+                active_service_id=service.id,
+                updated_at=utc_now(),
+            )
+            raise
+        state.event_bus.emit(
+            "notebook.service.started",
+            source="api",
+            project_id=updated.project_id,
+            worker_id=service.id,
+            payload={
+                "kind": updated.kind,
+                "runtime": runtime.model(),
+                "probe_status": probe.response.get("status_code"),
+            },
+        )
+        audit(
+            state.store,
+            action="notebook_service.started",
+            outcome="success",
+            principal=principal,
+            project_id=updated.project_id,
+            resource_type="notebook_service",
+            resource_id=updated.kind,
+            detail={"service_id": service.id, "runtime": runtime.model()},
+        )
+        return NotebookServiceStartResponse(
+            notebook_service=updated,
+            service=probe.service,
+            runtime=runtime.model(),
+            probe=probe,
+        )
+
+    @app.post(
+        "/notebooks/services/{kind}/stop",
+        response_model=NotebookServiceStopResponse,
+        tags=["notebooks"],
+        operation_id="stopNotebookService",
+    )
+    def stop_notebook_service(
+        kind: str,
+        principal: Principal = Depends(require_principal),
+    ) -> NotebookServiceStopResponse:
+        """Stop a managed notebook-defined ASGI service and mark it stopped."""
+        _forbid_viewer_write(principal)
+        record = state.store.get_notebook_service(kind)
+        if record is None:
+            raise HTTPException(status_code=404, detail=f"notebook service not found: {kind}")
+        project_for_request(principal, record.project_id)
+        manager = _notebook_service_runtime_manager(state)
+        runtime = manager.stop(record)
+        service = None
+        if record.active_service_id:
+            service = state.store.update_long_service_status(
+                record.active_service_id,
+                status="stopped",
+                last_probe_json={"stopped_by": "notebook_service.stop"},
+            )
+        updated = state.store.update_notebook_service_runtime(
+            record.kind,
+            runtime_status="stopped",
+            runtime_backend=None,
+            runtime_name=None,
+            active_service_id=None,
+            updated_at=utc_now(),
+        )
+        assert updated is not None
+        audit(
+            state.store,
+            action="notebook_service.stopped",
+            outcome="success",
+            principal=principal,
+            project_id=updated.project_id,
+            resource_type="notebook_service",
+            resource_id=updated.kind,
+            detail=runtime,
+        )
+        return NotebookServiceStopResponse(
+            notebook_service=updated,
+            service=service,
+            runtime=runtime,
+        )
 
     @app.post("/jobs", response_model=JobRecord, tags=["jobs"], operation_id="createJob")
     def create_job(

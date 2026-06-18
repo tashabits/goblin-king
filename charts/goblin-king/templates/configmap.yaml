@@ -12,6 +12,8 @@ data:
       "artifact_root": "{{ .Values.config.artifactRoot }}",
       "resource_policies": "{{ .Values.config.resourcePoliciesPath }}",
       "notebook_function_image": "{{ .Values.config.notebookFunctionImage }}",
+      "notebook_service_image": "{{ .Values.config.notebookServiceImage }}",
+      "notebook_service_runtime": "{{ .Values.config.notebookServiceRuntime }}",
       "bootstrap_admin_token": "{{ .Values.api.bootstrapAdminToken }}",
       "oidc": {
         "enabled": {{ .Values.config.oidc.enabled }},

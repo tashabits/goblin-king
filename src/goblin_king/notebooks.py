@@ -1,4 +1,4 @@
-"""Notebook helpers for declaring, validating, and running Python function goblins."""
+"""Notebook helpers for Python function goblins and ASGI services."""
 
 from __future__ import annotations
 
@@ -128,6 +128,98 @@ class NotebookFunctionGoblin:
         )
 
 
+@dataclass
+class NotebookASGIService:
+    """Client-side handle returned after a notebook ASGI service is declared."""
+
+    client: GoblinKingNotebookClient
+    record: dict[str, Any]
+
+    @property
+    def kind(self) -> str:
+        """Return the custom service kind assigned to this ASGI app."""
+        return str(self.record["kind"])
+
+    @property
+    def service_id(self) -> str | None:
+        """Return the active registered service id, if the service is running."""
+        service_id = self.record.get("active_service_id")
+        return str(service_id) if service_id else None
+
+    def validate(self, *, timeout_seconds: int = 120) -> dict[str, Any]:
+        """Validate this ASGI service by starting and probing an isolated runner."""
+        response = self.client.validate_service(self.kind, timeout_seconds=timeout_seconds)
+        self.record = response["service"]
+        return response
+
+    def start(
+        self,
+        *,
+        timeout_seconds: int = 120,
+        progress: bool = False,
+        on_progress: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        """Start this ASGI service and register it for gated proxy access."""
+        started_at = time.monotonic()
+        self.client._emit_service_progress(
+            phase="starting",
+            kind=self.kind,
+            service=self.record,
+            elapsed_seconds=0.0,
+            progress=progress,
+            on_progress=on_progress,
+        )
+        try:
+            response = self.client.start_service(self.kind, timeout_seconds=timeout_seconds)
+        except Exception:
+            self.client._emit_service_progress(
+                phase="failed",
+                kind=self.kind,
+                service=self.record,
+                elapsed_seconds=time.monotonic() - started_at,
+                progress=progress,
+                on_progress=on_progress,
+            )
+            raise
+        self.record = response["notebook_service"]
+        self.client._emit_service_progress(
+            phase="running",
+            kind=self.kind,
+            service=self.record,
+            elapsed_seconds=time.monotonic() - started_at,
+            progress=progress,
+            on_progress=on_progress,
+        )
+        return response
+
+    def probe(self) -> dict[str, Any]:
+        """Probe the active registered service endpoint."""
+        service_id = self._require_service_id()
+        return self.client._request("POST", f"/services/long-running/{service_id}/probe")
+
+    def proxy(self, path: str) -> dict[str, Any]:
+        """Proxy one request to the active registered service endpoint."""
+        service_id = self._require_service_id()
+        clean_path = path if path.startswith("/") else f"/{path}"
+        return self.client._request(
+            "GET",
+            f"/services/long-running/{service_id}/proxy"
+            f"{urlparse.quote(clean_path, safe='/')}",
+        )
+
+    def stop(self) -> dict[str, Any]:
+        """Stop and clean up the managed ASGI service runtime."""
+        response = self.client.stop_service(self.kind)
+        self.record = response["notebook_service"]
+        return response
+
+    def _require_service_id(self) -> str:
+        service_id = self.service_id
+        if not service_id:
+            raise RuntimeError("service is not running; call start() first")
+        return service_id
+
+
 class GoblinKingNotebookClient:
     """Tiny HTTP client intended for JupyterHub workbooks."""
 
@@ -183,6 +275,39 @@ class GoblinKingNotebookClient:
         )
         return NotebookFunctionGoblin(client=self, record=record)
 
+    def declare_service(
+        self,
+        *,
+        source: str,
+        kind: str,
+        app_name: str = "app",
+        requirements: list[str] | None = None,
+        display_name: str | None = None,
+        project_id: str | None = None,
+        image: str | None = None,
+        port: int = 8080,
+        probe_path: str = "/hello",
+        metadata: dict[str, Any] | None = None,
+    ) -> NotebookASGIService:
+        """Declare notebook source as a managed ASGI service bundle."""
+        record = self._request(
+            "POST",
+            "/notebooks/services",
+            {
+                "kind": kind,
+                "display_name": display_name or kind,
+                "project_id": project_id,
+                "image": image,
+                "source": source,
+                "app_name": app_name,
+                "requirements": requirements or [],
+                "port": port,
+                "probe_path": probe_path,
+                "metadata": metadata or {},
+            },
+        )
+        return NotebookASGIService(client=self, record=record)
+
     def validate(
         self,
         kind: str,
@@ -200,6 +325,29 @@ class GoblinKingNotebookClient:
                 "require_success": require_success,
                 "timeout_seconds": timeout_seconds,
             },
+        )
+
+    def validate_service(self, kind: str, *, timeout_seconds: int = 120) -> dict[str, Any]:
+        """Validate a declared notebook ASGI service."""
+        return self._request(
+            "POST",
+            f"/notebooks/services/{urlparse.quote(kind, safe='')}/validate",
+            {"timeout_seconds": timeout_seconds},
+        )
+
+    def start_service(self, kind: str, *, timeout_seconds: int = 120) -> dict[str, Any]:
+        """Start a declared notebook ASGI service."""
+        return self._request(
+            "POST",
+            f"/notebooks/services/{urlparse.quote(kind, safe='')}/start",
+            {"timeout_seconds": timeout_seconds},
+        )
+
+    def stop_service(self, kind: str) -> dict[str, Any]:
+        """Stop a declared notebook ASGI service."""
+        return self._request(
+            "POST",
+            f"/notebooks/services/{urlparse.quote(kind, safe='')}/stop",
         )
 
     def run(
@@ -293,6 +441,35 @@ class GoblinKingNotebookClient:
                 f"[{payload['elapsed_seconds']}s] {kind} "
                 f"job={payload['job_status']} run={run_status}"
             )
+
+    def _emit_service_progress(
+        self,
+        *,
+        phase: str,
+        kind: str,
+        service: dict[str, Any],
+        elapsed_seconds: float,
+        progress: bool,
+        on_progress: ProgressCallback | None,
+    ) -> None:
+        """Emit one optional notebook-friendly service progress update."""
+        if not progress and on_progress is None:
+            return
+        payload = {
+            "phase": phase,
+            "kind": kind,
+            "service_id": service.get("active_service_id"),
+            "runtime_status": service.get("runtime_status"),
+            "runtime_backend": service.get("runtime_backend"),
+            "runtime_name": service.get("runtime_name"),
+            "elapsed_seconds": round(elapsed_seconds, 1),
+        }
+        if on_progress is not None:
+            on_progress(payload)
+        elif progress:
+            service_id = payload["service_id"] or "none"
+            runtime = payload["runtime_status"] or phase
+            print(f"[{payload['elapsed_seconds']}s] {kind} service={service_id} status={runtime}")
 
     def _run_for_job(self, job_id: str, kind: str) -> dict[str, Any] | None:
         runs = self._request(

@@ -61,6 +61,8 @@ class ApiSettings(BaseModel):
     artifact_root: Path = Path(".goblin-king/artifacts")
     resource_policies: Path | None = Path("goblin-resource-policies.json")
     notebook_function_image: str = "goblin-king-notebook-python-function:local"
+    notebook_service_image: str = "goblin-king-notebook-asgi-service:local"
+    notebook_service_runtime: str = "auto"
     auth_token: str = Field(default="local-dev-token", min_length=1)
     bootstrap_admin_token: str = Field(default="local-dev-token", min_length=1)
     default_project_id: str | None = None
@@ -94,6 +96,15 @@ class ApiSettings(BaseModel):
         bootstrap = os.environ.get("GOBLIN_KING_BOOTSTRAP_ADMIN_TOKEN")
         if bootstrap:
             payload["bootstrap_admin_token"] = bootstrap
+        notebook_function_image = os.environ.get("GOBLIN_KING_NOTEBOOK_FUNCTION_IMAGE")
+        if notebook_function_image:
+            payload["notebook_function_image"] = notebook_function_image
+        notebook_service_image = os.environ.get("GOBLIN_KING_NOTEBOOK_SERVICE_IMAGE")
+        if notebook_service_image:
+            payload["notebook_service_image"] = notebook_service_image
+        notebook_service_runtime = os.environ.get("GOBLIN_KING_NOTEBOOK_SERVICE_RUNTIME")
+        if notebook_service_runtime:
+            payload["notebook_service_runtime"] = notebook_service_runtime
         hub_token = os.environ.get("GOBLIN_KING_JUPYTERHUB_SERVICE_TOKEN")
         if hub_token:
             hub_payload = payload.setdefault("jupyterhub", {})

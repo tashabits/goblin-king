@@ -4,6 +4,8 @@ api:
 
 config:
   notebookFunctionImage: goblin-king-notebook-python-function:local
+  notebookServiceImage: goblin-king-notebook-asgi-service:local
+  notebookServiceRuntime: kubernetes
   jupyterhub:
     enabled: true
     apiUrl: http://hub.default.svc.cluster.local:8081/hub/api

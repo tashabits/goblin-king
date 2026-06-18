@@ -35,11 +35,12 @@ JUPYTERHUB_WORKBOOK_USER_TOKEN_KEY ?= workbook-user-token
 JUPYTERHUB_WORKBOOK_USER_TOKEN ?= local-goblin-king-workbook-token
 JUPYTERHUB_WORKBOOK_PROOF ?= examples/jupyterhub-goblin-king/workbook_proof.py
 JUPYTERHUB_FULL_STACK_PROOF ?= examples/jupyterhub-goblin-king/full_stack_workbook_proof.py
+NOTEBOOK_SERVICE_DOCKER_PROOF ?= examples/jupyterhub-goblin-king/docker_notebook_service_proof.py
 JUPYTERHUB_WORKBOOK_API_URL ?= http://127.0.0.1:18000
 JUPYTERHUB_WORKBOOK_KIND ?= notebook.workbook-short-hello
 HELM_JUPYTERHUB_ARGS ?= --set config.jupyterhub.enabled=true --set config.jupyterhub.apiUrl=http://$(JUPYTERHUB_RELEASE)-hub.$(HELM_NAMESPACE).svc.cluster.local:8081/hub/api --set config.jupyterhub.hubUrl=http://$(JUPYTERHUB_RELEASE).$(HELM_NAMESPACE).svc.cluster.local --set config.jupyterhub.serviceTokenSecret.name=$(JUPYTERHUB_SERVICE_TOKEN_SECRET) --set config.jupyterhub.serviceTokenSecret.key=$(JUPYTERHUB_SERVICE_TOKEN_KEY) --set config.jupyterhub.allowedGroups[0]=goblin-users --set config.jupyterhub.projectGroups.goblin-users=default
 
-.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean jupyterhub-stack-up jupyterhub-stack-down jupyterhub-up jupyterhub-down jupyterhub-workbook-proof helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit doctor demo demo-down project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel release-check helm-template helm-admin-smoke kind-smoke clean clean-all docker-clean
+.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean notebook-service-docker-proof jupyterhub-stack-up jupyterhub-stack-down jupyterhub-up jupyterhub-down jupyterhub-workbook-proof helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit doctor demo demo-down project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel release-check helm-template helm-admin-smoke kind-smoke clean clean-all docker-clean
 
 help:
 	@echo "Targets:"
@@ -61,6 +62,7 @@ help:
 	@echo "  docker-up      Build and start the full Docker Compose stack"
 	@echo "  docker-wipe    Stop Docker Compose and delete its volumes/data"
 	@echo "  docker-restart-clean Wipe Docker data, then rebuild and start Compose"
+	@echo "  notebook-service-docker-proof Prove notebook ASGI service lifecycle with Docker"
 	@echo "  helm-up        Install/upgrade the Helm stack and wait for readiness"
 	@echo "  jupyterhub-stack-up Install local Kubernetes stack with JupyterHub auth"
 	@echo "  jupyterhub-stack-down Remove local Kubernetes stack with JupyterHub auth"
@@ -157,6 +159,13 @@ docker-wipe:
 
 docker-restart-clean: docker-wipe docker-up
 
+notebook-service-docker-proof:
+	docker build -t goblin-king-notebook-asgi-service:local workers/notebook.asgi-service
+	docker compose --profile api up -d --build redis api
+	$(PYTHON) $(NOTEBOOK_SERVICE_DOCKER_PROOF) --api-url http://127.0.0.1:8000 --token local-dev-token
+	docker compose rm -sf api redis
+	docker compose down --volumes --remove-orphans
+
 jupyterhub-stack-up:
 	$(MAKE) -f Makefile -f $(JUPYTERHUB_STACK_CONFIG) helm-up HELM_WITH_JUPYTERHUB=1
 
@@ -171,6 +180,7 @@ jupyterhub-up:
 	helm upgrade --install $(JUPYTERHUB_RELEASE) $(JUPYTERHUB_CHART) --namespace $(HELM_NAMESPACE) --create-namespace --wait --timeout $(HELM_TIMEOUT) -f $(JUPYTERHUB_VALUES)
 
 jupyterhub-down:
+	-kubectl delete pod --namespace $(HELM_NAMESPACE) -l app.kubernetes.io/instance=$(JUPYTERHUB_RELEASE),app.kubernetes.io/component=singleuser-server --ignore-not-found
 	-helm uninstall $(JUPYTERHUB_RELEASE) --namespace $(HELM_NAMESPACE) --ignore-not-found
 	-kubectl delete secret $(JUPYTERHUB_SERVICE_TOKEN_SECRET) --namespace $(HELM_NAMESPACE) --ignore-not-found
 

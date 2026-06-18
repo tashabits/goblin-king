@@ -33,7 +33,8 @@ def main() -> None:
                     "--set admin.image.pullPolicy=Never "
                     f"--set workers.exampleLongHello.image={images['long_hello']} "
                     "--set workers.exampleLongHello.pullPolicy=Never "
-                    f"--set config.notebookFunctionImage={images['notebook_runner']}"
+                    f"--set config.notebookFunctionImage={images['notebook_runner']} "
+                    f"--set config.notebookServiceImage={images['notebook_service_runner']}"
                 )
             ],
         )
@@ -62,12 +63,6 @@ def main() -> None:
                 args.project_id,
                 "--kind",
                 args.kind,
-                "--namespace",
-                args.namespace,
-                "--kind-cluster",
-                args.kind_cluster,
-                "--service-image",
-                images["generated_service"],
             ],
             check=True,
         )
@@ -101,13 +96,14 @@ def _prepare_local_images(kind_cluster: str, tag: str) -> dict[str, str]:
         "app": f"goblin-king:{tag}",
         "admin": f"goblin-king-admin-ui:{tag}",
         "notebook_runner": f"goblin-king-notebook-python-function:{tag}",
+        "notebook_service_runner": f"goblin-king-notebook-asgi-service:{tag}",
         "long_hello": f"goblin-king-example-long-hello:{tag}",
-        "generated_service": f"goblin-king-workbook-hello-service:{tag}",
     }
     contexts = {
         images["app"]: ".",
         images["admin"]: "admin-ui",
         images["notebook_runner"]: "workers/notebook.python-function",
+        images["notebook_service_runner"]: "workers/notebook.asgi-service",
         images["long_hello"]: "workers/example.long-hello",
     }
     for image, context in contexts.items():

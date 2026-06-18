@@ -61,18 +61,26 @@ services:
       - redis://redis:6379/0
 
   api:
-    image: python:3.12-slim
+    image: goblin-king:local
+    build:
+      context: .
+      dockerfile: Dockerfile
     profiles: ["api"]
     working_dir: /app
+    entrypoint: []
     depends_on:
       - redis
     ports:
       - "8000:8000"
     environment:
       GOBLIN_KING_API_TOKEN: local-dev-token
+      GOBLIN_KING_DOCKER_DATA_VOLUME: ${COMPOSE_PROJECT_NAME:-goblin-king}_goblin-king-data
+      GOBLIN_KING_DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-goblin-king}_default
+      GOBLIN_KING_NOTEBOOK_SERVICE_RUNTIME: docker
     volumes:
       - .:/app
       - goblin-king-data:/app/.goblin-king
+      - /var/run/docker.sock:/var/run/docker.sock
     command:
       - sh
       - -c
@@ -153,6 +161,14 @@ services:
       context: workers/notebook.python-function
       dockerfile: Dockerfile
     command: ["python", "-c", "print('notebook.python-function worker image built')"]
+
+  worker-notebook-asgi-service:
+    image: goblin-king-notebook-asgi-service:local
+    profiles: ["workers"]
+    build:
+      context: workers/notebook.asgi-service
+      dockerfile: Dockerfile
+    command: ["python", "-c", "print('notebook.asgi-service worker image built')"]
 
   long-hello:
     image: goblin-king-example-long-hello:local

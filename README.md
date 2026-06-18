@@ -153,9 +153,11 @@ installs a default zero-to-jupyterhub proof stack with an authenticated workbook
 The default Hub values include notebook-pod egress to the Goblin King API service so
 users can launch goblins from inside JupyterHub.
 `make jupyterhub-workbook-proof` brings up that stack, uses a Hub user token, declares
-and validates a short Python function goblin from workbook-style source, generates a
-long-running hello service at proof time, registers/probes/proxies it, then tears the
-stack back down. See
+and validates a short Python function goblin from workbook-style source, declares a
+FastAPI ASGI service from notebook source, validates it, starts the managed service
+pod, probes/proxies it, stops it, then tears the stack back down.
+`make notebook-service-docker-proof` exercises the same source-authored service
+lifecycle through the local Docker runtime. See
 [`docs/jupyterhub-service-access.md`](docs/jupyterhub-service-access.md) for the exact
 JupyterHub config, Secret wiring, and local Kubernetes walkthrough.
 

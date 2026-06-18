@@ -81,6 +81,8 @@ config:
   artifactRoot: /data/artifacts
   redisUrl: redis://goblin-king-redis:6379/0
   notebookFunctionImage: goblin-king-notebook-python-function:local
+  notebookServiceImage: goblin-king-notebook-asgi-service:local
+  notebookServiceRuntime: auto
   oidc:
     enabled: false
     issuer: ""
