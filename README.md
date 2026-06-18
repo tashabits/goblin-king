@@ -1,64 +1,91 @@
 # Goblin King
 
-Goblin King is a self-hosted control plane for validated container-backed workloads:
-short-lived task goblins, managed service goblins, notebook-authored goblins executed
-through configured runner containers, and deployment-local Directory goblins.
+Goblin King is a container-driven task scheduler and control plane for Docker and
+Kubernetes. It runs validated goblin containers as project-defined jobs and services,
+then records status, logs, results, artifacts, events, audit proof, and resource policy.
 
-Use Goblin King when you want a trusted project or deployment to define validated
-container-backed work, inspect what happened, and keep a durable audit trail. Docker
-and Compose are the default local path. Kubernetes is optional through the Helm chart
-when a project needs a cluster deployment.
+Use it when your project needs background tasks or service-style workers without forcing
+every worker into the same language runtime. A goblin can be Python, Node.js, Go, Rust,
+Java, PHP, Ruby, shell, .NET, or a container-wrapped WASI module, as long as it follows
+the Goblin Container Contract.
 
-**Status: Open-source alpha / project-adoptable alpha.** Goblin King is ready
-for trusted self-hosted projects that want to define, validate, schedule, run, share,
-and inspect their own container-backed workloads. It is not intended for untrusted
-third-party container execution, public multi-tenant workloads, or production
-deployments without additional hardening.
+Docker and Compose are the default local/self-hosted path. Kubernetes is optional
+through the Helm chart. JupyterHub compatibility is available for shared lab and
+testbed workflows, but the core model stays container-first.
 
-Goblin King can be used by trusted self-hosted projects as a local/project control
-plane for contract-compliant container-backed workloads. Adopters can run the local/dev
-stack and use the admin panel, API, notebooks, or Directory to validate, submit, share,
-and inspect their own project goblins. This remains project-adoptable alpha software
-and is not intended for untrusted third-party container execution.
+**Status: Open-source alpha / project-adoptable alpha.** Goblin King is intended for
+trusted self-hosted projects. It is not intended for untrusted third-party container
+execution, public multi-tenant workloads, or production deployments without additional
+hardening.
 
-## Table Of Contents
+## Table of Contents
 
-- [Goblin King](#goblin-king)
-- [Table Of Contents](#table-of-contents)
+- [Why Goblin King?](#why-goblin-king)
+- [Mental Model](#mental-model)
 - [Quick Start](#quick-start)
-- [Clean Restarts](#clean-restarts)
-- [Using Goblin King In Your Project](#using-goblin-king-in-your-project)
-- [Goblin Container Contract](#goblin-container-contract)
-  - [Launch Language Goblins In Admin](#launch-language-goblins-in-admin)
-- [Worker Images](#worker-images)
-- [Admin Runtime Audit](#admin-runtime-audit)
+- [Use Goblin King In Your Project](#use-goblin-king-in-your-project)
+- [Validation Gate](#validation-gate)
 - [Resource Policies](#resource-policies)
-- [Image Promotion And Deployment Proof](#image-promotion-and-deployment-proof)
-- [Capabilities](#capabilities)
-- [Future Work](#future-work)
+- [Admin UI](#admin-ui)
+- [Docker, Compose, Kubernetes, And Helm](#docker-compose-kubernetes-and-helm)
+- [JupyterHub Lab Compatibility](#jupyterhub-lab-compatibility)
+- [Goblin Directory](#goblin-directory)
+- [Examples](#examples)
+- [Operational Commands](#operational-commands)
 - [Documentation](#documentation)
-- Deeper manuals:
-  - [User Guide](docs/USER_GUIDE.md)
-  - [Admin Guide](docs/ADMIN_GUIDE.md)
-  - [Goblin Container Contract](docs/goblin-container-contract.md)
-  - [Goblin Workload Types](docs/goblin-workload-types.md)
-  - [What Is A Goblin?](docs/what-is-a-goblin.md)
-  - [Writing Goblins](docs/writing-goblins.md)
-  - [Goblin Dockerfiles](docs/goblin-dockerfiles.md)
-  - [Language-Agnostic Workers](docs/language-agnostic-workers.md)
-  - [Security Policy](SECURITY.md)
-  - [Security Model](docs/security-model.md)
-  - [JupyterHub Service Access](docs/jupyterhub-service-access.md)
-  - [Goblin Directory](docs/goblin-directory.md)
-  - [API Roadmap](docs/api-roadmap.md)
-  - [Scheduler Plan](docs/goblin-king-plan.md)
-  - [Adopting Projects](docs/ADOPTING_PROJECTS.md)
-  - [Adopter Guide](docs/adopter-guide.md)
-  - [Public API Boundary](docs/PUBLIC_API.md)
-  - [Release Checklist](docs/RELEASE_CHECKLIST.md)
-  - [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md)
-  - [Code Cleanup Notes](docs/CODE_CLEANUP.md)
-  - [Contributing](CONTRIBUTING.md)
+- [Future Work](#future-work)
+- [Contributing, Security, And License](#contributing-security-and-license)
+
+## Why Goblin King?
+
+Background jobs often get trapped inside one application runtime. Dependencies collide,
+legacy tools are awkward to integrate, and long-running workers can poison shared
+processes when they leak memory, block event loops, or need a different language stack.
+
+Goblin King keeps that work behind a container boundary. Your main application keeps its
+own domain logic. Worker containers keep their own dependencies. Goblin King adds the
+control-plane pieces around them: validation before scheduling, durable jobs/runs,
+resource policy, admin visibility, events, heartbeats, logs, results, artifacts, and
+service lifecycle proof.
+
+It is a good fit for trusted self-hosted projects that need:
+
+- Scheduled or on-demand background jobs.
+- Mixed-language worker tasks.
+- Artifact-producing jobs such as reports, exports, images, or PDFs.
+- Project-scoped HTTP services that need probe/proxy/start/stop visibility.
+- Local Docker/Compose proof before optional Kubernetes deployment.
+- Shared lab/testbed flows where JupyterHub users author and run validated goblins.
+
+It is not a public container marketplace and not a complete production multi-tenant
+sandbox by default.
+
+## Mental Model
+
+Goblin King schedules containers, not language runtimes.
+
+A goblin is a validated container-backed task or service. The container boundary,
+Goblin Container Contract, validation gate, resource policy, and project/deployment
+scope are the core model.
+
+- Task goblins run, read input/context, write results/artifacts/logs/events, and exit.
+- Service goblins start, become ready, answer probes/proxy requests, and are stopped or
+  managed by Goblin King.
+- Notebook-authored goblins still execute inside configured runner containers.
+- Directory goblins are deployment-local shared goblins that were submitted, validated,
+  reviewed, and published for users in one Goblin King deployment.
+
+Validation proves contract compliance, not trustworthiness. Run only trusted project
+images and trusted deployment-local submissions unless your deployment adds the review,
+scanning, sandboxing, and governance it needs.
+
+Start with:
+
+- [Goblin Workload Types](docs/goblin-workload-types.md)
+- [What Is A Goblin?](docs/what-is-a-goblin.md)
+- [Goblin Container Contract](docs/goblin-container-contract.md)
+- [Goblin Contract Validation](docs/goblin-contract-validation.md)
+- [Security Model](docs/security-model.md)
 
 ## Quick Start
 
@@ -68,152 +95,47 @@ Install the package for local development:
 python -m pip install -e .[dev]
 ```
 
-Run the local CI checks:
+Check the local environment:
+
+```bash
+goblin-king doctor
+```
+
+Start the trusted local demo stack:
+
+```bash
+goblin-king demo up
+```
+
+`demo up` starts the Docker Compose adopter/admin stack, validates the default project
+goblin, reloads discovery, submits a Docker-backed run, waits for proof, and prints the
+admin URL plus the cleanup command. The default admin URL is:
+
+```text
+http://127.0.0.1:8080/admin
+```
+
+Stop the demo when you are done:
+
+```bash
+goblin-king demo down
+```
+
+Run the local checks:
 
 ```bash
 python -m pytest
 python -m ruff check .
 ```
 
-Build worker images and start Redis:
+The longer Docker, API, Helm, JupyterHub, and admin proof commands are below. New users
+should try the demo first.
 
-```bash
-make deploy
-```
+## Use Goblin King In Your Project
 
-Create and run a due schedule through Docker:
-
-```bash
-goblin-king schedules add example.echo --cron "* * * * *" --input examples/input.json --registry demo-goblins.json --due-now
-goblin-king scheduler run-once --registry demo-goblins.json --images demo-images.json --redis-url redis://localhost:6379/0
-goblin-king jobs list
-```
-
-Or run the local simulation target:
-
-```bash
-make simulate
-```
-
-Run the API locally:
-
-```bash
-goblin-king api run --settings goblin-king-api.json
-```
-
-Smoke the API from another terminal:
-
-```bash
-curl http://127.0.0.1:8000/health
-curl -H "Authorization: Bearer local-dev-token" http://127.0.0.1:8000/goblins
-curl -X POST http://127.0.0.1:8000/jobs \
-  -H "Authorization: Bearer local-dev-token" \
-  -H "Content-Type: application/json" \
-  -d "{\"kind\":\"example.echo\",\"input\":{\"message\":\"hello api\"}}"
-```
-
-Create local API principals and scoped tokens:
-
-```bash
-goblin-king auth create-user --email dev@example.test --display-name Dev
-goblin-king auth create-project --name "Local Project"
-goblin-king auth create-token --name local-token --user-id <user-id> --project-id <project-id>
-```
-
-Only `GET /health` is open. Other HTTP endpoints and `WS /ws/runs` require bearer
-tokens. API list endpoints return paginated envelopes such as:
-
-```bash
-curl -H "Authorization: Bearer local-dev-token" "http://127.0.0.1:8000/jobs?limit=20&offset=0"
-```
-
-For external identity, enable OIDC/JWT validation in `goblin-king-api.json`. Local API
-tokens are checked first; if no local token matches, Goblin King validates the bearer
-token against the configured issuer, audience, and JWKS URL, then maps configured role
-and project claims into the same RBAC model:
-
-```json
-{
-  "oidc": {
-    "enabled": true,
-    "issuer": "https://issuer.example",
-    "audience": "goblin-king",
-    "jwks_url": "https://issuer.example/.well-known/jwks.json",
-    "role_claim": "goblin_king_role",
-    "project_claim": "goblin_king_project_id"
-  }
-}
-```
-
-JupyterHub can also be enabled as an optional auth provider for service workloads. The
-same local-token precedence applies, then Goblin King can validate Hub user API tokens,
-map Hub groups to Goblin King roles/projects, and gate access to registered services
-through `/services/long-running/<service-id>/proxy/...`. For same-cluster Kubernetes,
-the chart accepts `config.jupyterhub.*` settings and `make jupyterhub-stack-up`
-installs a default zero-to-jupyterhub proof stack with an authenticated workbook.
-The default Hub values include notebook-pod egress to the Goblin King API service so
-users can launch goblins from inside JupyterHub.
-If you are testing branch changes locally, run
-`make jupyterhub-stack-up JUPYTERHUB_STACK_REBUILD=1` to build fresh local API,
-admin, directory UI, notebook runner, and service images with a unique tag before Helm
-deploys.
-After the stack is up, the Hub service route
-`http://127.0.0.1:8080/services/goblin-king/` opens the admin UI through
-JupyterHub and should show the normal token login screen.
-Enable the optional Directory API and Hub browser UI with:
-
-```bash
-make jupyterhub-stack-up \
-  JUPYTERHUB_STACK_REBUILD=1 \
-  GOBLIN_DIRECTORY_ENABLED=1 \
-  GOBLIN_DIRECTORY_UI_ENABLED=1
-```
-
-Then `http://127.0.0.1:8080/services/goblin-directory/` opens the separate
-deployment-local Goblin Directory app through Hub OAuth. Directory users can upload a
-v1 zip bundle, submit and validate it, request review, and later discover/run/start
-approved goblins by name within the same deployment without pasting tokens into the
-browser. `make jupyterhub-stack-up` also pre-populates
-Alice, Bob, and Carol notebook servers with role-specific examples under
-`/home/jovyan/examples`. With the Directory UI enabled, the rebuilt single-user image
-also installs the JupyterLab **Goblin Directory** picker. Carol can open JupyterLab,
-select a published function or service from the left sidebar, and run/start/probe/proxy
-or stop it without copying names or tokens.
-`make jupyterhub-workbook-proof` brings up that stack, uses a Hub user token, declares
-and validates a short Python function goblin from workbook-style source, declares a
-FastAPI ASGI service from notebook source, validates it, starts the managed service
-pod, probes/proxies it, stops it, then tears the stack back down.
-`make jupyterhub-directory-ui-proof` brings up Hub, Goblin King, the directory API,
-and the directory UI; proves bob submit, alice review/publish, carol consume, and
-mallory denial through the Hub service route; then tears everything down.
-`make jupyterhub-directory-picker-proof` additionally proves the JupyterLab picker path:
-bob publishes examples, alice approves them, carol invokes both published goblins from
-the user-server Directory proxy, and teardown audits the managed runtime resources.
-`make notebook-service-docker-proof` exercises the same source-authored service
-lifecycle through the local Docker runtime. See
-[`docs/jupyterhub-service-access.md`](docs/jupyterhub-service-access.md) for the exact
-JupyterHub config, Secret wiring, and local Kubernetes walkthrough.
-
-OpenAPI metadata is available at `/openapi.json` with bearer auth schemes, stable
-operation IDs, response models, and error response shapes for generated clients.
-
-Use `--runtime in-process` on `jobs submit`, `scheduler run-once`, or `scheduler run`
-when debugging trusted local Python goblins without Docker. In-process execution is a
-developer convenience; the worker model is the container contract.
-
-The current adopter contract is `goblin-king/v1alpha1`. Worker containers receive that
-value as `GOBLIN_CONTRACT_VERSION`, project config files declare it as
-`apiVersion: goblin-king/v1alpha1`, and the public import boundary is documented in
-[`docs/PUBLIC_API.md`](docs/PUBLIC_API.md).
-
-Create a reusable goblin package skeleton:
-
-```bash
-goblin-king project init-package ./my-goblin --kind my.echo --package-name my_echo --image my-echo:local
-python -m pip install -e ./my-goblin
-goblin-king project validate --project goblin-king-project.json
-goblin-king project goblins list --project goblin-king-project.json
-```
+Project config is the main adopter interface. Your project defines goblin kinds,
+container images, Dockerfiles, optional service workloads, resource defaults, and
+runtime settings without editing Goblin King source.
 
 Create a standalone adopter project template when you want container goblins without
 Python package entry points:
@@ -221,15 +143,34 @@ Python package entry points:
 ```bash
 goblin-king project init ./my-goblin-project --prefix myproject
 cd ./my-goblin-project
-python -m goblin_king.cli project validate --project goblin-king-project.json
-python -m goblin_king.cli project goblins list --project goblin-king-project.json
-python -m goblin_king.cli workers validate --project goblin-king-project.json --input inputs/hello.json --kind myproject.hello --build --require-success
-python -m goblin_king.cli workers validate --project goblin-king-project.json --input inputs/artifact.json --kind myproject.artifact --build --require-success
-python -m goblin_king.cli workers validation-status --kind myproject.hello
-python -m goblin_king.cli workers validation-status --kind myproject.artifact
 ```
 
-Project-defined goblins can also be submitted, scheduled, and inspected from the CLI:
+Validate project config and list goblins:
+
+```bash
+goblin-king project validate --project goblin-king-project.json
+goblin-king project goblins list --project goblin-king-project.json
+```
+
+Validate worker images before scheduling:
+
+```bash
+goblin-king workers validate --project goblin-king-project.json --input inputs/hello.json --kind myproject.hello --build --require-success
+goblin-king workers validate --project goblin-king-project.json --input inputs/artifact.json --kind myproject.artifact --build --require-success
+goblin-king workers validation-status --kind myproject.hello
+goblin-king workers validation-status --kind myproject.artifact
+```
+
+Submit, schedule, run, and inspect:
+
+```bash
+goblin-king jobs submit myproject.hello --project goblin-king-project.json --input inputs/hello.json --runtime docker
+goblin-king schedules add myproject.hello --project goblin-king-project.json --input inputs/hello.json --cron "* * * * *" --due-now
+goblin-king scheduler run-once --project goblin-king-project.json --runtime docker
+goblin-king runs show <run-id> --with-job
+```
+
+Project-defined goblins can also be submitted and inspected with the module form:
 
 ```bash
 python -m goblin_king.cli jobs submit myproject.hello \
@@ -262,108 +203,22 @@ Failed reloads leave the previous valid registry active and report validation er
 for the Discovery panel. New goblin kinds are read from the API at runtime, so the
 React admin does not need a rebuild when project goblins are added.
 
-## Clean Restarts
-
-Use these targets when you want to tear a stack down and keep no runtime data.
-They remove Docker Compose volumes or the Helm PVC before starting fresh.
-
-Docker Compose:
+Create a reusable goblin package skeleton only when you want Python entry-point metadata:
 
 ```bash
-make docker-restart-clean
+goblin-king project init-package ./my-goblin --kind my.echo --package-name my_echo --image my-echo:local
+python -m pip install -e ./my-goblin
+goblin-king project validate --project goblin-king-project.json
+goblin-king project goblins list --project goblin-king-project.json
 ```
 
-Kubernetes/Helm:
-
-```bash
-make helm-restart-clean
-```
-
-Both runtimes:
-
-```bash
-make stack-restart-clean
-```
-
-Useful individual targets:
-
-```bash
-make docker-up
-make docker-wipe
-make helm-up
-make helm-wipe
-make stack-wipe
-```
-
-The Helm targets use overridable variables:
-
-```bash
-make helm-restart-clean HELM_RELEASE=goblin-king HELM_NAMESPACE=default
-```
-
-## Using Goblin King In Your Project
-
-Have your own project that needs scheduled background tasks? Start with
-[Using Goblin King As Your Project Scheduler](docs/using-goblin-king-as-a-project-scheduler.md)
-for the practical path from project config to validated, scheduled container goblins.
-When you want to prove those goblins in the React admin, use
-[Testing Your Project With The Admin Panel](docs/testing-your-project-with-the-admin-panel.md).
-
-For the fastest local proof with the included adopter fixture, run the doctor first,
-then start the demo:
+For the included adopter fixture, `doctor` and `demo up` are the fastest proof path:
 
 ```bash
 goblin-king doctor
 goblin-king demo up
-```
-
-`doctor` checks Docker, Compose, Redis, project config, admin/API reachability, and
-validation status with repair commands. `demo up` starts the trusted Docker Compose
-admin stack, validates `project.inline.hello`, reloads discovery, submits a job, waits
-for the scheduler run, and prints the admin URL plus cleanup command:
-
-```bash
 goblin-king demo down
 ```
-
-For a project-owned goblin, start with a standalone project template:
-
-```bash
-goblin-king project init ./my-goblin-project --prefix myproject
-cd ./my-goblin-project
-goblin-king project validate --project goblin-king-project.json
-goblin-king project goblins list --project goblin-king-project.json
-goblin-king workers validate --project goblin-king-project.json --input inputs/hello.json --kind myproject.hello --build --require-success
-goblin-king workers validation-status --kind myproject.hello
-```
-
-Then submit, schedule, and inspect it:
-
-```bash
-goblin-king jobs submit myproject.hello --project goblin-king-project.json --input inputs/hello.json --runtime docker
-goblin-king schedules add myproject.hello --project goblin-king-project.json --input inputs/hello.json --cron "* * * * *" --due-now
-goblin-king scheduler run-once --project goblin-king-project.json --runtime docker
-goblin-king runs show <run-id> --with-job
-```
-
-Project goblins are contract-compliant containers. They do not need Python worker
-imports, and the React admin reads goblin kinds from the API at runtime after discovery
-reload. See [Adopter Guide](docs/adopter-guide.md) for the full Docker, Helm,
-validation, result, artifact, and failure inspection path.
-
-If your project vendors Goblin King as a submodule, subtree, or local path dependency,
-see [Using Goblin King From A Vendored Checkout](docs/using-goblin-king-from-a-vendored-checkout.md).
-
-Project configs can also set shared resource defaults once under
-`defaults.resources`. Those defaults are merged into each inline goblin's `resources`
-before validation, so teams can keep normal timeout, memory, filesystem, network, and
-concurrency expectations in one project-owned place while leaving per-kind overrides
-small.
-
-Inline goblins can still override those defaults with their own `resources` block. At
-queue time the resolved policy is layered as: Goblin King/operator policy defaults,
-project `defaults.resources`, then the goblin-specific override. The resulting effective
-policy is what appears on the job, run, API response, and admin detail panels.
 
 To prove the generated temporary-project path without the admin stack:
 
@@ -371,52 +226,42 @@ To prove the generated temporary-project path without the admin stack:
 goblin-king smoke adopter-project
 ```
 
-The smoke command remains useful for automation: it generates a temporary project, adds
-hello/artifact/controlled-failure goblins, validates worker images, schedules them
-through Docker, inspects results and artifacts, and removes its temporary project unless
-`--keep` is passed.
+The smoke command generates a temporary project, adds hello/artifact/controlled-failure
+goblins, validates worker images, schedules them through Docker, inspects results and
+artifacts, and removes its temporary project unless `--keep` is passed.
 
-## Goblin Container Contract
+Project configs can also set shared resource defaults once under `defaults.resources`.
+Those defaults are merged into each inline goblin's `resources` before validation, so
+teams can keep normal timeout, memory, filesystem, network, and concurrency
+expectations in one project-owned place while leaving per-kind overrides small.
 
-Every goblin is a contract-compliant OCI/Docker container. Goblin King schedules
-containers, not language runtimes. The language inside the container is an
-implementation detail, and Python helpers are optional conveniences rather than a
-requirement.
+Inline goblins can still override those defaults with their own `resources` block. At
+queue time the resolved policy is layered as: Goblin King/operator policy defaults,
+project `defaults.resources`, then the goblin-specific override. The resulting
+effective policy is what appears on the job, run, API response, and admin detail panels.
 
-The canonical worker interface is
-[Goblin Container Contract](docs/goblin-container-contract.md). It defines required
-environment variables, mounted input/context/result/artifact paths, result envelopes,
-stdout/stderr behavior, progress/events, heartbeats, exit codes, timeouts,
-cancellation, security expectations, and the container-wrapped WASI/WebAssembly model.
+For the full adopter path, see:
 
-Minimal contract-only hello goblins live under `examples/goblins/hello-*` for Go,
-Rust, Node.js, Java, .NET/C#, Ruby, PHP, shell, and Python. These are standalone
-container examples and are included in the default admin/API demo registry.
+- [Using Goblin King As Your Project Scheduler](docs/using-goblin-king-as-a-project-scheduler.md)
+- [Project Goblin Config](docs/project-goblin-config.md)
+- [Project Template Quickstart](docs/project-template-quickstart.md)
+- [Testing Your Project With The Admin Panel](docs/testing-your-project-with-the-admin-panel.md)
+- [Adopter Guide](docs/adopter-guide.md)
+- [Using Goblin King From A Vendored Checkout](docs/using-goblin-king-from-a-vendored-checkout.md)
 
-Container-wrapped WASI examples live under `examples/goblins/wasi-*`. They still
-build and run as normal containers: the container entrypoint invokes Wasmtime and
-the `.wasm` module reads/writes the same contract files.
+## Validation Gate
 
-To run the cross-language and WASI examples through Goblin King's Docker runtime,
-use the dedicated registry/image map:
+Container-backed goblins are validation-gated: validate first, then schedule.
 
-```bash
-make run-cross-language-proof
-```
+The scheduler will not execute a Docker or Kubernetes worker unless the current resolved
+image identity has passed the Goblin Container Contract validator for
+`goblin-king/v1alpha1`. Missing or stale proof triggers validation before execution;
+execution continues only if proof passes. Proof is tied to goblin kind, resolved image
+identity or digest, contract version, validator version, validation timestamp, status,
+failure reasons, and effective runtime policy summary when one is available.
 
-That target builds the example images from `examples/cross-language-images.json`
-and submits every kind in `examples/cross-language-goblins.json`. The same
-language-specific kinds are included in root `demo-goblins.json` and `demo-images.json`
-so the React admin can show each runtime explicitly in Goblin Lab.
-
-Contract behavior examples live under `examples/goblins/behavior-*` and are wired
-through `examples/behavior-goblins.json` plus `examples/behavior-images.json`.
-They cover artifact metadata, progress/logging, controlled failure, input
-transform/context reading, timeout-ish cancellation-friendly work, and a WASI
-context sample.
-
-Use [Goblin Contract Validation](docs/goblin-contract-validation.md) to build and
-run worker images with temporary contract mounts:
+Use [Goblin Contract Validation](docs/goblin-contract-validation.md) to build and run
+worker images with temporary contract mounts:
 
 ```bash
 python -m goblin_king.cli workers validate \
@@ -448,21 +293,17 @@ python -m goblin_king.cli workers validate-image \
   --require-success
 ```
 
-Container-backed goblins are validation-gated: validate first, then schedule. The
-scheduler will not execute a Docker or Kubernetes worker unless the current resolved
-image identity has passed the Goblin Container Contract validator for
-`goblin-king/v1alpha1`. Missing or stale proof triggers validation before execution;
-execution continues only if proof passes. Inspect persisted proof with:
+Inspect persisted proof:
 
 ```bash
 goblin-king workers validation-status
 ```
 
-The canonical gate behavior, proof keying, stale-digest handling, and failure mapping
-live in [Goblin Contract Validation](docs/goblin-contract-validation.md).
+Validation is not a trust guarantee. It proves contract compliance for the current
+image identity; operators still decide which images, runner containers, secrets,
+network paths, and users are trusted.
 
-For host-project deployment integration, see
-`examples/adopting-project/`. It includes:
+For host-project deployment integration, see `examples/adopting-project/`. It includes:
 
 - `docker-compose.host-project.yml` for layering project workers and project settings
   over the base Docker Compose stack.
@@ -479,47 +320,64 @@ For the project-ready release and upgrade story, start with the
 [Compatibility Matrix](docs/COMPATIBILITY.md), [Upgrade Guide](docs/UPGRADING.md), and
 [Migration Guide](docs/MIGRATION_GUIDE.md).
 
-Queue a fanout batch and inspect it:
+## Resource Policies
+
+Runtime policy defaults live in `goblin-resource-policies.json`. The API, CLI,
+scheduler, Docker runtime, and Helm chart load this file by default. Policies resolve
+from global defaults plus per-goblin overrides, then Goblin King rejects any request
+above configured ceilings before queueing or launching unsafe work.
+
+Adopting projects can additionally declare project-owned defaults in
+`goblin-king-project.json` under `defaults.resources`. Project validation deep-merges
+those defaults into inline goblin `resources`, validates the effective resources against
+the nearest `goblin-resource-policies.json` ceilings when present, and prints
+`defaults.resources` for operator visibility. When a project is supplied to API, CLI, or
+scheduler flows, those defaults are also layered into the effective policy for queued
+jobs/runs.
+
+Use the standalone policy file for runtime ceilings and operator-wide defaults. Use
+project defaults to keep repeated inline goblin resource expectations out of every
+goblin block. Use goblin-level overrides only for the kinds that need a larger or
+smaller runtime envelope.
+
+Supported enforcement includes:
+
+- timeout and retry metadata,
+- Docker CPU, memory, PID, network, read-only root, tmpfs, and log options,
+- Kubernetes Job CPU/memory resource fields and read-only root filesystem,
+- artifact count/byte ceilings where artifacts are locally inspectable,
+- per-kind and project-wide scheduler concurrency deferral,
+- persisted effective policy metadata on jobs and runs,
+- audit and event records for policy rejections.
+
+Use a different policy file when testing a project-specific profile:
 
 ```bash
-goblin-king jobs fanout --input fanout.json --registry demo-goblins.json
-goblin-king fanouts list
-goblin-king fanouts show <fanout-id>
+goblin-king jobs submit example.hello \
+  --input examples/input.json \
+  --registry demo-goblins.json \
+  --images demo-images.json \
+  --resource-policies goblin-resource-policies.json
 ```
 
-Retry a terminal job:
+Inspect the effective policy and runtime mappings before you run it:
 
 ```bash
-goblin-king jobs retry <job-id> --reason "try again"
+goblin-king resource-policies inspect example.hello \
+  --policies examples/resource-policy-proof.json
 ```
 
-Inspect event history and heartbeats after scheduler work:
+Effective policy appears in stored job metadata, run records, CLI/API JSON, and the
+admin Runs panel. See [Goblin Resource Policies](docs/goblin-resource-policies.md) for
+the file shape, closeout checklist, concurrency behavior, and exact Docker/Kubernetes
+mappings.
 
-```bash
-goblin-king events list --limit 20
-goblin-king heartbeats list
-```
+## Admin UI
 
-Watch live event envelopes from Redis:
+The React admin is the operator lab bench for testing and inspecting goblins. It is the
+same React build in Docker Compose and Helm.
 
-```bash
-goblin-king events watch --redis-url redis://localhost:6379/0
-```
-
-Inspect Redis Streams delivery health and read stream events through a consumer group:
-
-```bash
-goblin-king events stream-status --redis-url redis://localhost:6379/0
-goblin-king events stream-read --redis-url redis://localhost:6379/0 --ack
-```
-
-The API exposes the same durable SQLite event data over `GET /events`, Redis Stream
-transport health over `GET /events/stream/status`, scheduler and worker liveness over
-`GET /heartbeats`, and live run updates over `WS /ws/runs`. SQLite remains the durable
-source of truth; Redis pub/sub is the live rail and Redis Streams provide replayable
-delivery for operators and integrations.
-
-Open the React admin lab bench with Docker Compose:
+Open it locally:
 
 ```bash
 make admin-build
@@ -527,17 +385,23 @@ make admin-up
 open http://127.0.0.1:8080/admin
 ```
 
-Log in with `local-dev-token`. The admin service serves the same React build in Docker
-and Helm, proxies HTTP calls through `/admin-api/*`, and proxies WebSocket run events
+Log in with:
+
+```text
+local-dev-token
+```
+
+The admin service proxies HTTP calls through `/admin-api/*` and WebSocket run events
 through `/admin-ws/runs`. It lists current goblins, worker mappings, jobs, schedules,
 runs, fanouts, service goblins, events, heartbeats, artifacts, audit logs, and
-rate-limit proof panels. The Discovery panel reloads deploy-time goblin sources and
-shows registry files, entry-point usage, worker image-map coverage, rejected
-definitions, and the current discovery version. The Admin/Auth panel also has cleanup controls for old
-runtime rows: preview first, then remove terminal jobs/runs, completed fanouts,
-captured events, worker heartbeats, and stopped or unprobed long-service rows while
-leaving schedules, auth/project data, active jobs, running services, and scheduler
-heartbeat intact.
+rate-limit proof panels.
+
+The Discovery panel reloads deploy-time goblin sources and shows registry files,
+entry-point usage, worker image-map coverage, rejected definitions, and the current
+discovery version. The Admin/Auth panel also has cleanup controls for old runtime rows:
+preview first, then remove terminal jobs/runs, completed fanouts, captured events,
+worker heartbeats, and stopped or unprobed long-service rows while leaving schedules,
+auth/project data, active jobs, running services, and scheduler heartbeat intact.
 
 ### Launch Language Goblins In Admin
 
@@ -581,14 +445,12 @@ make admin-up
 make admin-smoke
 ```
 
-## Admin Runtime Audit
-
 Before release-oriented PRs, run the full admin runtime audit in both Docker and Helm.
 The audit opens the React admin, spawns every registered goblin kind, captures job/run
 IDs, and records screenshots for the PR proof.
 
 Use [Admin Runtime Audit](docs/admin-runtime-audit.md) for the complete browser
-checklist and table helper. The short version:
+checklist and table helper. The short Docker version:
 
 ```bash
 python -m goblin_king.cli workers build --images demo-images.json
@@ -611,6 +473,128 @@ When the API runs in Docker Compose, the long service is reached at
 `LONG_HELLO_URL=http://localhost:8090` only when probing from a host-run API process.
 The React admin reads `/admin/config.json` from its container at startup, so Docker
 prefills `http://long-hello:8080` and Helm prefills `http://goblin-king-long-hello`.
+
+## Docker, Compose, Kubernetes, And Helm
+
+### Local Docker / Compose
+
+Build worker images and start Redis:
+
+```bash
+make deploy
+```
+
+Create and run a due schedule through Docker:
+
+```bash
+goblin-king schedules add example.echo --cron "* * * * *" --input examples/input.json --registry demo-goblins.json --due-now
+goblin-king scheduler run-once --registry demo-goblins.json --images demo-images.json --redis-url redis://localhost:6379/0
+goblin-king jobs list
+```
+
+Or run the local simulation target:
+
+```bash
+make simulate
+```
+
+Run the API locally:
+
+```bash
+goblin-king api run --settings goblin-king-api.json
+```
+
+Smoke the API from another terminal:
+
+```bash
+curl http://127.0.0.1:8000/health
+curl -H "Authorization: Bearer local-dev-token" http://127.0.0.1:8000/goblins
+curl -X POST http://127.0.0.1:8000/jobs \
+  -H "Authorization: Bearer local-dev-token" \
+  -H "Content-Type: application/json" \
+  -d "{\"kind\":\"example.echo\",\"input\":{\"message\":\"hello api\"}}"
+```
+
+Only `GET /health` is open. Other HTTP endpoints and `WS /ws/runs` require bearer
+tokens. API list endpoints return paginated envelopes such as:
+
+```bash
+curl -H "Authorization: Bearer local-dev-token" "http://127.0.0.1:8000/jobs?limit=20&offset=0"
+```
+
+Create local API principals and scoped tokens:
+
+```bash
+goblin-king auth create-user --email dev@example.test --display-name Dev
+goblin-king auth create-project --name "Local Project"
+goblin-king auth create-token --name local-token --user-id <user-id> --project-id <project-id>
+```
+
+For external identity, enable OIDC/JWT validation in `goblin-king-api.json`. Local API
+tokens are checked first; if no local token matches, Goblin King validates the bearer
+token against the configured issuer, audience, and JWKS URL, then maps configured role
+and project claims into the same RBAC model:
+
+```json
+{
+  "oidc": {
+    "enabled": true,
+    "issuer": "https://issuer.example",
+    "audience": "goblin-king",
+    "jwks_url": "https://issuer.example/.well-known/jwks.json",
+    "role_claim": "goblin_king_role",
+    "project_claim": "goblin_king_project_id"
+  }
+}
+```
+
+OpenAPI metadata is available at `/openapi.json` with bearer auth schemes, stable
+operation IDs, response models, and error response shapes for generated clients.
+
+Use `--runtime in-process` on `jobs submit`, `scheduler run-once`, or `scheduler run`
+when debugging trusted local Python goblins without Docker. In-process execution is a
+developer convenience; the worker model is the container contract.
+
+### Clean Restarts
+
+Use these targets when you want to tear a stack down and keep no runtime data. They
+remove Docker Compose volumes or the Helm PVC before starting fresh.
+
+Docker Compose:
+
+```bash
+make docker-restart-clean
+```
+
+Kubernetes/Helm:
+
+```bash
+make helm-restart-clean
+```
+
+Both runtimes:
+
+```bash
+make stack-restart-clean
+```
+
+Useful individual targets:
+
+```bash
+make docker-up
+make docker-wipe
+make helm-up
+make helm-wipe
+make stack-wipe
+```
+
+The Helm targets use overridable variables:
+
+```bash
+make helm-restart-clean HELM_RELEASE=goblin-king HELM_NAMESPACE=default
+```
+
+### Kubernetes / Helm
 
 Render the optional Kubernetes chart:
 
@@ -680,9 +664,9 @@ Then browse to `http://goblin-king.local/admin` and log in with `local-dev-token
 your local cluster exposes ingress on a different IP, use that IP instead of
 `127.0.0.1`.
 
-Docker Desktop Kubernetes may use a separate containerd image store from the Docker
-CLI image list. If Helm pods report `ErrImageNeverPull` or keep running an older
-`:local` image, import the rebuilt images into the worker node before the Helm smoke:
+Docker Desktop Kubernetes may use a separate containerd image store from the Docker CLI
+image list. If Helm pods report `ErrImageNeverPull` or keep running an older `:local`
+image, import the rebuilt images into the worker node before the Helm smoke:
 
 ```powershell
 docker save goblin-king:local -o goblin-king-local.tar
@@ -704,11 +688,113 @@ The Helm admin proof should show both a completed short `example.hello` job with
 `Hello World` and a long-running `example.long-hello` service probe whose timestamp
 changes between probes.
 
-## Worker Images
+Future Kubernetes placement and federation work is tracked in
+[Kubernetes Placement And Federation Roadmap](docs/kubernetes-placement-and-federation-roadmap.md).
 
-Each goblin worker lives in a self-contained folder with its own `Dockerfile`.
-Worker build settings live in `demo-images.json` for the bundled demo set. A project can
-also keep its own narrower image map, such as `goblin-images.json`:
+## JupyterHub Lab Compatibility
+
+JupyterHub compatibility is for shared lab/testbed deployments where Hub already owns
+user identity and users want notebook-oriented authoring. It is not the core product
+identity, and it does not bypass the container model.
+
+Goblin King can use JupyterHub as an optional auth provider for registered service
+goblins, notebook-declared Python function goblins, notebook-declared ASGI service
+goblins, and the deployment-local Goblin Directory. Local bootstrap/API tokens and OIDC
+remain supported.
+
+The same local-token precedence applies, then Goblin King can validate Hub user API
+tokens, map Hub groups to Goblin King roles/projects, and gate access to registered
+services through:
+
+```text
+/services/long-running/<service-id>/proxy/...
+```
+
+For same-cluster Kubernetes, the chart accepts `config.jupyterhub.*` settings and
+`make jupyterhub-stack-up` installs a default zero-to-jupyterhub proof stack with an
+authenticated workbook. The default Hub values include notebook-pod egress to the
+Goblin King API service so users can launch goblins from inside JupyterHub.
+
+If you are testing branch changes locally, run:
+
+```bash
+make jupyterhub-stack-up JUPYTERHUB_STACK_REBUILD=1
+```
+
+That builds fresh local API, admin, directory UI, notebook runner, and service images
+with a unique tag before Helm deploys.
+
+After the stack is up, the Hub service route opens the admin UI through JupyterHub and
+should show the normal token login screen:
+
+```text
+http://127.0.0.1:8080/services/goblin-king/
+```
+
+`make jupyterhub-workbook-proof` brings up that stack, uses a Hub user token, declares
+and validates a short Python function goblin from workbook-style source, declares a
+FastAPI ASGI service from notebook source, validates it, starts the managed service pod,
+probes/proxies it, stops it, then tears the stack back down.
+
+Notebook-authored goblins run through configured runner containers controlled by the
+deployment/operator. They are one authoring path, not a replacement for project config
+or Dockerfile-based goblins.
+
+See [JupyterHub Service Access](docs/jupyterhub-service-access.md) for the exact
+JupyterHub config, Secret wiring, and local Kubernetes walkthrough.
+
+## Goblin Directory
+
+The Goblin Directory is deployment-local. It is not a public marketplace.
+
+Enable the optional Directory API and Hub browser UI with:
+
+```bash
+make jupyterhub-stack-up \
+  JUPYTERHUB_STACK_REBUILD=1 \
+  GOBLIN_DIRECTORY_ENABLED=1 \
+  GOBLIN_DIRECTORY_UI_ENABLED=1
+```
+
+Then the separate Goblin Directory app opens through Hub OAuth:
+
+```text
+http://127.0.0.1:8080/services/goblin-directory/
+```
+
+Directory users can upload a v1 zip bundle, submit and validate it, request review, and
+later discover/run/start approved goblins by name within the same deployment without
+pasting tokens into the browser.
+
+`make jupyterhub-stack-up` also pre-populates Alice, Bob, and Carol notebook servers
+with role-specific examples under `/home/jovyan/examples`. With the Directory UI
+enabled, the rebuilt single-user image also installs the JupyterLab **Goblin Directory**
+picker. Carol can open JupyterLab, select a published function or service from the left
+sidebar, and run/start/probe/proxy or stop it without copying names or tokens.
+
+`make jupyterhub-directory-ui-proof` brings up Hub, Goblin King, the Directory API, and
+the Directory UI; proves Bob submit, Alice review/publish, Carol consume, and Mallory
+denial through the Hub service route; then tears everything down.
+
+`make jupyterhub-directory-picker-proof` additionally proves the JupyterLab picker path:
+Bob publishes examples, Alice approves them, Carol invokes both published goblins from
+the user-server Directory proxy, and teardown audits the managed runtime resources.
+
+`make notebook-service-docker-proof` exercises the same source-authored service
+lifecycle through the local Docker runtime.
+
+Approval is a sharing gate, not a security certification. Validation proves contract
+compliance, not trustworthiness. Deployment operators remain responsible for runner
+images, auth, resource policy, secrets, networking, and trust boundaries.
+
+See [Goblin Directory](docs/goblin-directory.md) for the API, bundle shape, notebook
+helper flow, browser UI, JupyterLab picker, Docker, Helm, and JupyterHub enablement.
+
+## Examples
+
+Each goblin worker lives in a self-contained folder with its own `Dockerfile`. Worker
+build settings live in `demo-images.json` for the bundled demo set. A project can also
+keep its own narrower image map, such as `goblin-images.json`:
 
 ```json
 {
@@ -723,60 +809,89 @@ also keep its own narrower image map, such as `goblin-images.json`:
 ```
 
 Workers receive JSON input/context files, publish a `GoblinResult`-shaped envelope to
-Redis, write the same result to a mounted fallback file, and publish heartbeat envelopes
-while they run. The worker can be written in any language that obeys the
+Redis, write the same result to a mounted fallback file, and publish heartbeat
+envelopes while they run. The worker can be written in any language that obeys the
 [Goblin Container Contract](docs/goblin-container-contract.md).
 
-## Resource Policies
+Minimal contract-only hello goblins live under `examples/goblins/hello-*` for Go, Rust,
+Node.js, Java, .NET/C#, Ruby, PHP, shell, and Python. These are standalone container
+examples and are included in the default admin/API demo registry.
 
-Runtime policy defaults live in `goblin-resource-policies.json`. The API, CLI, scheduler,
-Docker runtime, and Helm chart load this file by default. Policies resolve from global
-defaults plus per-goblin overrides, then Goblin King rejects any request above configured
-ceilings before queueing or launching unsafe work.
+Container-wrapped WASI examples live under `examples/goblins/wasi-*`. They still build
+and run as normal containers: the container entrypoint invokes Wasmtime and the `.wasm`
+module reads/writes the same contract files.
 
-Adopting projects can additionally declare project-owned defaults in
-`goblin-king-project.json` under `defaults.resources`. Project validation deep-merges
-those defaults into inline goblin `resources`, validates the effective resources against
-the nearest `goblin-resource-policies.json` ceilings when present, and prints
-`defaults.resources` for operator visibility. When a project is supplied to API, CLI, or
-scheduler flows, those defaults are also layered into the effective policy for queued
-jobs/runs. Use the standalone policy file for runtime ceilings and operator-wide
-defaults; use project defaults to keep repeated inline goblin resource expectations out
-of every goblin block; use goblin-level overrides only for the kinds that need a larger
-or smaller runtime envelope.
-
-Supported enforcement includes:
-
-- timeout and retry metadata,
-- Docker CPU, memory, PID, network, read-only root, tmpfs, and log options,
-- Kubernetes Job CPU/memory resource fields and read-only root filesystem,
-- artifact count/byte ceilings where artifacts are locally inspectable,
-- per-kind and project-wide scheduler concurrency deferral,
-- persisted effective policy metadata on jobs and runs,
-- audit and event records for policy rejections.
-
-Use a different policy file when testing a project-specific profile:
+To run the cross-language and WASI examples through Goblin King's Docker runtime, use
+the dedicated registry/image map:
 
 ```bash
-goblin-king jobs submit example.hello \
-  --input examples/input.json \
-  --registry demo-goblins.json \
-  --images demo-images.json \
-  --resource-policies goblin-resource-policies.json
+make run-cross-language-proof
 ```
 
-Inspect the effective policy and runtime mappings before you run it:
+That target builds the example images from `examples/cross-language-images.json` and
+submits every kind in `examples/cross-language-goblins.json`. The same
+language-specific kinds are included in root `demo-goblins.json` and `demo-images.json`
+so the React admin can show each runtime explicitly in Goblin Lab.
+
+Contract behavior examples live under `examples/goblins/behavior-*` and are wired
+through `examples/behavior-goblins.json` plus `examples/behavior-images.json`. They
+cover artifact metadata, progress/logging, controlled failure, input transform/context
+reading, timeout-ish cancellation-friendly work, and a WASI context sample.
+
+Sample goblins include:
+
+- `example.hello`: short-running Hello World proof.
+- `example.long-hello`: service goblin with timestamped probe responses.
+- `example.artifact`: writes a small text artifact and returns artifact metadata.
+- `example.environment`: reports safe runtime and context details.
+- `example.controlled-failure`: returns a predictable failed result.
+- `example.progress`: emits step-style progress data and handoff metadata.
+
+See [Goblin Examples Index](docs/examples-index.md), [Choose Your Runtime](docs/choose-your-runtime.md),
+[Writing Goblins](docs/writing-goblins.md), [Goblin Dockerfiles](docs/goblin-dockerfiles.md), and
+[Language-Agnostic Workers](docs/language-agnostic-workers.md).
+
+## Operational Commands
+
+Queue a fanout batch and inspect it:
 
 ```bash
-goblin-king resource-policies inspect example.hello \
-  --policies examples/resource-policy-proof.json
+goblin-king jobs fanout --input fanout.json --registry demo-goblins.json
+goblin-king fanouts list
+goblin-king fanouts show <fanout-id>
 ```
 
-Effective policy appears in stored job metadata, run records, CLI/API JSON, and the admin
-Runs panel. See [Goblin Resource Policies](docs/goblin-resource-policies.md) for the file
-shape, closeout checklist, concurrency behavior, and exact Docker/Kubernetes mappings.
+Retry a terminal job:
 
-## Image Promotion And Deployment Proof
+```bash
+goblin-king jobs retry <job-id> --reason "try again"
+```
+
+Inspect event history and heartbeats after scheduler work:
+
+```bash
+goblin-king events list --limit 20
+goblin-king heartbeats list
+```
+
+Watch live event envelopes from Redis:
+
+```bash
+goblin-king events watch --redis-url redis://localhost:6379/0
+```
+
+Inspect Redis Streams delivery health and read stream events through a consumer group:
+
+```bash
+goblin-king events stream-status --redis-url redis://localhost:6379/0
+goblin-king events stream-read --redis-url redis://localhost:6379/0 --ack
+```
+
+The API exposes the same durable SQLite event data over `GET /events`, Redis Stream
+transport health over `GET /events/stream/status`, scheduler and worker liveness over
+`GET /heartbeats`, and live run updates over `WS /ws/runs`. SQLite remains the durable
+source of truth; Redis pub/sub is the live rail and Redis Streams provide replayable
+delivery for operators and integrations.
 
 Goblin King can record generic image-promotion and deployment proof without tying the
 project to one cloud registry or deployment platform. Records capture the image, target
@@ -805,8 +920,6 @@ plans dry-run image promotion, records Helm render intent, reloads discovery aft
 deployment, and displays the deployment proof trail. The King loves ambition, but he
 requires receipts.
 
-## Capabilities
-
 Goblin King provides:
 
 - SQLite-backed jobs, runs, schedules, fanouts, retries, events, heartbeats, audit logs,
@@ -830,78 +943,115 @@ Goblin King provides:
 - A default demo registry, `demo-goblins.json`, that exposes core samples,
   cross-language hello workers, WASI wrappers, and behavior examples.
 
-## Future Work
-
-Planned future work is tracked outside the user-guide flow so setup and operator
-instructions stay focused on features that exist today.
-
-- [Goblin Designer Roadmap](docs/goblin-editor-roadmap.md): phased plan for a
-  separate React admin Designer page where users can design project goblins,
-  validate them, promote validated goblins into the existing admin goblin list,
-  and hand them off to the tester/operator page.
-- [Adoption And Onboarding Roadmap](docs/adoption-onboarding-roadmap.md):
-  implemented local demo/doctor slice plus remaining path from clone or vendored
-  checkout to validated admin proof in under 15 minutes.
-- [Demo And Doctor Roadmap](docs/demo-and-doctor-roadmap.md): implemented
-  one-command Docker/admin demo and diagnostics plus future follow-up checks.
-- [Goblin Scaffolding Roadmap](docs/goblin-scaffolding-roadmap.md): future CLI
-  and Goblin Designer starter-folder templates for contract-compliant container
-  goblins.
-- [Example Recipes Roadmap](docs/example-recipes-roadmap.md): future practical
-  recipes beyond hello-world, including artifact, utility, and trusted
-  network-aware examples.
-- [Release Packaging Roadmap](docs/release-packaging-roadmap.md): future
-  packaging, install, image, Helm chart, docs-site, and provenance work.
-- [Kubernetes Placement And Federation Roadmap](docs/kubernetes-placement-and-federation-roadmap.md):
-  future path from single-cluster Kubernetes placement to later multi-cluster
-  and geographic federation.
-
 ## Documentation
+
+### Getting Started
 
 | Document | Purpose |
 | --- | --- |
-| [Goblin King Scheduler Plan](docs/goblin-king-plan.md) | Architecture notes and roadmap history for maintainers. |
 | [User Guide](docs/USER_GUIDE.md) | End-to-end operator and developer guide for Docker, admin UI, sample goblins, API, scheduler, and optional Helm deployment. |
-| [Admin Guide](docs/ADMIN_GUIDE.md) | Screenshot walkthrough for logging in, spawning goblins, watching task goblins, probing service goblins, reading events, and cleaning old rows. |
-| [Admin Runtime Audit](docs/admin-runtime-audit.md) | Required Docker and Helm browser audit for proving every registered goblin kind works from the admin consoles. |
-| [Goblin Container Contract](docs/goblin-container-contract.md) | Canonical language-agnostic worker container contract. |
+| [First Hour Guide](docs/FIRST_HOUR.md) | Fast path from internal install to first project goblin run. |
+| [Adopting Projects](docs/ADOPTING_PROJECTS.md) | How another project installs Goblin King, defines project goblins, builds workers, and proves the integration. |
+| [Adopter Guide](docs/adopter-guide.md) | Complete project-owned goblin path from template to Docker, Helm, admin, results, artifacts, and failures. |
+
+### Core Concepts
+
+| Document | Purpose |
+| --- | --- |
 | [Goblin Workload Types](docs/goblin-workload-types.md) | Shared model for task, service, notebook, and Directory goblins as validated container-backed workloads. |
 | [What Is A Goblin?](docs/what-is-a-goblin.md) | Plain-language model of goblins as validated container-backed workloads. |
+| [Goblin Container Contract](docs/goblin-container-contract.md) | Canonical language-agnostic worker container contract. |
 | [Writing Goblins](docs/writing-goblins.md) | Practical steps for building a contract-compliant goblin. |
 | [Goblin Dockerfiles](docs/goblin-dockerfiles.md) | Minimal, multi-stage, non-root, read-only, and WASI wrapper Dockerfile patterns. |
 | [Language-Agnostic Workers](docs/language-agnostic-workers.md) | Guidance for writing goblins in any container-packaged runtime. |
 | [Goblin Examples Index](docs/examples-index.md) | Cross-language, WASI, and behavior sample goblins with proof commands. |
 | [Choose Your Runtime](docs/choose-your-runtime.md) | Runtime comparison guide for picking a worker language. |
-| [Goblin Contract Validation](docs/goblin-contract-validation.md) | Local validation command for image builds, result envelopes, and artifacts. |
-| [Goblin Resource Policies](docs/goblin-resource-policies.md) | Per-goblin resource expectations, defaults, ceilings, and Docker/Kubernetes mapping. |
+
+### Project Adoption
+
+| Document | Purpose |
+| --- | --- |
 | [Using Goblin King As Your Project Scheduler](docs/using-goblin-king-as-a-project-scheduler.md) | Practical guide for defining project task and service goblins as validated container-backed workloads. |
+| [Project Goblin Config](docs/project-goblin-config.md) | Versioned `GoblinProject` config for defining container goblins without editing Goblin King source. |
+| [Project Template Quickstart](docs/project-template-quickstart.md) | Copy-paste path for generating, validating, and proving a standalone adopter project. |
 | [Using Goblin King From A Vendored Checkout](docs/using-goblin-king-from-a-vendored-checkout.md) | Submodule, subtree, and local path dependency workflow for host projects. |
 | [Adopter Admin Dev/Test Stack](docs/adopter-admin-dev-stack.md) | Local Docker Compose/admin workflow for testing project-defined goblins. |
 | [Testing Your Project With The Admin Panel](docs/testing-your-project-with-the-admin-panel.md) | Do-this, see-this quickstart for validating, launching, and inspecting project goblins in the admin. |
-| [Project Goblin Config](docs/project-goblin-config.md) | Versioned `GoblinProject` config for defining container goblins without editing Goblin King source. |
-| [Project Template Quickstart](docs/project-template-quickstart.md) | Copy-paste path for generating, validating, and proving a standalone adopter project. |
-| [Language-Agnostic Closeout](docs/language-agnostic-closeout.md) | Audit summary for the container-first worker phases and remaining deferrals. |
-| [Security Policy](SECURITY.md) | Supported alpha security posture, reporting path, and Docker socket cautions. |
-| [Security Model](docs/security-model.md) | Honest container security expectations and runtime hardening guidance. |
-| [Public API Boundary](docs/PUBLIC_API.md) | Stable root imports, semi-public commands, internal modules, and internal wheel compatibility policy. |
-| [Adopting Projects](docs/ADOPTING_PROJECTS.md) | How another project installs Goblin King, defines project goblins, builds workers, and proves the integration. |
-| [Adopter Guide](docs/adopter-guide.md) | Complete project-owned goblin path from template to Docker, Helm, admin, results, artifacts, and failures. |
-| [First Hour Guide](docs/FIRST_HOUR.md) | Fast path from internal install to first project goblin run. |
+| [Project Adoption](docs/project-adoption.md) | Notes for adapting existing queue, worker, heartbeat, and operator proof flows. |
+
+### Admin And Operations
+
+| Document | Purpose |
+| --- | --- |
+| [Admin Guide](docs/ADMIN_GUIDE.md) | Screenshot walkthrough for logging in, spawning goblins, watching task goblins, probing service goblins, reading events, and cleaning old rows. |
+| [Admin Runtime Audit](docs/admin-runtime-audit.md) | Required Docker and Helm browser audit for proving every registered goblin kind works from the admin consoles. |
+| [Goblin Contract Validation](docs/goblin-contract-validation.md) | Local validation command for image builds, result envelopes, and artifacts. |
+| [Goblin Resource Policies](docs/goblin-resource-policies.md) | Per-goblin resource expectations, defaults, ceilings, and Docker/Kubernetes mapping. |
 | [Release Checklist](docs/RELEASE_CHECKLIST.md) | Internal wheel, Docker image, local CI, Docker adoption, and Helm proof checklist. |
-| [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md) | Maintainer closeout audit and proof surfaces. |
-| [Code Cleanup Notes](docs/CODE_CLEANUP.md) | Refactor notes and helper-module rules. |
-| [Code Documentation Audit](docs/code-documentation-audit.md) | Maintainer audit plan for file-level comments, docstrings, and useful code documentation. |
-| [Goblin Designer Roadmap](docs/goblin-editor-roadmap.md) | Future-work plan for a separate admin Designer page that validates newly designed goblins before they appear in the runnable admin list. |
-| [Adoption And Onboarding Roadmap](docs/adoption-onboarding-roadmap.md) | Future-work plan for getting new adopters from clone/vendor to validated admin proof quickly. |
-| [Demo And Doctor Roadmap](docs/demo-and-doctor-roadmap.md) | Future-work plan for one-command demo and local diagnostic flows. |
-| [Goblin Scaffolding Roadmap](docs/goblin-scaffolding-roadmap.md) | Future-work plan for shared CLI and Goblin Designer starter templates. |
-| [Example Recipes Roadmap](docs/example-recipes-roadmap.md) | Future-work plan for practical recipe examples beyond hello-world. |
-| [Release Packaging Roadmap](docs/release-packaging-roadmap.md) | Future-work plan for packaging, publishing, install, chart, docs-site, and provenance work. |
-| [Kubernetes Placement And Federation Roadmap](docs/kubernetes-placement-and-federation-roadmap.md) | Future-work plan for single-cluster Kubernetes placement and later multi-cluster/geographic federation. |
 | [Compatibility Matrix](docs/COMPATIBILITY.md) | Contract and schema compatibility versions for project-ready adoption. |
 | [Upgrade Guide](docs/UPGRADING.md) | Host-project upgrade procedure and compatibility fixture policy. |
 | [Migration Guide](docs/MIGRATION_GUIDE.md) | How to move existing scripts and workers into project goblins. |
+
+### JupyterHub And Directory
+
+| Document | Purpose |
+| --- | --- |
+| [JupyterHub Service Access](docs/jupyterhub-service-access.md) | Same-cluster JupyterHub auth provider, notebook runner, service proxy, and local proof stack guide. |
+| [Goblin Directory](docs/goblin-directory.md) | Deployment-local Directory API, bundle format, browser UI, JupyterLab picker, and shared goblin workflow. |
+
+### Security And API
+
+| Document | Purpose |
+| --- | --- |
+| [Security Policy](SECURITY.md) | Supported alpha security posture, reporting path, and Docker socket cautions. |
+| [Security Model](docs/security-model.md) | Honest container security expectations and runtime hardening guidance. |
+| [Public API Boundary](docs/PUBLIC_API.md) | Stable root imports, semi-public commands, internal modules, and internal wheel compatibility policy. |
+| [API Roadmap](docs/api-roadmap.md) | Covered API surfaces and maintainer notes. |
+
+### Maintainer Notes
+
+| Document | Purpose |
+| --- | --- |
+| [Goblin King Scheduler Plan](docs/goblin-king-plan.md) | Architecture notes and roadmap history for maintainers. |
+| [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md) | Maintainer closeout audit and proof surfaces. |
+| [Code Cleanup Notes](docs/CODE_CLEANUP.md) | Refactor notes and helper-module rules. |
+| [Code Documentation Audit](docs/code-documentation-audit.md) | Maintainer audit plan for file-level comments, docstrings, and useful code documentation. |
+| [Language-Agnostic Closeout](docs/language-agnostic-closeout.md) | Audit summary for the container-first worker phases and remaining deferrals. |
 | [Contributing](CONTRIBUTING.md) | Short public contribution entrypoint for local CI, container-first expectations, and PR proof. |
 | [Detailed Contributing Guide](docs/CONTRIBUTING.md) | Branch, PR, local CI, commenting, goblin documentation, and test expectations. |
-| [API Roadmap](docs/api-roadmap.md) | Covered API surfaces and maintainer notes. |
-| [Project Adoption](docs/project-adoption.md) | Notes for adapting existing queue, worker, heartbeat, and operator proof flows. |
+
+## Future Work
+
+The following roadmaps describe planned or exploratory work. They are not required for
+the current quickstart path and may not be implemented yet.
+
+- [Goblin Designer Roadmap](docs/goblin-editor-roadmap.md): phased plan for a separate
+  React admin Designer page where users can design project goblins, validate them,
+  promote validated goblins into the existing admin goblin list, and hand them off to
+  the tester/operator page.
+- [Adoption And Onboarding Roadmap](docs/adoption-onboarding-roadmap.md): implemented
+  local demo/doctor slice plus remaining path from clone or vendored checkout to
+  validated admin proof in under 15 minutes.
+- [Demo And Doctor Roadmap](docs/demo-and-doctor-roadmap.md): implemented one-command
+  Docker/admin demo and diagnostics plus future follow-up checks.
+- [Goblin Scaffolding Roadmap](docs/goblin-scaffolding-roadmap.md): future CLI and
+  Goblin Designer starter-folder templates for contract-compliant container goblins.
+- [Example Recipes Roadmap](docs/example-recipes-roadmap.md): future practical recipes
+  beyond hello-world, including artifact, utility, and trusted network-aware examples.
+- [Release Packaging Roadmap](docs/release-packaging-roadmap.md): future packaging,
+  install, image, Helm chart, docs-site, and provenance work.
+- [Kubernetes Placement And Federation Roadmap](docs/kubernetes-placement-and-federation-roadmap.md):
+  future path from single-cluster Kubernetes placement to later multi-cluster and
+  geographic federation.
+
+## Contributing, Security, And License
+
+Contributions should keep Goblin King container-first, validation-gated, and honest
+about its alpha safety boundary. Start with [Contributing](CONTRIBUTING.md) and the
+[Detailed Contributing Guide](docs/CONTRIBUTING.md).
+
+Security posture and reporting are documented in [Security Policy](SECURITY.md) and
+[Security Model](docs/security-model.md). Treat Docker socket access, service tokens,
+runner images, and public exposure as deployment-sensitive choices.
+
+Goblin King is licensed under Apache-2.0. See [LICENSE](LICENSE).

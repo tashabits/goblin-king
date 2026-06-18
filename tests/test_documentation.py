@@ -6,18 +6,18 @@ import re
 from pathlib import Path
 
 
-def test_readme_table_of_contents_reaches_all_headings() -> None:
-    """Verify each README heading has an anchor in the table of contents."""
+def test_readme_table_of_contents_reaches_primary_sections() -> None:
+    """Verify the simplified README TOC reaches each primary section."""
     readme = Path("README.md").read_text(encoding="utf-8")
-    headings = [
+    h2_headings = [
         line.lstrip("# ").strip()
         for line in readme.splitlines()
-        if line.startswith("#")
+        if line.startswith("## ") and line.strip() != "## Table of Contents"
     ]
     toc_end = readme.index("## Quick Start")
     toc = readme[:toc_end]
 
-    for heading in headings:
+    for heading in h2_headings:
         anchor = "#" + re.sub(r"[^a-z0-9 -]", "", heading.lower()).replace(" ", "-")
         assert f"]({anchor})" in toc
 
@@ -37,7 +37,8 @@ def test_workload_types_are_documented() -> None:
     what_is_doc = Path("docs/what-is-a-goblin.md").read_text(encoding="utf-8")
 
     assert "docs/goblin-workload-types.md" in readme
-    assert "self-hosted control plane for validated container-backed workloads" in readme
+    assert "container-driven task scheduler and control plane" in readme
+    assert "validated container-backed" in readme
     assert "A goblin is a validated container-backed workload" in workload_doc
     assert "Task Goblins" in workload_doc
     assert "Service Goblins" in workload_doc
