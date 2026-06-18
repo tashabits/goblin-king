@@ -91,7 +91,12 @@ def _run_make(
     )
 
 
-def _prepare_local_images(kind_cluster: str, tag: str) -> dict[str, str]:
+def _prepare_local_images(
+    kind_cluster: str,
+    tag: str,
+    *,
+    include_singleuser: bool = False,
+) -> dict[str, str]:
     """Build local images needed by the proof stack and load them into Kubernetes."""
     images = {
         "app": f"goblin-king:{tag}",
@@ -101,6 +106,8 @@ def _prepare_local_images(kind_cluster: str, tag: str) -> dict[str, str]:
         "notebook_service_runner": f"goblin-king-notebook-asgi-service:{tag}",
         "long_hello": f"goblin-king-example-long-hello:{tag}",
     }
+    if include_singleuser:
+        images["singleuser"] = f"goblin-king-directory-singleuser:{tag}"
     contexts = {
         images["app"]: (".", None),
         images["admin"]: ("admin-ui", None),
@@ -109,6 +116,11 @@ def _prepare_local_images(kind_cluster: str, tag: str) -> dict[str, str]:
         images["notebook_service_runner"]: ("workers/notebook.asgi-service", None),
         images["long_hello"]: ("workers/example.long-hello", None),
     }
+    if include_singleuser:
+        contexts[images["singleuser"]] = (
+            ".",
+            "examples/jupyterhub-goblin-king/singleuser/Dockerfile",
+        )
     for image, (context, dockerfile) in contexts.items():
         command = ["docker", "build", "-t", image]
         if dockerfile:
