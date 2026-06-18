@@ -30,6 +30,25 @@ def test_adopter_guide_is_linked_from_readme() -> None:
     assert "docs/adopter-guide.md" in readme
 
 
+def test_workload_types_are_documented() -> None:
+    """Verify the current goblin workload model is discoverable and container-first."""
+    readme = Path("README.md").read_text(encoding="utf-8")
+    workload_doc = Path("docs/goblin-workload-types.md").read_text(encoding="utf-8")
+    what_is_doc = Path("docs/what-is-a-goblin.md").read_text(encoding="utf-8")
+
+    assert "docs/goblin-workload-types.md" in readme
+    assert "self-hosted control plane for validated container-backed workloads" in readme
+    assert "A goblin is a validated container-backed workload" in workload_doc
+    assert "Task Goblins" in workload_doc
+    assert "Service Goblins" in workload_doc
+    assert "Notebook Function Goblins" in workload_doc
+    assert "Notebook Service Goblins" in workload_doc
+    assert "Directory Goblins" in workload_doc
+    assert "configured runner containers" in workload_doc
+    assert "not a public marketplace" in workload_doc
+    assert "A goblin is a validated container-backed workload" in what_is_doc
+
+
 def test_mandatory_validation_gate_is_documented() -> None:
     """Verify the scheduler validation gate has one canonical user-facing design doc."""
     readme = Path("README.md").read_text(encoding="utf-8")
@@ -45,6 +64,7 @@ def test_repository_operator_docs_cover_stack_enablement() -> None:
     """Verify optional Directory service docs cover local and cluster operators."""
     readme = Path("README.md").read_text(encoding="utf-8")
     repository_doc = Path("docs/goblin-directory.md").read_text(encoding="utf-8")
+    repository_doc_flat = " ".join(repository_doc.split())
 
     assert "docs/goblin-directory.md" in readme
     assert '"repository": {' in repository_doc
@@ -65,11 +85,16 @@ def test_repository_operator_docs_cover_stack_enablement() -> None:
     assert "client.run_directory_function" in repository_doc
     assert "client.directory_service" in repository_doc
     assert "Non-admin callers cannot request another `project_id`" in repository_doc
+    assert "## Directory Scope" in repository_doc
+    assert "belongs to one Goblin King deployment" in repository_doc
+    assert "Approval is a sharing gate rather than a security certification" in repository_doc
+    assert "Validation proves contract compliance, not trustworthiness" in repository_doc_flat
 
 
 def test_jupyterhub_docs_cover_repository_proof_users() -> None:
     """Verify Hub docs describe the Directory proof target and users."""
     hub_doc = Path("docs/jupyterhub-service-access.md").read_text(encoding="utf-8")
+    hub_doc_flat = " ".join(hub_doc.split())
 
     assert "make jupyterhub-directory-proof" in hub_doc
     assert "make jupyterhub-directory-ui-proof" in hub_doc
@@ -77,3 +102,6 @@ def test_jupyterhub_docs_cover_repository_proof_users() -> None:
     assert "`alice` approves" in hub_doc
     assert "`carol` searches" in hub_doc
     assert "`mallory` is denied" in hub_doc
+    assert "configured function runner container" in hub_doc_flat
+    assert "configured service runner container" in hub_doc_flat
+    assert "deployment-local" in hub_doc

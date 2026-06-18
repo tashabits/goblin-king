@@ -4,16 +4,16 @@
 
 The scheduler should start clean and stay reusable. It should provide a small, stable core for scheduling work, dispatching isolated goblin runs, tracking status, and collecting structured results without binding itself to any one application.
 
-Current worker model: a goblin is a contract-compliant OCI/Docker container. Python
-helpers and in-process execution remain optional local conveniences, but the canonical
-worker interface is `docs/goblin-container-contract.md`.
+Current worker model: a goblin is a validated container-backed workload. Python helpers
+and in-process execution remain optional local conveniences, but the canonical worker
+interface is `docs/goblin-container-contract.md`.
 
 The core Goblin King shape:
 
 - A long-running King process blocks on a Redis queue.
 - Each job has a `kind`, `id`, `target`, timestamps, and environment metadata.
 - The King selects a goblin implementation by kind.
-- Work runs in a short-lived Docker container.
+- Task work runs in a short-lived Docker container.
 - Worker containers receive the job through environment JSON.
 - Goblin modules expose a simple Python contract:
 

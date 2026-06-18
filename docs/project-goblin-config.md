@@ -1,12 +1,13 @@
 # Project Goblin Config
 
-Project goblin config lets an adopting project define container goblins without editing
-Goblin King source code or writing Python worker imports.
+Project goblin config lets an adopting project define task and service goblins as
+container-backed workloads without editing Goblin King source code or writing Python
+worker imports.
 
 Current version: `goblin-king/v1alpha1`.
 
-Use this when a project already has its own worker images and only needs Goblin King to
-discover, validate, queue, schedule, and display them.
+Use this when a project already has its own worker or service images and only needs
+Goblin King to discover, validate, queue, schedule, start, stop, and display them.
 
 ## File Shape
 

@@ -1,26 +1,25 @@
 # Goblin King
 
-Goblin King is a reusable scheduler and control plane for running small, isolated worker
-containers called goblins. Goblins run as self-contained Docker/OCI workers, which lets
-each worker use the language and runtime that fits its job while the King keeps
-scheduling, status, and result contracts consistent.
+Goblin King is a self-hosted control plane for validated container-backed workloads:
+short-lived task goblins, managed service goblins, notebook-authored goblins executed
+through configured runner containers, and deployment-local Directory goblins.
 
-Use Goblin King when you want a project to define small jobs, run them in isolated
-containers, inspect what happened, and keep a durable audit trail. Docker and Compose
-are the default local path. Kubernetes is optional through the Helm chart when a project
-needs a cluster deployment.
+Use Goblin King when you want a trusted project or deployment to define validated
+container-backed work, inspect what happened, and keep a durable audit trail. Docker
+and Compose are the default local path. Kubernetes is optional through the Helm chart
+when a project needs a cluster deployment.
 
 **Status: Open-source alpha / project-adoptable alpha.** Goblin King is ready
-for trusted self-hosted projects that want to define, validate, schedule, and
-inspect their own contract-compliant Docker task containers. It is not intended
-for untrusted third-party container execution, public multi-tenant workloads, or
-production deployments without additional hardening.
+for trusted self-hosted projects that want to define, validate, schedule, run, share,
+and inspect their own container-backed workloads. It is not intended for untrusted
+third-party container execution, public multi-tenant workloads, or production
+deployments without additional hardening.
 
-Goblin King can be used by trusted self-hosted projects as a local/project
-scheduler for contract-compliant Docker task containers. Adopters can run the
-local/dev stack and use the admin panel to validate, submit, and inspect their
-own project goblins. This remains project-adoptable alpha software and is not
-intended for untrusted third-party container execution.
+Goblin King can be used by trusted self-hosted projects as a local/project control
+plane for contract-compliant container-backed workloads. Adopters can run the local/dev
+stack and use the admin panel, API, notebooks, or Directory to validate, submit, share,
+and inspect their own project goblins. This remains project-adoptable alpha software
+and is not intended for untrusted third-party container execution.
 
 ## Table Of Contents
 
@@ -42,6 +41,7 @@ intended for untrusted third-party container execution.
   - [User Guide](docs/USER_GUIDE.md)
   - [Admin Guide](docs/ADMIN_GUIDE.md)
   - [Goblin Container Contract](docs/goblin-container-contract.md)
+  - [Goblin Workload Types](docs/goblin-workload-types.md)
   - [What Is A Goblin?](docs/what-is-a-goblin.md)
   - [Writing Goblins](docs/writing-goblins.md)
   - [Goblin Dockerfiles](docs/goblin-dockerfiles.md)
@@ -169,10 +169,11 @@ make jupyterhub-stack-up \
   GOBLIN_DIRECTORY_UI_ENABLED=1
 ```
 
-Then `http://127.0.0.1:8080/services/goblin-directory/` opens the separate Goblin
-Directory app through Hub OAuth. Directory users can upload a v1 zip bundle, submit
-and validate it, request review, and later discover/run/start approved goblins by name
-without pasting tokens into the browser. `make jupyterhub-stack-up` also pre-populates
+Then `http://127.0.0.1:8080/services/goblin-directory/` opens the separate
+deployment-local Goblin Directory app through Hub OAuth. Directory users can upload a
+v1 zip bundle, submit and validate it, request review, and later discover/run/start
+approved goblins by name within the same deployment without pasting tokens into the
+browser. `make jupyterhub-stack-up` also pre-populates
 Alice, Bob, and Carol notebook servers with role-specific examples under
 `/home/jovyan/examples`. With the Directory UI enabled, the rebuilt single-user image
 also installs the JupyterLab **Goblin Directory** picker. Carol can open JupyterLab,
@@ -466,7 +467,7 @@ For host-project deployment integration, see
 - `docker-compose.host-project.yml` for layering project workers and project settings
   over the base Docker Compose stack.
 - `helm-values.yaml` for mounting project config, passing scheduler `--project`, and
-  adding project long-running services.
+  adding project service goblins.
 - Makefile proof targets:
   - `make project-validate`
   - `make project-build-workers`
@@ -529,7 +530,7 @@ open http://127.0.0.1:8080/admin
 Log in with `local-dev-token`. The admin service serves the same React build in Docker
 and Helm, proxies HTTP calls through `/admin-api/*`, and proxies WebSocket run events
 through `/admin-ws/runs`. It lists current goblins, worker mappings, jobs, schedules,
-runs, fanouts, long-running services, events, heartbeats, artifacts, audit logs, and
+runs, fanouts, service goblins, events, heartbeats, artifacts, audit logs, and
 rate-limit proof panels. The Discovery panel reloads deploy-time goblin sources and
 shows registry files, entry-point usage, worker image-map coverage, rejected
 definitions, and the current discovery version. The Admin/Auth panel also has cleanup controls for old
@@ -815,7 +816,7 @@ Goblin King provides:
 - A FastAPI control plane for submitting jobs, managing schedules, reading runs,
   inspecting artifacts, streaming events, and operating admin workflows.
 - A React admin lab bench served in Docker Compose and Helm for spawning goblins,
-  watching tasks, probing long-running services, reading events, cleaning old rows, and
+  watching task goblins, probing service goblins, reading events, cleaning old rows, and
   proving worker behavior.
 - Local bearer-token auth, project scoping, admin tokens, and optional OIDC/JWT bearer
   validation.
@@ -861,10 +862,11 @@ instructions stay focused on features that exist today.
 | --- | --- |
 | [Goblin King Scheduler Plan](docs/goblin-king-plan.md) | Architecture notes and roadmap history for maintainers. |
 | [User Guide](docs/USER_GUIDE.md) | End-to-end operator and developer guide for Docker, admin UI, sample goblins, API, scheduler, and optional Helm deployment. |
-| [Admin Guide](docs/ADMIN_GUIDE.md) | Screenshot walkthrough for logging in, spawning goblins, watching tasks, probing long services, reading events, and cleaning old rows. |
+| [Admin Guide](docs/ADMIN_GUIDE.md) | Screenshot walkthrough for logging in, spawning goblins, watching task goblins, probing service goblins, reading events, and cleaning old rows. |
 | [Admin Runtime Audit](docs/admin-runtime-audit.md) | Required Docker and Helm browser audit for proving every registered goblin kind works from the admin consoles. |
 | [Goblin Container Contract](docs/goblin-container-contract.md) | Canonical language-agnostic worker container contract. |
-| [What Is A Goblin?](docs/what-is-a-goblin.md) | Plain-language model of goblins as short-lived container tasks. |
+| [Goblin Workload Types](docs/goblin-workload-types.md) | Shared model for task, service, notebook, and Directory goblins as validated container-backed workloads. |
+| [What Is A Goblin?](docs/what-is-a-goblin.md) | Plain-language model of goblins as validated container-backed workloads. |
 | [Writing Goblins](docs/writing-goblins.md) | Practical steps for building a contract-compliant goblin. |
 | [Goblin Dockerfiles](docs/goblin-dockerfiles.md) | Minimal, multi-stage, non-root, read-only, and WASI wrapper Dockerfile patterns. |
 | [Language-Agnostic Workers](docs/language-agnostic-workers.md) | Guidance for writing goblins in any container-packaged runtime. |
@@ -872,7 +874,7 @@ instructions stay focused on features that exist today.
 | [Choose Your Runtime](docs/choose-your-runtime.md) | Runtime comparison guide for picking a worker language. |
 | [Goblin Contract Validation](docs/goblin-contract-validation.md) | Local validation command for image builds, result envelopes, and artifacts. |
 | [Goblin Resource Policies](docs/goblin-resource-policies.md) | Per-goblin resource expectations, defaults, ceilings, and Docker/Kubernetes mapping. |
-| [Using Goblin King As Your Project Scheduler](docs/using-goblin-king-as-a-project-scheduler.md) | Practical guide for defining project background tasks as validated, scheduled goblin containers. |
+| [Using Goblin King As Your Project Scheduler](docs/using-goblin-king-as-a-project-scheduler.md) | Practical guide for defining project task and service goblins as validated container-backed workloads. |
 | [Using Goblin King From A Vendored Checkout](docs/using-goblin-king-from-a-vendored-checkout.md) | Submodule, subtree, and local path dependency workflow for host projects. |
 | [Adopter Admin Dev/Test Stack](docs/adopter-admin-dev-stack.md) | Local Docker Compose/admin workflow for testing project-defined goblins. |
 | [Testing Your Project With The Admin Panel](docs/testing-your-project-with-the-admin-panel.md) | Do-this, see-this quickstart for validating, launching, and inspecting project goblins in the admin. |

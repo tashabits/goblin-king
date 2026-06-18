@@ -14,8 +14,8 @@ Use an API bearer token to enter the admin. For local development, the default t
 ## Read The Dashboard
 
 The dashboard gives a quick health read: active tasks, failed or cancelled tasks,
-completed tasks, running long services, and the registered goblin list. Use **Refresh
-all** after external CLI or scheduler actions.
+completed tasks, running service goblins, and the registered goblin list. Use
+**Refresh all** after external CLI or scheduler actions.
 
 ![Admin dashboard](images/admin/admin-dashboard.png)
 
@@ -53,8 +53,8 @@ Use **Services** for long-running goblins. Register the deployment URL, then pre
 **Probe** to call the service through the King. The `example.long-hello` service returns
 `Hello World from long running service` with a fresh timestamp on every probe.
 
-Use **Stop service** to mark a registered long-running service as stopped. Like job
-cancel, this is King-side state control rather than hard runtime termination.
+Use **Stop service** to mark a registered service goblin as stopped. Like job cancel,
+this is King-side state control rather than hard runtime termination.
 Use **Hard kill runtime** or **Hard stop runtime** only when testing the scoped
 termination path. These admin controls target Goblin-labeled Docker containers or
 Kubernetes Jobs; registered service hard-stop changes King-side service state because

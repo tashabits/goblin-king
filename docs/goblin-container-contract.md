@@ -9,10 +9,12 @@ environment variables, context metadata, result fields, and helper APIs without
 breaking existing workers. Required field removals or incompatible shape changes must
 be documented in the compatibility matrix and migration guide.
 
-A goblin is always an OCI/Docker container. Goblin King schedules containers, not
-language runtimes. The code inside the container may be Python, Go, Rust, Node.js, Java,
-.NET, Ruby, PHP, shell, container-wrapped WASI/WebAssembly, or any other runtime that
-can obey this contract.
+A goblin is a validated container-backed workload. For project-defined task and service
+goblins, Goblin King schedules OCI/Docker containers, not language runtimes. For
+notebook-authored function and ASGI service goblins, Goblin King executes submitted
+source inside configured runner containers. The code inside the container may be
+Python, Go, Rust, Node.js, Java, .NET, Ruby, PHP, shell, container-wrapped
+WASI/WebAssembly, or any other runtime that can obey this contract.
 
 Python helpers and package entry points are optional conveniences for definitions,
 tests, and local debugging. They are not the worker model.
