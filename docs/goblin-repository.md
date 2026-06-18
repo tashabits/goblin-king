@@ -168,6 +168,106 @@ Normal users only resolve entries in their project scope. Admins can specify
 a particular published version. Draft, rejected, retired, and unpublished versions are
 not invokable by normal callers.
 
+## Notebook Repository Workflow
+
+The JupyterHub workbook path can use the notebook helper instead of hand-written HTTP
+requests. The helper reads `GOBLIN_KING_API_URL`, `GOBLIN_KING_REPOSITORY_URL`, and
+`JUPYTERHUB_API_TOKEN` from the notebook server environment, or accepts explicit
+constructor arguments:
+
+```python
+from goblin_king.notebooks import GoblinKingNotebookClient
+
+client = GoblinKingNotebookClient(
+    api_url="http://goblin-king-api.default.svc.cluster.local:8000",
+    repository_url="http://goblin-king-repository.default.svc.cluster.local:8000",
+    token=os.environ["JUPYTERHUB_API_TOKEN"],
+)
+```
+
+Submit a short function goblin from source already defined in the workbook:
+
+```python
+def workbook_hello(payload):
+    return {"message": f"Hello {payload.get('name', 'Repository')}"}
+
+submission = client.submit_repository_function(
+    workbook_hello,
+    name="workbook.shared-hello",
+    display_name="Workbook Shared Hello",
+    description="Short hello-world function submitted from a notebook",
+    tags=["workbook", "hello"],
+    timeout_seconds=30,
+)
+
+submission.validate({"name": "Validation"}, progress=True)
+submission.request_review("ready for admin review", progress=True)
+```
+
+Submit an ASGI service from workbook source the same way:
+
+```python
+service_source = """
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/hello")
+def hello():
+    return {"message": "Hello World"}
+""".strip()
+
+service_submission = client.submit_repository_service(
+    source=service_source,
+    name="workbook.shared-long-hello",
+    app_name="app",
+    requirements=["fastapi>=0.115,<1"],
+    probe_path="/hello",
+    tags=["workbook", "service"],
+)
+
+service_submission.validate(progress=True, timeout_seconds=180)
+service_submission.request_review("service ready for admin review", progress=True)
+```
+
+An admin token can approve and publish the same entries:
+
+```python
+pending = client.list_repository_entries(status="pending_review", limit=100)
+entry_id = pending["items"][0]["entry"]["id"]
+
+client.approve_repository_entry(entry_id, note="approved", progress=True)
+client.publish_repository_entry(entry_id, progress=True)
+```
+
+Another authorized project user can discover and invoke by name without copying source:
+
+```python
+published = client.search_repository_entries("workbook", status="published")
+
+run = client.run_repository_function(
+    "workbook.shared-hello",
+    {"name": "Consumer"},
+    progress=True,
+)
+
+service = client.repository_service("workbook.shared-long-hello")
+service.start(progress=True, timeout_seconds=180)
+service.probe()
+service.proxy("/hello")
+service.stop()
+```
+
+The example workbooks in `examples/jupyterhub-goblin-king/` split that flow by role:
+
+- `workbook-repository-submit.ipynb` for a contributor such as `bob`.
+- `workbook-repository-admin.ipynb` for an admin such as `alice`.
+- `workbook-repository-consume.ipynb` for a consumer such as `carol`.
+
+If repository routes are not enabled, helper errors include the repository base URL,
+`repository.enabled=true`, and `GOBLIN_KING_REPOSITORY_URL` so the workbook points at the
+operator fix instead of failing as an opaque 404.
+
 ## Docker Compose Enablement
 
 For local Compose, add the repository block to the API settings file used by the `api`

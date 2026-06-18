@@ -94,6 +94,37 @@ def test_default_workbook_uses_progress_without_branch_pin() -> None:
     assert "does not expose required notebook routes" in source
 
 
+def test_repository_workbooks_are_valid_and_cover_full_flow() -> None:
+    """Verify repository workbook examples cover submit, review, and consumption."""
+    workbook_paths = [
+        Path("examples/jupyterhub-goblin-king/workbook-repository-submit.ipynb"),
+        Path("examples/jupyterhub-goblin-king/workbook-repository-admin.ipynb"),
+        Path("examples/jupyterhub-goblin-king/workbook-repository-consume.ipynb"),
+    ]
+    sources = {}
+    for path in workbook_paths:
+        workbook = json.loads(path.read_text(encoding="utf-8"))
+        assert workbook["nbformat"] == 4
+        sources[path.name] = "\n".join(
+            "".join(cell.get("source", []))
+            for cell in workbook["cells"]
+            if cell.get("cell_type") == "code"
+        )
+
+    submit_source = sources["workbook-repository-submit.ipynb"]
+    admin_source = sources["workbook-repository-admin.ipynb"]
+    consume_source = sources["workbook-repository-consume.ipynb"]
+
+    assert "submit_repository_function(" in submit_source
+    assert "submit_repository_service(" in submit_source
+    assert "request_review(" in submit_source
+    assert "approve_repository_entry(" in admin_source
+    assert "publish_repository_entry(" in admin_source
+    assert "search_repository_entries(" in consume_source
+    assert "run_repository_function(" in consume_source
+    assert "repository_service(" in consume_source
+
+
 def test_notebook_client_declare_posts_function_source(monkeypatch) -> None:
     """Verify notebook users can declare a function through the public helper."""
     requests = []
