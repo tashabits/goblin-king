@@ -219,6 +219,282 @@ def test_notebook_client_404_hint_for_stale_notebook_api(monkeypatch) -> None:
     assert "GOBLIN_KING_API_URL points at the wrong service" in message
 
 
+def test_notebook_client_repository_404_hint_is_actionable(monkeypatch) -> None:
+    """Verify repository route 404s explain enablement and URL configuration."""
+
+    def fake_urlopen(_request, timeout):
+        assert timeout == 120
+        raise HTTPError(
+            url="http://goblin.local/repository/entries",
+            code=404,
+            msg="Not Found",
+            hdrs={},
+            fp=BytesIO(b'{"detail":"repository service is not enabled"}'),
+        )
+
+    monkeypatch.setenv("GOBLIN_KING_API_TOKEN", "token")
+    monkeypatch.setattr("goblin_king.notebooks.urlrequest.urlopen", fake_urlopen)
+
+    client = GoblinKingNotebookClient(api_url="http://goblin.local")
+    try:
+        client.list_repository_entries()
+    except RuntimeError as error:
+        message = str(error)
+    else:
+        raise AssertionError("expected repository route 404 to raise")
+
+    assert "GET /repository/entries" in message
+    assert "repository.enabled=true" in message
+    assert "GOBLIN_KING_REPOSITORY_URL" in message
+
+
+def test_notebook_client_submits_repository_function_from_callable(monkeypatch) -> None:
+    """Verify workbook users can submit a function goblin to the repository."""
+    requests = []
+
+    def shared_hello(payload):
+        return {"message": payload.get("name", "hello")}
+
+    def fake_repository_request(_method, path, payload=None):
+        requests.append((_method, path, payload))
+        return {
+            "entry": {
+                "id": "entry-1",
+                "name": payload["name"],
+                "type": payload["type"],
+                "project_id": payload["project_id"],
+                "status": "draft",
+            },
+            "version": {
+                "version": 1,
+                "kind": "repository.project.shared.hello.v1",
+                "status": "draft",
+            },
+            "notebook": {"kind": "repository.project.shared.hello.v1"},
+        }
+
+    client = GoblinKingNotebookClient(api_url="http://goblin.local", token="token")
+    monkeypatch.setattr(client, "_repository_request", fake_repository_request)
+
+    submitted = client.submit_repository_function(
+        shared_hello,
+        name="shared.hello",
+        display_name="Shared Hello",
+        description="Reusable hello from a workbook",
+        tags=["demo", "hello"],
+        project_id="project-1",
+        timeout_seconds=30,
+    )
+
+    assert submitted.entry_id == "entry-1"
+    assert submitted.name == "shared.hello"
+    assert submitted.version_number == 1
+    assert requests[0][0] == "POST"
+    assert requests[0][1] == "/repository/entries"
+    payload = requests[0][2]
+    assert payload["type"] == "notebook_function"
+    assert payload["name"] == "shared.hello"
+    assert payload["function_name"] == "shared_hello"
+    assert "def shared_hello(payload):" in payload["source"]
+    assert payload["tags"] == ["demo", "hello"]
+
+
+def test_notebook_client_submits_repository_service_source(monkeypatch) -> None:
+    """Verify workbook users can submit ASGI service source to the repository."""
+    requests = []
+    source = "from fastapi import FastAPI\napp = FastAPI()\n"
+
+    def fake_repository_request(_method, path, payload=None):
+        requests.append((_method, path, payload))
+        return {
+            "entry": {
+                "id": "entry-2",
+                "name": payload["name"],
+                "type": payload["type"],
+                "project_id": payload["project_id"],
+                "status": "draft",
+            },
+            "version": {
+                "version": 1,
+                "kind": "repository.project.shared.long-hello.v1",
+                "status": "draft",
+            },
+            "notebook": {"kind": "repository.project.shared.long-hello.v1"},
+        }
+
+    client = GoblinKingNotebookClient(api_url="http://goblin.local", token="token")
+    monkeypatch.setattr(client, "_repository_request", fake_repository_request)
+
+    submitted = client.submit_repository_service(
+        source=source,
+        name="shared.long-hello",
+        app_name="app",
+        requirements=["fastapi>=0.115,<1"],
+        probe_path="/hello",
+        project_id="project-1",
+        tags=["service"],
+    )
+
+    assert submitted.entry_id == "entry-2"
+    assert submitted.type == "notebook_service"
+    assert submitted.service().name == "shared.long-hello"
+    payload = requests[0][2]
+    assert requests[0][1] == "/repository/entries"
+    assert payload["type"] == "notebook_service"
+    assert payload["source"] == source
+    assert payload["requirements"] == ["fastapi>=0.115,<1"]
+    assert payload["probe_path"] == "/hello"
+
+
+def test_notebook_client_repository_review_helpers_update_handle(
+    monkeypatch,
+    capsys,
+) -> None:
+    """Verify repository handles validate, request review, approve, and publish."""
+    client = GoblinKingNotebookClient(api_url="http://goblin.local", token="token")
+    requests = []
+
+    def fake_repository_request(_method, path, payload=None):
+        requests.append((_method, path, payload))
+        if path == "/repository/entries":
+            return {
+                "entry": {
+                    "id": "entry-1",
+                    "name": payload["name"],
+                    "type": payload["type"],
+                    "project_id": "project-1",
+                    "status": "draft",
+                },
+                "version": {
+                    "version": 1,
+                    "kind": "repository.project.shared.hello.v1",
+                    "status": "draft",
+                },
+                "notebook": {},
+            }
+        if path.endswith("/validate?version=1"):
+            return {
+                "entry": {
+                    "id": "entry-1",
+                    "name": "shared.hello",
+                    "type": "notebook_function",
+                    "project_id": "project-1",
+                    "status": "validated",
+                },
+                "version": {
+                    "version": 1,
+                    "kind": "repository.project.shared.hello.v1",
+                    "status": "validated",
+                },
+                "validation": {"ok": True},
+            }
+        if path.endswith("/request-review?version=1"):
+            return _repository_detail("pending_review")
+        if path.endswith("/approve?version=1"):
+            return _repository_detail("approved")
+        if path.endswith("/publish"):
+            return _repository_detail("published")
+        raise AssertionError(path)
+
+    monkeypatch.setattr(client, "_repository_request", fake_repository_request)
+    handle = client.submit_repository_function(
+        name="shared.hello",
+        source="def run(payload):\n    return payload\n",
+    )
+
+    handle.validate({"name": "Ada"}, progress=True)
+    handle.request_review("ready", progress=True)
+    handle.approve("approved", progress=True)
+    handle.publish(progress=True)
+
+    assert handle.entry["status"] == "published"
+    assert handle.version["status"] == "published"
+    assert requests == [
+        (
+            "POST",
+            "/repository/entries",
+            {
+                "name": "shared.hello",
+                "type": "notebook_function",
+                "source": "def run(payload):\n    return payload\n",
+                "function_name": "run",
+                "display_name": "shared.hello",
+                "description": None,
+                "tags": [],
+                "project_id": None,
+                "image": None,
+                "timeout_seconds": None,
+                "max_retries": 0,
+                "metadata": {},
+            },
+        ),
+        (
+            "POST",
+            "/repository/entries/entry-1/validate?version=1",
+            {"input": {"name": "Ada"}, "require_success": True, "timeout_seconds": None},
+        ),
+        (
+            "POST",
+            "/repository/entries/entry-1/request-review?version=1",
+            {"note": "ready"},
+        ),
+        (
+            "POST",
+            "/repository/entries/entry-1/approve?version=1",
+            {"note": "approved"},
+        ),
+        ("POST", "/repository/entries/entry-1/publish", {"version": 1}),
+    ]
+    output = capsys.readouterr().out
+    assert "repository shared.hello entry=validated version=validated" in output
+    assert "repository shared.hello entry=published version=published" in output
+
+
+def test_notebook_client_repository_list_search_and_wait(monkeypatch) -> None:
+    """Verify repository search query strings and wait polling are stable."""
+    client = GoblinKingNotebookClient(api_url="http://goblin.local", token="token")
+    requests = []
+    statuses = iter(["pending_review", "published"])
+
+    def fake_repository_request(_method, path, payload=None):
+        requests.append((_method, path, payload))
+        if path.startswith("/repository/entries?"):
+            return {"items": [], "meta": {"count": 0, "limit": 5, "offset": 10}}
+        if path == "/repository/entries/entry-1":
+            status = next(statuses)
+            return _repository_detail(status)
+        raise AssertionError(path)
+
+    monkeypatch.setattr(client, "_repository_request", fake_repository_request)
+
+    listed = client.search_repository_entries(
+        "hello world",
+        project_id="project-1",
+        entry_type="notebook_function",
+        status="all",
+        limit=5,
+        offset=10,
+    )
+    waited = client.wait_for_repository_status(
+        "entry-1",
+        status="published",
+        poll_seconds=0,
+    )
+
+    assert listed["meta"]["count"] == 0
+    assert waited["entry"]["status"] == "published"
+    assert requests == [
+        (
+            "GET",
+            "/repository/entries?limit=5&offset=10&project_id=project-1"
+            "&type=notebook_function&status=all&q=hello+world",
+            None,
+        ),
+        ("GET", "/repository/entries/entry-1", None),
+        ("GET", "/repository/entries/entry-1", None),
+    ]
+
+
 def test_notebook_client_service_start_prints_progress(monkeypatch, capsys) -> None:
     """Verify service start progress is visible when requested."""
     client = GoblinKingNotebookClient(api_url="http://goblin.local", token="token")
@@ -481,6 +757,25 @@ def test_notebook_client_repository_service_handle_calls_name_routes(monkeypatch
         ),
     ]
     assert service.record["runtime_status"] == "stopped"
+
+
+def _repository_detail(status: str) -> dict[str, object]:
+    return {
+        "entry": {
+            "id": "entry-1",
+            "name": "shared.hello",
+            "type": "notebook_function",
+            "project_id": "project-1",
+            "status": status,
+        },
+        "versions": [
+            {
+                "version": 1,
+                "kind": "repository.project.shared.hello.v1",
+                "status": status,
+            }
+        ],
+    }
 
 
 def test_api_builds_lists_and_submits_notebook_goblin(tmp_path: Path) -> None:
