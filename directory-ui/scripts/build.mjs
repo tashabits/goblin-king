@@ -17,4 +17,4 @@ for (const file of required) {
 rmSync(distDir, { recursive: true, force: true });
 mkdirSync(distDir, { recursive: true });
 cpSync(staticDir, distDir, { recursive: true });
-console.log("repository UI static build complete");
+console.log("directory UI static build complete");

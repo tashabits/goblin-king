@@ -49,7 +49,7 @@ intended for untrusted third-party container execution.
   - [Security Policy](SECURITY.md)
   - [Security Model](docs/security-model.md)
   - [JupyterHub Service Access](docs/jupyterhub-service-access.md)
-  - [Goblin Repository](docs/goblin-repository.md)
+  - [Goblin Directory](docs/goblin-directory.md)
   - [API Roadmap](docs/api-roadmap.md)
   - [Scheduler Plan](docs/goblin-king-plan.md)
   - [Adopting Projects](docs/ADOPTING_PROJECTS.md)
@@ -155,7 +155,7 @@ The default Hub values include notebook-pod egress to the Goblin King API servic
 users can launch goblins from inside JupyterHub.
 If you are testing branch changes locally, run
 `make jupyterhub-stack-up JUPYTERHUB_STACK_REBUILD=1` to build fresh local API,
-admin, repository UI, notebook runner, and service images with a unique tag before Helm
+admin, directory UI, notebook runner, and service images with a unique tag before Helm
 deploys.
 After the stack is up, the Hub service route
 `http://127.0.0.1:8080/services/goblin-king/` opens the admin UI through
@@ -166,19 +166,21 @@ Enable the optional repository service and Hub browser UI with:
 make jupyterhub-stack-up \
   JUPYTERHUB_STACK_REBUILD=1 \
   GOBLIN_REPOSITORY_ENABLED=1 \
-  GOBLIN_REPOSITORY_UI_ENABLED=1
+  GOBLIN_DIRECTORY_UI_ENABLED=1
 ```
 
-Then `http://127.0.0.1:8080/services/goblin-repository/` opens the separate Goblin
-Repository app through Hub OAuth. Repository users can upload a v1 zip bundle, submit
+Then `http://127.0.0.1:8080/services/goblin-directory/` opens the separate Goblin
+Directory app through Hub OAuth. Directory users can upload a v1 zip bundle, submit
 and validate it, request review, and later discover/run/start approved goblins by name
-without pasting tokens into the browser.
+without pasting tokens into the browser. `make jupyterhub-stack-up` also pre-populates
+Alice, Bob, and Carol notebook servers with role-specific examples under
+`/home/jovyan/examples`.
 `make jupyterhub-workbook-proof` brings up that stack, uses a Hub user token, declares
 and validates a short Python function goblin from workbook-style source, declares a
 FastAPI ASGI service from notebook source, validates it, starts the managed service
 pod, probes/proxies it, stops it, then tears the stack back down.
-`make jupyterhub-repository-ui-proof` brings up Hub, Goblin King, the repository API,
-and the repository UI; proves bob submit, alice review/publish, carol consume, and
+`make jupyterhub-directory-ui-proof` brings up Hub, Goblin King, the directory API,
+and the directory UI; proves bob submit, alice review/publish, carol consume, and
 mallory denial through the Hub service route; then tears everything down.
 `make notebook-service-docker-proof` exercises the same source-authored service
 lifecycle through the local Docker runtime. See

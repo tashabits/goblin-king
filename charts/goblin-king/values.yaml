@@ -58,16 +58,16 @@ repository:
     enabled: false
     minAvailable: 1
 
-repositoryUi:
+directoryUi:
   enabled: false
   replicas: 1
   image:
-    repository: goblin-king-repository-ui
+    repository: goblin-king-directory-ui
     tag: local
     pullPolicy: IfNotPresent
   port: 8080
-  serviceName: goblin-repository
-  servicePrefix: /services/goblin-repository/
+  serviceName: goblin-directory
+  servicePrefix: /services/goblin-directory/
   apiUrl: ""
   repositoryUrl: ""
   hubApiUrl: ""
@@ -75,7 +75,7 @@ repositoryUi:
   publicUrl: ""
   serviceTokenSecret:
     name: ""
-    key: repository-ui-token
+    key: directory-ui-token
   adminGroups:
     - goblin-admins
   requestTimeoutSeconds: 10

@@ -1,4 +1,4 @@
-"""Safe upload bundle parsing for the browser-facing repository UI."""
+"""Safe upload bundle parsing for the browser-facing directory UI."""
 
 from __future__ import annotations
 
@@ -13,13 +13,15 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from goblin_king.contracts import GOBLIN_KIND_PATTERN, RepositoryGoblinType
 
+DIRECTORY_MANIFEST = "goblin-directory.json"
 
-class RepositoryBundleError(ValueError):
-    """Raised when a repository upload bundle cannot be accepted."""
+
+class DirectoryBundleError(ValueError):
+    """Raised when a directory upload bundle cannot be accepted."""
 
 
 @dataclass(frozen=True)
-class RepositoryBundleLimits:
+class DirectoryBundleLimits:
     """Upload bundle limits enforced before parsing executable source."""
 
     max_bundle_bytes: int = 5 * 1024 * 1024
@@ -28,7 +30,7 @@ class RepositoryBundleLimits:
     max_files: int = 50
 
 
-class RepositoryBundleFile(BaseModel):
+class DirectoryBundleFile(BaseModel):
     """Safe metadata for one uploaded bundle member."""
 
     path: str
@@ -36,8 +38,8 @@ class RepositoryBundleFile(BaseModel):
     executable: bool = False
 
 
-class RepositoryBundleManifest(BaseModel):
-    """Versioned manifest shipped in a Goblin Repository upload bundle."""
+class DirectoryBundleManifest(BaseModel):
+    """Versioned manifest shipped in a Goblin Directory upload bundle."""
 
     schema_version: Literal[1]
     name: str
@@ -86,39 +88,39 @@ class RepositoryBundleManifest(BaseModel):
         return tags
 
 
-class RepositoryBundlePreview(BaseModel):
-    """Validated upload bundle preview and normalized repository submit payload."""
+class DirectoryBundlePreview(BaseModel):
+    """Validated upload bundle preview and normalized directory submit payload."""
 
-    manifest: RepositoryBundleManifest
-    files: list[RepositoryBundleFile]
+    manifest: DirectoryBundleManifest
+    files: list[DirectoryBundleFile]
     source_preview: str
     requirements: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     submit_payload: dict[str, Any]
 
 
-def parse_repository_bundle(
+def parse_directory_bundle(
     data: bytes,
     *,
-    limits: RepositoryBundleLimits | None = None,
-) -> RepositoryBundlePreview:
-    """Parse a v1 zip bundle into a repository submission payload."""
-    limits = limits or RepositoryBundleLimits()
+    limits: DirectoryBundleLimits | None = None,
+) -> DirectoryBundlePreview:
+    """Parse a v1 zip bundle into a directory submission payload."""
+    limits = limits or DirectoryBundleLimits()
     if not data:
-        raise RepositoryBundleError("bundle is empty")
+        raise DirectoryBundleError("bundle is empty")
     if len(data) > limits.max_bundle_bytes:
-        raise RepositoryBundleError(
+        raise DirectoryBundleError(
             f"bundle is too large: {len(data)} bytes exceeds {limits.max_bundle_bytes}"
         )
     try:
         archive = zipfile.ZipFile(BytesIO(data))
     except zipfile.BadZipFile as error:
-        raise RepositoryBundleError("bundle must be a valid zip file") from error
+        raise DirectoryBundleError("bundle must be a valid zip file") from error
 
     with archive:
         infos = [info for info in archive.infolist() if not info.is_dir()]
         if len(infos) > limits.max_files:
-            raise RepositoryBundleError(
+            raise DirectoryBundleError(
                 f"bundle has too many files: {len(infos)} exceeds {limits.max_files}"
             )
         paths: dict[str, zipfile.ZipInfo] = {}
@@ -126,23 +128,24 @@ def parse_repository_bundle(
         for info in infos:
             path = validate_safe_bundle_path(info.filename)
             if path in paths:
-                raise RepositoryBundleError(f"bundle contains duplicate file path: {path}")
+                raise DirectoryBundleError(f"bundle contains duplicate file path: {path}")
             total_size += info.file_size
             if total_size > limits.max_bundle_bytes:
-                raise RepositoryBundleError(
+                raise DirectoryBundleError(
                     f"bundle uncompressed content exceeds {limits.max_bundle_bytes} bytes"
                 )
             paths[path] = info
 
-        if "goblin-repository.json" not in paths:
-            raise RepositoryBundleError("bundle must contain goblin-repository.json at the root")
-        manifest = _read_manifest(archive, paths["goblin-repository.json"])
+        manifest_info = paths.get(DIRECTORY_MANIFEST)
+        if manifest_info is None:
+            raise DirectoryBundleError(f"bundle must contain {DIRECTORY_MANIFEST} at the root")
+        manifest = _read_manifest(archive, manifest_info)
 
         entry_info = paths.get(manifest.entrypoint)
         if entry_info is None:
-            raise RepositoryBundleError(f"bundle entrypoint is missing: {manifest.entrypoint}")
+            raise DirectoryBundleError(f"bundle entrypoint is missing: {manifest.entrypoint}")
         if entry_info.file_size > limits.max_source_bytes:
-            raise RepositoryBundleError(
+            raise DirectoryBundleError(
                 f"entrypoint is too large: {entry_info.file_size} exceeds {limits.max_source_bytes}"
             )
         source = _read_text_file(archive, entry_info, label="entrypoint")
@@ -151,11 +154,11 @@ def parse_repository_bundle(
         if manifest.requirements_file:
             requirements_info = paths.get(manifest.requirements_file)
             if requirements_info is None:
-                raise RepositoryBundleError(
+                raise DirectoryBundleError(
                     f"requirements_file is missing: {manifest.requirements_file}"
                 )
             if requirements_info.file_size > limits.max_requirements_bytes:
-                raise RepositoryBundleError(
+                raise DirectoryBundleError(
                     "requirements_file is too large: "
                     f"{requirements_info.file_size} exceeds {limits.max_requirements_bytes}"
                 )
@@ -163,7 +166,7 @@ def parse_repository_bundle(
         requirements = _dedupe_requirements(requirements)
 
         files = [
-            RepositoryBundleFile(
+            DirectoryBundleFile(
                 path=path,
                 size=info.file_size,
                 executable=path == manifest.entrypoint,
@@ -175,7 +178,7 @@ def parse_repository_bundle(
             for file in files
             if file.path
             not in {
-                "goblin-repository.json",
+                DIRECTORY_MANIFEST,
                 manifest.entrypoint,
                 manifest.requirements_file or "",
             }
@@ -184,7 +187,7 @@ def parse_repository_bundle(
             "extra files are shown for review but not executed in bundle schema v1"
         ] if ignored else []
         payload = _submit_payload(manifest, source, requirements, files)
-        return RepositoryBundlePreview(
+        return DirectoryBundlePreview(
             manifest=manifest,
             files=files,
             source_preview=source[:2000],
@@ -207,18 +210,18 @@ def validate_safe_bundle_path(value: str) -> str:
     return path.as_posix()
 
 
-def _read_manifest(archive: zipfile.ZipFile, info: zipfile.ZipInfo) -> RepositoryBundleManifest:
+def _read_manifest(archive: zipfile.ZipFile, info: zipfile.ZipInfo) -> DirectoryBundleManifest:
     try:
         raw = _read_text_file(archive, info, label="manifest")
         payload = json.loads(raw)
     except json.JSONDecodeError as error:
-        raise RepositoryBundleError("goblin-repository.json must be valid JSON") from error
+        raise DirectoryBundleError(f"{DIRECTORY_MANIFEST} must be valid JSON") from error
     if not isinstance(payload, dict):
-        raise RepositoryBundleError("goblin-repository.json must contain a JSON object")
+        raise DirectoryBundleError(f"{DIRECTORY_MANIFEST} must contain a JSON object")
     try:
-        return RepositoryBundleManifest.model_validate(payload)
+        return DirectoryBundleManifest.model_validate(payload)
     except ValidationError as error:
-        raise RepositoryBundleError(str(error)) from error
+        raise DirectoryBundleError(str(error)) from error
 
 
 def _read_text_file(archive: zipfile.ZipFile, info: zipfile.ZipInfo, *, label: str) -> str:
@@ -226,7 +229,7 @@ def _read_text_file(archive: zipfile.ZipFile, info: zipfile.ZipInfo, *, label: s
         data = archive.read(info)
         return data.decode("utf-8")
     except UnicodeDecodeError as error:
-        raise RepositoryBundleError(f"{label} must be UTF-8 text") from error
+        raise DirectoryBundleError(f"{label} must be UTF-8 text") from error
 
 
 def _read_requirements(archive: zipfile.ZipFile, info: zipfile.ZipInfo) -> list[str]:
@@ -250,10 +253,10 @@ def _dedupe_requirements(requirements: list[str]) -> list[str]:
 
 
 def _submit_payload(
-    manifest: RepositoryBundleManifest,
+    manifest: DirectoryBundleManifest,
     source: str,
     requirements: list[str],
-    files: list[RepositoryBundleFile],
+    files: list[DirectoryBundleFile],
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "name": manifest.name,
@@ -288,3 +291,12 @@ def _submit_payload(
             }
         )
     return payload
+
+
+# Backward-compatible aliases for callers that imported the original names.
+RepositoryBundleError = DirectoryBundleError
+RepositoryBundleLimits = DirectoryBundleLimits
+RepositoryBundleFile = DirectoryBundleFile
+RepositoryBundleManifest = DirectoryBundleManifest
+RepositoryBundlePreview = DirectoryBundlePreview
+parse_repository_bundle = parse_directory_bundle

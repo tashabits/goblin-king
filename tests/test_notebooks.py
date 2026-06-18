@@ -7,6 +7,8 @@ from io import BytesIO
 from pathlib import Path
 from urllib.error import HTTPError
 
+import pytest
+
 from goblin_king.api_models import LongServiceProbeResponse
 from goblin_king.contracts import (
     GoblinResult,
@@ -94,12 +96,12 @@ def test_default_workbook_uses_progress_without_branch_pin() -> None:
     assert "does not expose required notebook routes" in source
 
 
-def test_repository_workbooks_are_valid_and_cover_full_flow() -> None:
-    """Verify repository workbook examples cover submit, review, and consumption."""
+def test_directory_workbooks_are_valid_and_cover_full_flow() -> None:
+    """Verify directory workbook examples cover submit, review, and consumption."""
     workbook_paths = [
-        Path("examples/jupyterhub-goblin-king/workbook-repository-submit.ipynb"),
-        Path("examples/jupyterhub-goblin-king/workbook-repository-admin.ipynb"),
-        Path("examples/jupyterhub-goblin-king/workbook-repository-consume.ipynb"),
+        Path("examples/jupyterhub-goblin-king/workbook-directory-submit.ipynb"),
+        Path("examples/jupyterhub-goblin-king/workbook-directory-admin.ipynb"),
+        Path("examples/jupyterhub-goblin-king/workbook-directory-consume.ipynb"),
     ]
     sources = {}
     for path in workbook_paths:
@@ -111,18 +113,18 @@ def test_repository_workbooks_are_valid_and_cover_full_flow() -> None:
             if cell.get("cell_type") == "code"
         )
 
-    submit_source = sources["workbook-repository-submit.ipynb"]
-    admin_source = sources["workbook-repository-admin.ipynb"]
-    consume_source = sources["workbook-repository-consume.ipynb"]
+    submit_source = sources["workbook-directory-submit.ipynb"]
+    admin_source = sources["workbook-directory-admin.ipynb"]
+    consume_source = sources["workbook-directory-consume.ipynb"]
 
-    assert "submit_repository_function(" in submit_source
-    assert "submit_repository_service(" in submit_source
+    assert "submit_directory_function(" in submit_source
+    assert "submit_directory_service(" in submit_source
     assert "request_review(" in submit_source
-    assert "approve_repository_entry(" in admin_source
-    assert "publish_repository_entry(" in admin_source
-    assert "search_repository_entries(" in consume_source
-    assert "run_repository_function(" in consume_source
-    assert "repository_service(" in consume_source
+    assert "approve_directory_entry(" in admin_source
+    assert "publish_directory_entry(" in admin_source
+    assert "search_directory_entries(" in consume_source
+    assert "run_directory_function(" in consume_source
+    assert "directory_service(" in consume_source
     for source in sources.values():
         assert "GOBLIN_KING_REPOSITORY_NOTEBOOK_PACKAGE" in source
         assert "GOBLIN_KING_NOTEBOOK_PACKAGE" in source
@@ -267,7 +269,7 @@ def test_notebook_client_repository_404_hint_is_actionable(monkeypatch) -> None:
             code=404,
             msg="Not Found",
             hdrs={},
-            fp=BytesIO(b'{"detail":"repository service is not enabled"}'),
+            fp=BytesIO(b'{"detail":"directory service is not enabled"}'),
         )
 
     monkeypatch.setenv("GOBLIN_KING_API_TOKEN", "token")
@@ -719,9 +721,45 @@ def test_notebook_client_runs_repository_function_by_name(monkeypatch) -> None:
     assert result["job"]["status"] == "completed"
     assert result["run"]["id"] == "run-1"
 
+    repository_requests.clear()
+    api_requests.clear()
+    input_alias_result = client.run_repository_function(
+        "shared.hello",
+        input={"name": "Grace"},
+        wait=False,
+    )
+
+    assert repository_requests == [
+        (
+            "POST",
+            "/repository/functions/shared.hello/run",
+            {"input": {"name": "Grace"}, "project_id": None, "version": None},
+        )
+    ]
+    assert api_requests == []
+    assert input_alias_result["run"] is None
+
+    repository_requests.clear()
+    directory_result = client.run_directory_function(
+        "shared.hello",
+        input={"name": "Directory"},
+        wait=False,
+    )
+
+    assert repository_requests == [
+        (
+            "POST",
+            "/repository/functions/shared.hello/run",
+            {"input": {"name": "Directory"}, "project_id": None, "version": None},
+        )
+    ]
+    assert directory_result["run"] is None
+    with pytest.raises(ValueError, match="either payload or input"):
+        client.run_repository_function("shared.hello", {"name": "Ada"}, input={"name": "Grace"})
+
 
 def test_notebook_client_repository_service_handle_calls_name_routes(monkeypatch) -> None:
-    """Verify repository service handles use name-based lifecycle routes."""
+    """Verify directory service handles use name-based lifecycle routes."""
     client = GoblinKingNotebookClient(api_url="http://goblin.local", token="token")
     requests = []
 
@@ -767,6 +805,14 @@ def test_notebook_client_repository_service_handle_calls_name_routes(monkeypatch
         project_id="project-1",
         version=1,
     )
+    directory_service = client.directory_service(
+        "shared.long-hello",
+        project_id="project-1",
+        version=1,
+    )
+    assert directory_service.name == service.name
+    assert directory_service.project_id == service.project_id
+    assert directory_service.version == service.version
     service.start(timeout_seconds=10)
     service.probe()
     service.proxy("/hello")

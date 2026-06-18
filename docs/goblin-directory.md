@@ -1,6 +1,6 @@
-# Goblin Repository Contract
+# Goblin Directory Contract
 
-The Goblin Repository is an optional service for sharing approved notebook-authored
+The Goblin Directory is an optional service for sharing approved notebook-authored
 goblins. It is off by default and must be enabled explicitly in API settings or in the
 deployment values that render those settings.
 
@@ -11,9 +11,9 @@ The first durable contract is a two-part model:
 - `RepositoryVersionRecord` represents one submitted source bundle, runner image,
   validation proof, approval state, and publication state.
 
-Repository names are unique within a project while active. Source or runner-image
+Directory names are unique within a project while active. Source or runner-image
 changes must create the next draft version. Published versions are immutable; service
-and notebook APIs resolve by repository entry name plus either a specific version or the
+and notebook APIs resolve by directory entry name plus either a specific version or the
 latest published version.
 
 The review flow is:
@@ -33,7 +33,7 @@ The repository API is enabled only when the API settings include:
 {
   "repository": {
     "enabled": true,
-    "url": "http://repository:8000"
+    "url": "http://directory-api:8000"
   }
 }
 ```
@@ -154,9 +154,9 @@ curl -X POST \
 The notebook helper exposes the same invocation path:
 
 ```python
-result = client.run_repository_function("demo.hello", {"name": "Ada"})
+result = client.run_directory_function("demo.hello", input={"name": "Ada"})
 
-service = client.repository_service("demo.long-hello")
+service = client.directory_service("demo.long-hello")
 service.start(progress=True)
 service.probe()
 service.proxy("/hello")
@@ -168,7 +168,7 @@ Normal users only resolve entries in their project scope. Admins can specify
 a particular published version. Draft, rejected, retired, and unpublished versions are
 not invokable by normal callers.
 
-## Notebook Repository Workflow
+## Notebook Directory Workflow
 
 The JupyterHub workbook path can use the notebook helper instead of hand-written HTTP
 requests. The helper reads `GOBLIN_KING_API_URL`, `GOBLIN_KING_REPOSITORY_URL`, and
@@ -180,7 +180,7 @@ from goblin_king.notebooks import GoblinKingNotebookClient
 
 client = GoblinKingNotebookClient(
     api_url="http://goblin-king-api.default.svc.cluster.local:8000",
-    repository_url="http://goblin-king-repository.default.svc.cluster.local:8000",
+    repository_url="http://goblin-king-directory-api.default.svc.cluster.local:8000",
     token=os.environ["JUPYTERHUB_API_TOKEN"],
 )
 ```
@@ -189,7 +189,7 @@ Submit a short function goblin from source already defined in the workbook:
 
 ```python
 def workbook_hello(payload):
-    return {"message": f"Hello {payload.get('name', 'Repository')}"}
+    return {"message": f"Hello {payload.get('name', 'Directory')}"}
 
 submission = client.submit_repository_function(
     workbook_hello,
@@ -245,13 +245,13 @@ Another authorized project user can discover and invoke by name without copying 
 ```python
 published = client.search_repository_entries("workbook", status="published")
 
-run = client.run_repository_function(
+run = client.run_directory_function(
     "workbook.shared-hello",
-    {"name": "Consumer"},
+    input={"name": "Consumer"},
     progress=True,
 )
 
-service = client.repository_service("workbook.shared-long-hello")
+service = client.directory_service("workbook.shared-long-hello")
 service.start(progress=True, timeout_seconds=180)
 service.probe()
 service.proxy("/hello")
@@ -260,21 +260,21 @@ service.stop()
 
 The example workbooks in `examples/jupyterhub-goblin-king/` split that flow by role:
 
-- `workbook-repository-submit.ipynb` for a contributor such as `bob`.
-- `workbook-repository-admin.ipynb` for an admin such as `alice`.
-- `workbook-repository-consume.ipynb` for a consumer such as `carol`.
+- `workbook-directory-submit.ipynb` for a contributor such as `bob`.
+- `workbook-directory-admin.ipynb` for an admin such as `alice`.
+- `workbook-directory-consume.ipynb` for a consumer such as `carol`.
 
 If repository routes are not enabled, helper errors include the repository base URL,
 `repository.enabled=true`, and `GOBLIN_KING_REPOSITORY_URL` so the workbook points at the
 operator fix instead of failing as an opaque 404.
 
-## Browser Repository UI
+## Browser Goblin Directory UI
 
-The optional repository UI is a separate JupyterHub service from the admin panel. It is
+The optional directory UI is a separate JupyterHub service from the admin panel. It is
 mounted at:
 
 ```text
-/services/goblin-repository/
+/services/goblin-directory/
 ```
 
 The UI uses Hub OAuth for browser login and keeps the Hub OAuth token in the service
@@ -290,7 +290,7 @@ The UI exposes:
 - Review Queue: admin-only approve, reject, publish, and retire actions.
 - Entry Detail: version, source hash, validation proof, owner, status, and tags.
 - Runtime Results: run function goblins and start/probe/proxy/stop service goblins by
-  repository name.
+  directory name.
 
 Enable it locally with the repository API:
 
@@ -298,7 +298,7 @@ Enable it locally with the repository API:
 make jupyterhub-stack-up \
   JUPYTERHUB_STACK_REBUILD=1 \
   GOBLIN_REPOSITORY_ENABLED=1 \
-  GOBLIN_REPOSITORY_UI_ENABLED=1
+  GOBLIN_DIRECTORY_UI_ENABLED=1
 ```
 
 Then port-forward the Hub proxy and open the UI:
@@ -308,13 +308,13 @@ kubectl port-forward -n default svc/proxy-public 8080:http
 ```
 
 ```text
-http://127.0.0.1:8080/services/goblin-repository/
+http://127.0.0.1:8080/services/goblin-directory/
 ```
 
 The one-command proof is:
 
 ```bash
-make jupyterhub-repository-ui-proof
+make jupyterhub-directory-ui-proof
 ```
 
 That proof uses the same local Hub users as the workbook proof: `bob` submits bundles,
@@ -324,7 +324,7 @@ and `mallory` is denied.
 ## Upload Bundle v1
 
 The browser UI accepts a `.zip` bundle. The required root manifest is
-`goblin-repository.json`, and v1 executes exactly one Python entrypoint source file.
+`goblin-directory.json`, and v1 executes exactly one Python entrypoint source file.
 Extra files are shown in preview for reviewer context but are not executed.
 
 Function bundle example:
@@ -382,7 +382,7 @@ small override file or edit that JSON directly:
 {
   "repository": {
     "enabled": true,
-    "url": "http://repository:8000"
+    "url": "http://directory-api:8000"
   }
 }
 ```
@@ -408,7 +408,7 @@ ConfigMap contains the same JSON settings:
 ```yaml
 repository:
   enabled: true
-  url: http://goblin-king-repository:8000
+  url: http://goblin-king-directory-api:8000
 ```
 
 Render before applying:
@@ -416,7 +416,7 @@ Render before applying:
 ```bash
 helm template goblin-king charts/goblin-king \
   --set repository.enabled=true \
-  --set repository.url=http://goblin-king-repository:8000
+  --set repository.url=http://goblin-king-directory-api:8000
 ```
 
 For a live upgrade, use the same values file you use for API/auth settings:
@@ -445,18 +445,18 @@ config:
       - goblin-admins
 repository:
   enabled: true
-  url: http://goblin-king-repository.default.svc.cluster.local:8000
+  url: http://goblin-king-directory-api.default.svc.cluster.local:8000
   podLabels:
     hub.jupyter.org/network-access-hub: "true"
-repositoryUi:
+directoryUi:
   enabled: true
   podLabels:
     hub.jupyter.org/network-access-hub: "true"
   serviceTokenSecret:
     name: goblin-king-jupyterhub-auth
-    key: repository-ui-token
+    key: directory-ui-token
   apiUrl: http://goblin-king-api.default.svc.cluster.local:8000
-  repositoryUrl: http://goblin-king-repository.default.svc.cluster.local:8000
+  repositoryUrl: http://goblin-king-directory-api.default.svc.cluster.local:8000
   hubApiUrl: http://hub.default.svc.cluster.local:8081/hub/api
   hubBaseUrl: /hub/
 ```
@@ -497,9 +497,9 @@ down with a resource audit.
 For the Hub browser UI proof, use:
 
 ```bash
-make jupyterhub-repository-ui-proof
+make jupyterhub-directory-ui-proof
 ```
 
-It brings up the repository UI service at `/services/goblin-repository/`, completes Hub
+It brings up the directory UI service at `/services/goblin-directory/`, completes Hub
 OAuth for the proof users, uploads v1 bundles through the UI backend, publishes them,
 invokes the published goblins by name, and tears the stack down.

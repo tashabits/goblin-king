@@ -7,42 +7,42 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from goblin_king.repository_ui import (
-    RepositoryUISessionStore,
-    RepositoryUISettings,
+from goblin_king.directory_ui import (
+    DirectoryUISessionStore,
+    DirectoryUISettings,
     _encode_signed_json,
     _signed_value,
-    create_repository_ui_app,
+    create_directory_ui_app,
 )
 
 
-def _settings(**overrides: object) -> RepositoryUISettings:
+def _settings(**overrides: object) -> DirectoryUISettings:
     payload = {
         "api_url": "http://api.example",
         "repository_url": "http://repository.example",
         "hub_api_url": "http://hub.example/hub/api",
         "hub_base_url": "/hub/",
         "service_token": "service-secret",
-        "service_prefix": "/services/goblin-repository/",
+        "service_prefix": "/services/goblin-directory/",
         "admin_groups": ["goblin-admins"],
     }
     payload.update(overrides)
-    return RepositoryUISettings.model_validate(payload)
+    return DirectoryUISettings.model_validate(payload)
 
 
 def _client(
-    settings: RepositoryUISettings | None = None,
-    store: RepositoryUISessionStore | None = None,
-) -> tuple[TestClient, RepositoryUISettings, RepositoryUISessionStore]:
+    settings: DirectoryUISettings | None = None,
+    store: DirectoryUISessionStore | None = None,
+) -> tuple[TestClient, DirectoryUISettings, DirectoryUISessionStore]:
     settings = settings or _settings()
-    store = store or RepositoryUISessionStore()
-    return TestClient(create_repository_ui_app(settings, session_store=store)), settings, store
+    store = store or DirectoryUISessionStore()
+    return TestClient(create_directory_ui_app(settings, session_store=store)), settings, store
 
 
 def _set_session_cookie(
     client: TestClient,
-    settings: RepositoryUISettings,
-    store: RepositoryUISessionStore,
+    settings: DirectoryUISettings,
+    store: DirectoryUISessionStore,
     *,
     user_name: str = "bob",
     token: str = "hub-user-token",
@@ -73,7 +73,7 @@ def _bundle() -> bytes:
     }
     buffer = BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("goblin-repository.json", json.dumps(manifest))
+        archive.writestr("goblin-directory.json", json.dumps(manifest))
         archive.writestr("hello.py", "def run(payload):\n    return payload\n")
     return buffer.getvalue()
 
@@ -103,12 +103,12 @@ class _FakeResponse:
 def test_browser_request_without_session_redirects_to_hub_oauth() -> None:
     client, _, _ = _client()
 
-    response = client.get("/services/goblin-repository/", follow_redirects=False)
+    response = client.get("/services/goblin-directory/", follow_redirects=False)
 
     assert response.status_code == 307
     assert response.headers["location"].startswith("/hub/api/oauth2/authorize?")
-    assert "client_id=service-goblin-repository" in response.headers["location"]
-    assert "goblin_repository_oauth_state" in response.headers["set-cookie"]
+    assert "client_id=service-goblin-directory" in response.headers["location"]
+    assert "goblin_directory_oauth_state" in response.headers["set-cookie"]
 
 
 def test_oauth_callback_exchanges_code_identifies_user_and_sets_session(monkeypatch) -> None:
@@ -126,7 +126,7 @@ def test_oauth_callback_exchanges_code_identifies_user_and_sets_session(monkeypa
             return _FakeResponse({"name": "alice", "groups": [{"name": "goblin-admins"}]})
         raise AssertionError(request.full_url)
 
-    monkeypatch.setattr("goblin_king.repository_ui.urlrequest.urlopen", fake_urlopen)
+    monkeypatch.setattr("goblin_king.directory_ui.urlrequest.urlopen", fake_urlopen)
     client.cookies.set(
         settings.state_cookie_name,
         _encode_signed_json(
@@ -137,7 +137,7 @@ def test_oauth_callback_exchanges_code_identifies_user_and_sets_session(monkeypa
     )
 
     response = client.get(
-        "/services/goblin-repository/oauth_callback?code=abc&state=state-1",
+        "/services/goblin-directory/oauth_callback?code=abc&state=state-1",
         follow_redirects=False,
     )
 
@@ -162,7 +162,7 @@ def test_me_reports_signed_in_user_and_admin_status() -> None:
         is_admin=True,
     )
 
-    response = client.get("/services/goblin-repository/ui-api/me")
+    response = client.get("/services/goblin-directory/ui-api/me")
 
     assert response.status_code == 200
     assert response.json()["user"] == "alice"
@@ -180,15 +180,15 @@ def test_bundle_preview_and_submit_are_authenticated_and_forwarded(monkeypatch) 
         forwarded["payload"] = json.loads(request.data.decode("utf-8"))
         return _FakeResponse({"entry": {"name": "shared.hello"}, "version": {}, "notebook": {}})
 
-    monkeypatch.setattr("goblin_king.repository_ui.urlrequest.urlopen", fake_urlopen)
+    monkeypatch.setattr("goblin_king.directory_ui.urlrequest.urlopen", fake_urlopen)
 
     preview = client.post(
-        "/services/goblin-repository/ui-api/bundles/preview",
+        "/services/goblin-directory/ui-api/bundles/preview",
         content=_bundle(),
         headers={"Authorization": "Bearer browser-token", "Content-Type": "application/zip"},
     )
     submitted = client.post(
-        "/services/goblin-repository/ui-api/bundles/submit",
+        "/services/goblin-directory/ui-api/bundles/submit",
         content=_bundle(),
         headers={"Authorization": "Bearer browser-token", "Content-Type": "application/zip"},
     )
@@ -200,7 +200,7 @@ def test_bundle_preview_and_submit_are_authenticated_and_forwarded(monkeypatch) 
     assert forwarded["payload"]["name"] == "shared.hello"
 
 
-def test_proxy_allows_repository_jobs_and_runs_but_not_admin_tokens(monkeypatch) -> None:
+def test_proxy_allows_directory_jobs_and_runs_but_not_admin_tokens(monkeypatch) -> None:
     client, settings, store = _client()
     _set_session_cookie(client, settings, store)
     urls: list[str] = []
@@ -209,11 +209,11 @@ def test_proxy_allows_repository_jobs_and_runs_but_not_admin_tokens(monkeypatch)
         urls.append(request.full_url)
         return _FakeResponse({"items": [], "meta": {"count": 0, "limit": 50, "offset": 0}})
 
-    monkeypatch.setattr("goblin_king.repository_ui.urlrequest.urlopen", fake_urlopen)
+    monkeypatch.setattr("goblin_king.directory_ui.urlrequest.urlopen", fake_urlopen)
 
-    allowed = client.get("/services/goblin-repository/ui-api/repository/entries?status=published")
-    sibling = client.get("/services/goblin-repository/ui-api/jobs-extra")
-    denied = client.get("/services/goblin-repository/ui-api/admin/tokens")
+    allowed = client.get("/services/goblin-directory/ui-api/directory/entries?status=published")
+    sibling = client.get("/services/goblin-directory/ui-api/jobs-extra")
+    denied = client.get("/services/goblin-directory/ui-api/admin/tokens")
 
     assert allowed.status_code == 200
     assert sibling.status_code == 404

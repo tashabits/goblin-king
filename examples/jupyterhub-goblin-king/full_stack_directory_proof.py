@@ -202,7 +202,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout-seconds", type=int, default=240)
     parser.add_argument(
         "--repository-proof",
-        default="examples/jupyterhub-goblin-king/repository_workbook_proof.py",
+        default="examples/jupyterhub-goblin-king/directory_workbook_proof.py",
     )
     return parser.parse_args()
 

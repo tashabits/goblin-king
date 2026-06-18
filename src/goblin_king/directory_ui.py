@@ -1,4 +1,4 @@
-"""Browser-facing Goblin Repository service for JupyterHub deployments."""
+"""Browser-facing Goblin Directory service for JupyterHub deployments."""
 
 from __future__ import annotations
 
@@ -20,13 +20,14 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from goblin_king.repository_bundles import (
-    RepositoryBundleError,
-    RepositoryBundleLimits,
-    parse_repository_bundle,
+from goblin_king.directory_bundles import (
+    DirectoryBundleError,
+    DirectoryBundleLimits,
+    parse_directory_bundle,
 )
 
 ALLOWED_PROXY_PATHS = (
+    "/directory/",
     "/repository/",
     "/jobs",
     "/jobs/",
@@ -45,23 +46,23 @@ HOP_BY_HOP_HEADERS = {
 }
 
 
-class RepositoryUISettings(BaseModel):
-    """Runtime settings for the Hub-authenticated repository UI service."""
+class DirectoryUISettings(BaseModel):
+    """Runtime settings for the Hub-authenticated directory UI service."""
 
     api_url: str = "http://goblin-king-api:8000"
     repository_url: str | None = None
     hub_api_url: str = "http://hub.default.svc.cluster.local:8081/hub/api"
     hub_base_url: str = "/hub/"
     public_url: str | None = None
-    service_name: str = "goblin-repository"
-    service_prefix: str = "/services/goblin-repository/"
+    service_name: str = "goblin-directory"
+    service_prefix: str = "/services/goblin-directory/"
     service_token: str | None = None
-    service_token_env: str = "GOBLIN_KING_REPOSITORY_UI_SERVICE_TOKEN"
+    service_token_env: str = "GOBLIN_KING_DIRECTORY_UI_SERVICE_TOKEN"
     request_timeout_seconds: float = Field(default=10.0, gt=0)
     session_ttl_seconds: int = Field(default=8 * 60 * 60, gt=0)
     state_ttl_seconds: int = Field(default=10 * 60, gt=0)
-    session_cookie_name: str = "goblin_repository_session"
-    state_cookie_name: str = "goblin_repository_oauth_state"
+    session_cookie_name: str = "goblin_directory_session"
+    state_cookie_name: str = "goblin_directory_oauth_state"
     admin_groups: list[str] = Field(default_factory=lambda: ["goblin-admins"])
     static_root: Path | None = None
     max_bundle_bytes: int = 5 * 1024 * 1024
@@ -70,26 +71,26 @@ class RepositoryUISettings(BaseModel):
     max_files: int = 50
 
     @classmethod
-    def from_env(cls) -> RepositoryUISettings:
+    def from_env(cls) -> DirectoryUISettings:
         """Load service settings from environment variables."""
         payload: dict[str, Any] = {}
         mappings = {
-            "api_url": "GOBLIN_KING_REPOSITORY_UI_API_URL",
-            "repository_url": "GOBLIN_KING_REPOSITORY_UI_REPOSITORY_URL",
-            "hub_api_url": "GOBLIN_KING_REPOSITORY_UI_HUB_API_URL",
-            "hub_base_url": "GOBLIN_KING_REPOSITORY_UI_HUB_BASE_URL",
-            "public_url": "GOBLIN_KING_REPOSITORY_UI_PUBLIC_URL",
-            "service_name": "GOBLIN_KING_REPOSITORY_UI_SERVICE_NAME",
-            "service_prefix": "GOBLIN_KING_REPOSITORY_UI_SERVICE_PREFIX",
-            "service_token_env": "GOBLIN_KING_REPOSITORY_UI_SERVICE_TOKEN_ENV",
-            "session_cookie_name": "GOBLIN_KING_REPOSITORY_UI_SESSION_COOKIE_NAME",
-            "state_cookie_name": "GOBLIN_KING_REPOSITORY_UI_STATE_COOKIE_NAME",
+            "api_url": ("GOBLIN_KING_DIRECTORY_UI_API_URL",),
+            "repository_url": ("GOBLIN_KING_DIRECTORY_UI_REPOSITORY_URL",),
+            "hub_api_url": ("GOBLIN_KING_DIRECTORY_UI_HUB_API_URL",),
+            "hub_base_url": ("GOBLIN_KING_DIRECTORY_UI_HUB_BASE_URL",),
+            "public_url": ("GOBLIN_KING_DIRECTORY_UI_PUBLIC_URL",),
+            "service_name": ("GOBLIN_KING_DIRECTORY_UI_SERVICE_NAME",),
+            "service_prefix": ("GOBLIN_KING_DIRECTORY_UI_SERVICE_PREFIX",),
+            "service_token_env": ("GOBLIN_KING_DIRECTORY_UI_SERVICE_TOKEN_ENV",),
+            "session_cookie_name": ("GOBLIN_KING_DIRECTORY_UI_SESSION_COOKIE_NAME",),
+            "state_cookie_name": ("GOBLIN_KING_DIRECTORY_UI_STATE_COOKIE_NAME",),
         }
-        for field_name, env_name in mappings.items():
-            value = os.environ.get(env_name)
+        for field_name, env_names in mappings.items():
+            value = _first_env(env_names)
             if value:
                 payload[field_name] = value
-        service_token = os.environ.get("GOBLIN_KING_REPOSITORY_UI_SERVICE_TOKEN")
+        service_token = _first_env(("GOBLIN_KING_DIRECTORY_UI_SERVICE_TOKEN",))
         if service_token:
             payload["service_token"] = service_token
         token_env = payload.get("service_token_env")
@@ -97,22 +98,22 @@ class RepositoryUISettings(BaseModel):
             env_token = os.environ.get(token_env)
             if env_token:
                 payload["service_token"] = env_token
-        admin_groups = os.environ.get("GOBLIN_KING_REPOSITORY_UI_ADMIN_GROUPS")
+        admin_groups = _first_env(("GOBLIN_KING_DIRECTORY_UI_ADMIN_GROUPS",))
         if admin_groups:
             payload["admin_groups"] = _env_list(admin_groups)
-        static_root = os.environ.get("GOBLIN_KING_REPOSITORY_UI_STATIC_ROOT")
+        static_root = _first_env(("GOBLIN_KING_DIRECTORY_UI_STATIC_ROOT",))
         if static_root:
             payload["static_root"] = Path(static_root)
-        for field_name, env_name in {
-            "request_timeout_seconds": "GOBLIN_KING_REPOSITORY_UI_REQUEST_TIMEOUT_SECONDS",
-            "session_ttl_seconds": "GOBLIN_KING_REPOSITORY_UI_SESSION_TTL_SECONDS",
-            "state_ttl_seconds": "GOBLIN_KING_REPOSITORY_UI_STATE_TTL_SECONDS",
-            "max_bundle_bytes": "GOBLIN_KING_REPOSITORY_UI_MAX_BUNDLE_BYTES",
-            "max_source_bytes": "GOBLIN_KING_REPOSITORY_UI_MAX_SOURCE_BYTES",
-            "max_requirements_bytes": "GOBLIN_KING_REPOSITORY_UI_MAX_REQUIREMENTS_BYTES",
-            "max_files": "GOBLIN_KING_REPOSITORY_UI_MAX_FILES",
+        for field_name, env_names in {
+            "request_timeout_seconds": ("GOBLIN_KING_DIRECTORY_UI_REQUEST_TIMEOUT_SECONDS",),
+            "session_ttl_seconds": ("GOBLIN_KING_DIRECTORY_UI_SESSION_TTL_SECONDS",),
+            "state_ttl_seconds": ("GOBLIN_KING_DIRECTORY_UI_STATE_TTL_SECONDS",),
+            "max_bundle_bytes": ("GOBLIN_KING_DIRECTORY_UI_MAX_BUNDLE_BYTES",),
+            "max_source_bytes": ("GOBLIN_KING_DIRECTORY_UI_MAX_SOURCE_BYTES",),
+            "max_requirements_bytes": ("GOBLIN_KING_DIRECTORY_UI_MAX_REQUIREMENTS_BYTES",),
+            "max_files": ("GOBLIN_KING_DIRECTORY_UI_MAX_FILES",),
         }.items():
-            value = os.environ.get(env_name)
+            value = _first_env(env_names)
             if value:
                 payload[field_name] = float(value) if "seconds" in field_name else int(value)
         return cls.model_validate(payload)
@@ -128,9 +129,9 @@ class RepositoryUISettings(BaseModel):
         return f"service-{self.service_name}"
 
     @property
-    def bundle_limits(self) -> RepositoryBundleLimits:
+    def bundle_limits(self) -> DirectoryBundleLimits:
         """Return upload parser limits."""
-        return RepositoryBundleLimits(
+        return DirectoryBundleLimits(
             max_bundle_bytes=self.max_bundle_bytes,
             max_source_bytes=self.max_source_bytes,
             max_requirements_bytes=self.max_requirements_bytes,
@@ -139,7 +140,7 @@ class RepositoryUISettings(BaseModel):
 
 
 @dataclass(frozen=True)
-class RepositoryUISession:
+class DirectoryUISession:
     """Server-side session data keyed by a signed browser cookie."""
 
     session_id: str
@@ -150,11 +151,11 @@ class RepositoryUISession:
     expires_at: float
 
 
-class RepositoryUISessionStore:
+class DirectoryUISessionStore:
     """Small in-memory session store for a single service replica."""
 
     def __init__(self) -> None:
-        self._sessions: dict[str, RepositoryUISession] = {}
+        self._sessions: dict[str, DirectoryUISession] = {}
 
     def create(
         self,
@@ -164,9 +165,9 @@ class RepositoryUISessionStore:
         groups: list[str],
         is_admin: bool,
         ttl_seconds: int,
-    ) -> RepositoryUISession:
+    ) -> DirectoryUISession:
         self.cleanup()
-        session = RepositoryUISession(
+        session = DirectoryUISession(
             session_id=secrets.token_urlsafe(32),
             user_name=user_name,
             token=token,
@@ -177,7 +178,7 @@ class RepositoryUISessionStore:
         self._sessions[session.session_id] = session
         return session
 
-    def get(self, session_id: str) -> RepositoryUISession | None:
+    def get(self, session_id: str) -> DirectoryUISession | None:
         session = self._sessions.get(session_id)
         if session is None:
             return None
@@ -200,16 +201,16 @@ class RepositoryUISessionStore:
             self._sessions.pop(session_id, None)
 
 
-def create_repository_ui_app(
-    settings: RepositoryUISettings | None = None,
+def create_directory_ui_app(
+    settings: DirectoryUISettings | None = None,
     *,
-    session_store: RepositoryUISessionStore | None = None,
+    session_store: DirectoryUISessionStore | None = None,
 ) -> FastAPI:
-    """Create the repository UI service app."""
-    settings = settings or RepositoryUISettings.from_env()
-    session_store = session_store or RepositoryUISessionStore()
+    """Create the directory UI service app."""
+    settings = settings or DirectoryUISettings.from_env()
+    session_store = session_store or DirectoryUISessionStore()
     prefix = settings.normalized_prefix
-    app = FastAPI(title="Goblin Repository UI")
+    app = FastAPI(title="Goblin Directory UI")
 
     @app.get(f"{prefix}/oauth_callback", name="repository_oauth_callback")
     def oauth_callback(request: Request, code: str, state: str) -> Response:
@@ -280,8 +281,8 @@ def create_repository_ui_app(
         _require_session(request, settings, session_store)
         data = await request.body()
         try:
-            preview = parse_repository_bundle(data, limits=settings.bundle_limits)
-        except (RepositoryBundleError, ValueError) as error:
+            preview = parse_directory_bundle(data, limits=settings.bundle_limits)
+        except (DirectoryBundleError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         return preview.model_dump(mode="json")
 
@@ -290,14 +291,14 @@ def create_repository_ui_app(
         session = _require_session(request, settings, session_store)
         data = await request.body()
         try:
-            preview = parse_repository_bundle(data, limits=settings.bundle_limits)
-        except (RepositoryBundleError, ValueError) as error:
+            preview = parse_directory_bundle(data, limits=settings.bundle_limits)
+        except (DirectoryBundleError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         return _forward_json(
             settings,
             session,
             "POST",
-            "/repository/entries",
+            "/directory/entries",
             preview.submit_payload,
         )
 
@@ -309,7 +310,7 @@ def create_repository_ui_app(
         session = _require_session(request, settings, session_store)
         api_path = f"/{path}"
         if not _proxy_path_allowed(api_path):
-            raise HTTPException(status_code=404, detail="repository UI path is not proxied")
+            raise HTTPException(status_code=404, detail="directory UI path is not proxied")
         body = await request.body()
         return _forward_raw(
             settings,
@@ -342,21 +343,21 @@ def create_repository_ui_app(
     return app
 
 
-def run_repository_ui(
+def run_directory_ui(
     *,
     host: str = "127.0.0.1",
     port: int = 8080,
-    settings: RepositoryUISettings | None = None,
+    settings: DirectoryUISettings | None = None,
 ) -> None:
-    """Run the repository UI service with Uvicorn."""
+    """Run the directory UI service with Uvicorn."""
     import uvicorn
 
-    uvicorn.run(create_repository_ui_app(settings), host=host, port=port)
+    uvicorn.run(create_directory_ui_app(settings), host=host, port=port)
 
 
-def _oauth_redirect(request: Request, settings: RepositoryUISettings) -> Response:
+def _oauth_redirect(request: Request, settings: DirectoryUISettings) -> Response:
     if not settings.service_token:
-        raise HTTPException(status_code=500, detail="repository UI service token is required")
+        raise HTTPException(status_code=500, detail="directory UI service token is required")
     state = secrets.token_urlsafe(32)
     next_path = request.url.path
     if request.url.query:
@@ -388,13 +389,13 @@ def _oauth_redirect(request: Request, settings: RepositoryUISettings) -> Respons
 
 
 def _exchange_oauth_code(
-    settings: RepositoryUISettings,
+    settings: DirectoryUISettings,
     *,
     code: str,
     redirect_uri: str,
 ) -> str:
     if not settings.service_token:
-        raise HTTPException(status_code=500, detail="repository UI service token is required")
+        raise HTTPException(status_code=500, detail="directory UI service token is required")
     data = urlparse.urlencode(
         {
             "client_id": settings.client_id,
@@ -435,7 +436,7 @@ def _exchange_oauth_code(
     return token
 
 
-def _identify_hub_user(settings: RepositoryUISettings, token: str) -> dict[str, Any]:
+def _identify_hub_user(settings: DirectoryUISettings, token: str) -> dict[str, Any]:
     return _hub_json(
         settings,
         f"{settings.hub_api_url.rstrip('/')}/user",
@@ -444,7 +445,7 @@ def _identify_hub_user(settings: RepositoryUISettings, token: str) -> dict[str, 
     )
 
 
-def _load_hub_user_detail(settings: RepositoryUISettings, user_name: str) -> dict[str, Any] | None:
+def _load_hub_user_detail(settings: DirectoryUISettings, user_name: str) -> dict[str, Any] | None:
     if not settings.service_token:
         return None
     try:
@@ -452,7 +453,7 @@ def _load_hub_user_detail(settings: RepositoryUISettings, user_name: str) -> dic
             settings,
             f"{settings.hub_api_url.rstrip('/')}/users/{urlparse.quote(user_name, safe='')}",
             token=settings.service_token,
-            invalid_message="repository UI service token is invalid",
+            invalid_message="directory UI service token is invalid",
         )
     except HTTPException as error:
         if error.status_code in {401, 403, 404, 502, 503}:
@@ -461,7 +462,7 @@ def _load_hub_user_detail(settings: RepositoryUISettings, user_name: str) -> dic
 
 
 def _hub_json(
-    settings: RepositoryUISettings,
+    settings: DirectoryUISettings,
     url: str,
     *,
     token: str,
@@ -487,8 +488,8 @@ def _hub_json(
 
 
 def _forward_json(
-    settings: RepositoryUISettings,
-    session: RepositoryUISession,
+    settings: DirectoryUISettings,
+    session: DirectoryUISession,
     method: str,
     path: str,
     payload: dict[str, Any],
@@ -504,8 +505,8 @@ def _forward_json(
 
 
 def _forward_raw(
-    settings: RepositoryUISettings,
-    session: RepositoryUISession,
+    settings: DirectoryUISettings,
+    session: DirectoryUISession,
     method: str,
     path: str,
     *,
@@ -513,8 +514,9 @@ def _forward_raw(
     body: bytes | None = None,
     content_type: str | None = None,
 ) -> Response:
-    base_url = _target_base_url(settings, path)
-    url = f"{base_url.rstrip('/')}{path}"
+    upstream_path = _upstream_path(path)
+    base_url = _target_base_url(settings, upstream_path)
+    url = f"{base_url.rstrip('/')}{upstream_path}"
     if query:
         url = f"{url}?{query}"
     headers = {
@@ -543,10 +545,16 @@ def _forward_raw(
         raise HTTPException(status_code=503, detail=f"API request failed: {error}") from error
 
 
-def _target_base_url(settings: RepositoryUISettings, path: str) -> str:
+def _target_base_url(settings: DirectoryUISettings, path: str) -> str:
     if path.startswith("/repository/") and settings.repository_url:
         return settings.repository_url
     return settings.api_url
+
+
+def _upstream_path(path: str) -> str:
+    if path.startswith("/directory/"):
+        return f"/repository/{path.removeprefix('/directory/')}"
+    return path
 
 
 def _response_headers(items: Any) -> dict[str, str]:
@@ -558,7 +566,7 @@ def _response_headers(items: Any) -> dict[str, str]:
     }
 
 
-def _static_response(settings: RepositoryUISettings, path: str) -> Response:
+def _static_response(settings: DirectoryUISettings, path: str) -> Response:
     root = settings.static_root or _default_static_root()
     safe_path = path.strip("/") or "index.html"
     if ".." in safe_path.split("/"):
@@ -578,9 +586,9 @@ def _static_response(settings: RepositoryUISettings, path: str) -> Response:
 
 def _optional_session(
     request: Request,
-    settings: RepositoryUISettings,
-    session_store: RepositoryUISessionStore,
-) -> RepositoryUISession | None:
+    settings: DirectoryUISettings,
+    session_store: DirectoryUISessionStore,
+) -> DirectoryUISession | None:
     session_id = _decode_signed_value(
         request.cookies.get(settings.session_cookie_name),
         settings,
@@ -590,23 +598,23 @@ def _optional_session(
 
 def _require_session(
     request: Request,
-    settings: RepositoryUISettings,
-    session_store: RepositoryUISessionStore,
-) -> RepositoryUISession:
+    settings: DirectoryUISettings,
+    session_store: DirectoryUISessionStore,
+) -> DirectoryUISession:
     session = _optional_session(request, settings, session_store)
     if session is None:
-        raise HTTPException(status_code=401, detail="repository UI login required")
+        raise HTTPException(status_code=401, detail="directory UI login required")
     return session
 
 
-def _callback_url(request: Request, settings: RepositoryUISettings) -> str:
+def _callback_url(request: Request, settings: DirectoryUISettings) -> str:
     callback_path = f"{settings.normalized_prefix}/oauth_callback"
     if settings.public_url:
         return f"{settings.public_url.rstrip('/')}{callback_path}"
     return callback_path
 
 
-def _hub_oauth_authorize_url(settings: RepositoryUISettings) -> str:
+def _hub_oauth_authorize_url(settings: DirectoryUISettings) -> str:
     hub_base = settings.hub_base_url.rstrip("/")
     return f"{hub_base}/api/oauth2/authorize"
 
@@ -634,7 +642,7 @@ def _proxy_path_allowed(path: str) -> bool:
 
 def _encode_signed_json(
     payload: dict[str, Any],
-    settings: RepositoryUISettings,
+    settings: DirectoryUISettings,
 ) -> str:
     raw = json.dumps(payload, separators=(",", ":"), sort_keys=True)
     encoded = base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii").rstrip("=")
@@ -643,7 +651,7 @@ def _encode_signed_json(
 
 def _decode_signed_json_cookie(
     value: str | None,
-    settings: RepositoryUISettings,
+    settings: DirectoryUISettings,
 ) -> dict[str, Any] | None:
     encoded = _decode_signed_value(value, settings)
     if not encoded:
@@ -656,7 +664,7 @@ def _decode_signed_json_cookie(
     return payload if isinstance(payload, dict) else None
 
 
-def _signed_value(value: str, settings: RepositoryUISettings) -> str:
+def _signed_value(value: str, settings: DirectoryUISettings) -> str:
     signature = hmac.new(
         _cookie_secret(settings),
         value.encode("utf-8"),
@@ -665,7 +673,7 @@ def _signed_value(value: str, settings: RepositoryUISettings) -> str:
     return f"{value}.{signature}"
 
 
-def _decode_signed_value(value: str | None, settings: RepositoryUISettings) -> str | None:
+def _decode_signed_value(value: str | None, settings: DirectoryUISettings) -> str | None:
     if not value or "." not in value:
         return None
     raw, signature = value.rsplit(".", 1)
@@ -673,24 +681,32 @@ def _decode_signed_value(value: str | None, settings: RepositoryUISettings) -> s
     return raw if hmac.compare_digest(signature, expected) else None
 
 
-def _cookie_secret(settings: RepositoryUISettings) -> bytes:
-    token = settings.service_token or "local-repository-ui-development-secret"
+def _cookie_secret(settings: DirectoryUISettings) -> bytes:
+    token = settings.service_token or "local-directory-ui-development-secret"
     return token.encode("utf-8")
 
 
 def _default_static_root() -> Path:
-    packaged = Path(__file__).parent / "repository_ui_static"
-    return packaged if packaged.exists() else Path.cwd() / "repository-ui" / "static"
+    packaged = Path(__file__).parent / "directory_ui_static"
+    return packaged if packaged.exists() else Path.cwd() / "directory-ui" / "static"
 
 
 def _fallback_html() -> str:
     return """<!doctype html>
 <html lang="en">
-  <head><meta charset="utf-8"><title>Goblin Repository</title></head>
-  <body><main><h1>Goblin Repository</h1><p>Static UI assets are not installed.</p></main></body>
+  <head><meta charset="utf-8"><title>Goblin Directory</title></head>
+  <body><main><h1>Goblin Directory</h1><p>Static UI assets are not installed.</p></main></body>
 </html>
 """
 
 
 def _env_list(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _first_env(names: tuple[str, ...]) -> str | None:
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return None

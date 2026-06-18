@@ -330,6 +330,159 @@ def test_published_repository_function_runs_by_name_and_keeps_latest_published_v
     assert any(log.action == "repository.run" for log in store.list_audit_logs())
 
 
+def test_repository_delete_draft_removes_generated_notebook_record(tmp_path) -> None:
+    client, store = build_repository_api_client(tmp_path)
+    _, token = _project_token(
+        client,
+        email="delete-draft@example.test",
+        display_name="Delete Draft",
+        project_name="Delete Draft Project",
+    )
+    submitted = client.post(
+        "/repository/entries",
+        headers=_bearer(token),
+        json={
+            "name": "shared.delete-draft",
+            "type": "notebook_function",
+            "source": "def run(payload):\n    return payload\n",
+            "function_name": "run",
+        },
+    )
+    assert submitted.status_code == 200
+    entry = submitted.json()["entry"]
+    version = submitted.json()["version"]
+
+    denied = client.delete(f"/repository/entries/{entry['id']}", headers=_bearer(token))
+    deleted = client.delete(f"/repository/entries/{entry['id']}", headers=auth_headers())
+
+    assert denied.status_code == 403
+    assert deleted.status_code == 200
+    assert deleted.json() == {
+        "deleted": True,
+        "entry_id": entry["id"],
+        "name": "shared.delete-draft",
+        "status": "draft",
+        "deleted_versions": 1,
+        "deleted_notebook_records": 1,
+    }
+    assert store.get_repository_entry(entry["id"]) is None
+    assert store.list_repository_versions(entry["id"]) == []
+    assert store.get_notebook_goblin(version["kind"]) is None
+    assert any(log.action == "repository.delete" for log in store.list_audit_logs())
+
+
+def test_repository_delete_requires_published_entry_to_be_retired_first(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    client, store = build_repository_api_client(tmp_path)
+    _, token = _project_token(
+        client,
+        email="delete-published@example.test",
+        display_name="Delete Published",
+        project_name="Delete Published Project",
+    )
+    monkeypatch.setattr(
+        "goblin_king.api.validate_workers",
+        _fake_repository_function_validation,
+    )
+    published = _publish_function_entry(client, token, name="shared.delete-published")
+    entry = published["entry"]
+
+    blocked = client.delete(f"/repository/entries/{entry['id']}", headers=auth_headers())
+    retired = client.post(
+        f"/repository/entries/{entry['id']}/retire",
+        headers=auth_headers(),
+        json={},
+    )
+    deleted = client.delete(f"/repository/entries/{entry['id']}", headers=auth_headers())
+
+    assert blocked.status_code == 409
+    assert "retire published entries first" in blocked.json()["detail"]
+    assert retired.status_code == 200
+    assert retired.json()["entry"]["status"] == "retired"
+    assert deleted.status_code == 200
+    assert deleted.json()["status"] == "retired"
+    assert store.get_repository_entry(entry["id"]) is None
+
+
+def test_repository_delete_rejects_active_service_runtime(tmp_path) -> None:
+    client, store = build_repository_api_client(tmp_path)
+    _, token = _project_token(
+        client,
+        email="delete-active-service@example.test",
+        display_name="Delete Active Service",
+        project_name="Delete Active Service Project",
+    )
+    submitted = client.post(
+        "/repository/entries",
+        headers=_bearer(token),
+        json={
+            "name": "shared.delete-active-service",
+            "type": "notebook_service",
+            "source": "from fastapi import FastAPI\napp = FastAPI()\n",
+            "app_name": "app",
+        },
+    )
+    assert submitted.status_code == 200
+    entry = submitted.json()["entry"]
+    version = submitted.json()["version"]
+    store.update_notebook_service_runtime(
+        version["kind"],
+        runtime_status="running",
+        runtime_backend="kubernetes",
+        runtime_name="active-service",
+        active_service_id="service-1",
+        updated_at=utc_now(),
+    )
+
+    blocked = client.delete(f"/repository/entries/{entry['id']}", headers=auth_headers())
+
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"] == (
+        "repository service is still running; stop it before deleting"
+    )
+    assert store.get_repository_entry(entry["id"]) is not None
+    assert store.get_notebook_service(version["kind"]) is not None
+
+
+def test_repository_status_all_shows_owner_drafts_without_leaking_to_other_users(
+    tmp_path,
+) -> None:
+    client, _ = build_repository_api_client(tmp_path)
+    _, owner_token = _project_token(
+        client,
+        email="owner-drafts@example.test",
+        display_name="Owner Drafts",
+        project_name="Owner Drafts Project",
+    )
+    _, other_token = _project_token(
+        client,
+        email="other-drafts@example.test",
+        display_name="Other Drafts",
+        project_name="Other Drafts Project",
+    )
+    submitted = client.post(
+        "/repository/entries",
+        headers=_bearer(owner_token),
+        json={
+            "name": "shared.owner-draft",
+            "type": "notebook_function",
+            "source": "def run(payload):\n    return payload\n",
+            "function_name": "run",
+        },
+    )
+
+    owner_list = client.get("/repository/entries?status=all", headers=_bearer(owner_token))
+    other_list = client.get("/repository/entries?status=all", headers=_bearer(other_token))
+
+    assert submitted.status_code == 200
+    assert [item["entry"]["name"] for item in owner_list.json()["items"]] == [
+        "shared.owner-draft"
+    ]
+    assert other_list.json()["items"] == []
+
+
 def test_repository_function_run_rejects_unpublished_wrong_type_and_wrong_project(
     tmp_path,
     monkeypatch,

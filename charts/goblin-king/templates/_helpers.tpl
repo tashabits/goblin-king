@@ -48,11 +48,19 @@ securityContext:
 {{- end -}}
 {{- end -}}
 
-{{- define "goblin-king.repositoryUiServiceAccountName" -}}
-{{- if .Values.repositoryUi.serviceAccount.create -}}
-{{- default (printf "%s-repository-ui" (include "goblin-king.fullname" .)) .Values.repositoryUi.serviceAccount.name -}}
+{{- define "goblin-king.directoryUiServiceAccountName" -}}
+{{- if .Values.directoryUi.serviceAccount.create -}}
+{{- default (printf "%s-directory-ui" (include "goblin-king.fullname" .)) .Values.directoryUi.serviceAccount.name -}}
 {{- else -}}
-{{- default "default" .Values.repositoryUi.serviceAccount.name -}}
+{{- default "default" .Values.directoryUi.serviceAccount.name -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "goblin-king.directoryApiServiceAccountName" -}}
+{{- if .Values.repository.serviceAccount.create -}}
+{{- default (printf "%s-directory-api" (include "goblin-king.fullname" .)) .Values.repository.serviceAccount.name -}}
+{{- else -}}
+{{- default "default" .Values.repository.serviceAccount.name -}}
 {{- end -}}
 {{- end -}}
 
@@ -60,7 +68,7 @@ securityContext:
 {{- if .Values.repository.url -}}
 {{- .Values.repository.url -}}
 {{- else if .Values.repository.enabled -}}
-{{- printf "http://%s-repository:%v" (include "goblin-king.fullname" .) .Values.repository.port -}}
+{{- printf "http://%s-directory-api:%v" (include "goblin-king.fullname" .) .Values.repository.port -}}
 {{- end -}}
 {{- end -}}
 

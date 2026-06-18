@@ -338,6 +338,17 @@ class RepositoryListResponse(BaseModel):
     meta: PageMeta
 
 
+class RepositoryDeleteResponse(BaseModel):
+    """Permanent repository deletion result."""
+
+    deleted: bool
+    entry_id: str
+    name: str
+    status: str
+    deleted_versions: int
+    deleted_notebook_records: int
+
+
 class RepositoryFunctionRunRequest(BaseModel):
     """Request body for running a published repository function by name."""
 

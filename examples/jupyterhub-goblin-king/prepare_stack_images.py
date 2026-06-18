@@ -27,7 +27,7 @@ def _images(tag: str) -> dict[str, str]:
     return {
         "app": f"goblin-king:{tag}",
         "admin": f"goblin-king-admin-ui:{tag}",
-        "repository_ui": f"goblin-king-repository-ui:{tag}",
+        "directory_ui": f"goblin-king-directory-ui:{tag}",
         "notebook_runner": f"goblin-king-notebook-python-function:{tag}",
         "notebook_service_runner": f"goblin-king-notebook-asgi-service:{tag}",
         "long_hello": f"goblin-king-example-long-hello:{tag}",
@@ -44,7 +44,7 @@ def _contexts(images: dict[str, str]) -> dict[str, ImageBuildSpec]:
     return {
         images["app"]: ImageBuildSpec("."),
         images["admin"]: ImageBuildSpec("admin-ui"),
-        images["repository_ui"]: ImageBuildSpec(".", "repository-ui/Dockerfile"),
+        images["directory_ui"]: ImageBuildSpec(".", "directory-ui/Dockerfile"),
         images["notebook_runner"]: ImageBuildSpec("workers/notebook.python-function"),
         images["notebook_service_runner"]: ImageBuildSpec("workers/notebook.asgi-service"),
         images["long_hello"]: ImageBuildSpec("workers/example.long-hello"),

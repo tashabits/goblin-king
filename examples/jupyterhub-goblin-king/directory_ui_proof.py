@@ -1,4 +1,4 @@
-"""Bring up Hub plus repository UI and prove the browser-service workflow."""
+"""Bring up Hub plus directory UI and prove the browser-service workflow."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from urllib import error as urlerror
 from urllib import parse as urlparse
 from urllib import request as urlrequest
 
-from full_stack_repository_proof import (
+from full_stack_directory_proof import (
     _assert_no_docker_notebook_service_containers,
     _assert_no_kubernetes_resources,
 )
@@ -23,10 +23,10 @@ from full_stack_workbook_proof import _prepare_local_images, _run_make
 
 
 def main() -> None:
-    """Run the local Kubernetes repository UI proof."""
+    """Run the local Kubernetes directory UI proof."""
     args = _parse_args()
     port_forward = None
-    tag = f"repository-ui-proof-{int(time.time())}"
+    tag = f"directory-ui-proof-{int(time.time())}"
     try:
         images = _prepare_local_images(args.kind_cluster, tag)
         _run_make(args.make, args.stack_config, "jupyterhub-stack-down", check=False)
@@ -36,7 +36,7 @@ def main() -> None:
             "jupyterhub-stack-up",
             [
                 "GOBLIN_REPOSITORY_ENABLED=1",
-                "GOBLIN_REPOSITORY_UI_ENABLED=1",
+                "GOBLIN_DIRECTORY_UI_ENABLED=1",
                 f"JUPYTERHUB_STACK_IMAGE_TAG={tag}",
                 f"JUPYTERHUB_WORKBOOK_USER_TOKEN={args.alice_token}",
                 f"JUPYTERHUB_WORKBOOK_ALICE_TOKEN={args.alice_token}",
@@ -72,10 +72,10 @@ def main() -> None:
         alice = _hub_login(proxy_url, "alice", args.password)
         carol = _hub_login(proxy_url, "carol", args.password)
         mallory = _hub_login(proxy_url, "mallory", args.password)
-        _open_repository_ui(proxy_url, bob)
-        _open_repository_ui(proxy_url, alice)
-        _open_repository_ui(proxy_url, carol)
-        _expect_forbidden_repository_ui(proxy_url, mallory)
+        _open_directory_ui(proxy_url, bob)
+        _open_directory_ui(proxy_url, alice)
+        _open_directory_ui(proxy_url, carol)
+        _expect_forbidden_directory_ui(proxy_url, mallory)
 
         function_entry = _submit_bundle(
             proxy_url,
@@ -96,7 +96,7 @@ def main() -> None:
             proxy_url,
             carol,
             "GET",
-            "/repository/entries?status=published&limit=100",
+            "/directory/entries?status=published&limit=100",
         )
         names = {item["entry"]["name"] for item in directory["items"]}
         if args.function_name not in names or args.service_name not in names:
@@ -106,27 +106,27 @@ def main() -> None:
             proxy_url,
             carol,
             "POST",
-            f"/repository/functions/{args.function_name}/run",
-            {"input": {"name": "Repository UI Proof"}},
+            f"/directory/functions/{args.function_name}/run",
+            {"input": {"name": "Directory UI Proof"}},
         )
         start = _ui_json(
             proxy_url,
             carol,
             "POST",
-            f"/repository/services/{args.service_name}/start",
+            f"/directory/services/{args.service_name}/start",
             {},
         )
         proxy = _ui_json(
             proxy_url,
             carol,
             "GET",
-            f"/repository/services/{args.service_name}/proxy/hello",
+            f"/directory/services/{args.service_name}/proxy/hello",
         )
         stop = _ui_json(
             proxy_url,
             carol,
             "POST",
-            f"/repository/services/{args.service_name}/stop",
+            f"/directory/services/{args.service_name}/stop",
             {},
         )
         print(
@@ -192,30 +192,30 @@ def _hub_login(proxy_url: str, username: str, password: str) -> urlrequest.Opene
     return opener
 
 
-def _open_repository_ui(proxy_url: str, opener: urlrequest.OpenerDirector) -> None:
+def _open_directory_ui(proxy_url: str, opener: urlrequest.OpenerDirector) -> None:
     try:
-        response = opener.open(f"{proxy_url}/services/goblin-repository/", timeout=60)
+        response = opener.open(f"{proxy_url}/services/goblin-directory/", timeout=60)
         body = response.read().decode("utf-8", errors="replace")
     except urlerror.HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")
         raise RuntimeError(
-            f"repository UI did not open: {error.code} {error.reason}: {detail}"
+            f"directory UI did not open: {error.code} {error.reason}: {detail}"
         ) from error
-    if "Goblin Repository" not in body:
-        raise RuntimeError(f"repository UI did not render after Hub OAuth: {body[:500]}")
+    if "Goblin Directory" not in body:
+        raise RuntimeError(f"directory UI did not render after Hub OAuth: {body[:500]}")
 
 
-def _expect_forbidden_repository_ui(proxy_url: str, opener: urlrequest.OpenerDirector) -> None:
+def _expect_forbidden_directory_ui(proxy_url: str, opener: urlrequest.OpenerDirector) -> None:
     try:
-        opener.open(f"{proxy_url}/services/goblin-repository/", timeout=60).read()
+        opener.open(f"{proxy_url}/services/goblin-directory/", timeout=60).read()
     except urlerror.HTTPError as error:
         if error.code in {403, 500}:
             return
         raise
     else:
-        response = _ui_json(proxy_url, opener, "GET", "/repository/entries?status=published")
+        response = _ui_json(proxy_url, opener, "GET", "/directory/entries?status=published")
         if response.get("items"):
-            raise RuntimeError("unauthorized user could access repository UI entries")
+            raise RuntimeError("unauthorized user could access directory UI entries")
 
 
 def _submit_bundle(
@@ -242,14 +242,14 @@ def _validate_and_request_review(
         proxy_url,
         opener,
         "POST",
-        f"/repository/entries/{entry_id}/validate",
+        f"/directory/entries/{entry_id}/validate",
         {"require_success": True, "timeout_seconds": 180},
     )
     _ui_json(
         proxy_url,
         opener,
         "POST",
-        f"/repository/entries/{entry_id}/request-review",
+        f"/directory/entries/{entry_id}/request-review",
         {},
     )
 
@@ -259,8 +259,8 @@ def _approve_and_publish(
     opener: urlrequest.OpenerDirector,
     entry_id: str,
 ) -> None:
-    _ui_json(proxy_url, opener, "POST", f"/repository/entries/{entry_id}/approve", {})
-    _ui_json(proxy_url, opener, "POST", f"/repository/entries/{entry_id}/publish", {})
+    _ui_json(proxy_url, opener, "POST", f"/directory/entries/{entry_id}/approve", {})
+    _ui_json(proxy_url, opener, "POST", f"/directory/entries/{entry_id}/publish", {})
 
 
 def _ui_json(
@@ -294,7 +294,7 @@ def _service_json(
     if content_type:
         headers["Content-Type"] = content_type
     request = urlrequest.Request(
-        f"{proxy_url}/services/goblin-repository{service_path}",
+        f"{proxy_url}/services/goblin-directory{service_path}",
         data=data,
         headers=headers,
         method=method,
@@ -311,22 +311,22 @@ def _service_json(
 def _function_bundle(name: str) -> bytes:
     return _bundle(
         {
-            "goblin-repository.json": json.dumps(
+            "goblin-directory.json": json.dumps(
                 {
                     "schema_version": 1,
                     "name": name,
                     "type": "notebook_function",
                     "entrypoint": "hello.py",
-                    "display_name": "Repository UI Function",
-                    "description": "Function submitted through the repository UI proof.",
+                    "display_name": "Directory UI Function",
+                    "description": "Function submitted through the directory UI proof.",
                     "tags": ["ui-proof", "hello"],
                     "function_name": "run",
                 }
             ),
             "hello.py": (
                 "def run(payload):\n"
-                "    name = payload.get('name', 'Repository')\n"
-                "    return {'message': f'Hello {name}', 'source': 'repository-ui-proof'}\n"
+                "    name = payload.get('name', 'Directory')\n"
+                "    return {'message': f'Hello {name}', 'source': 'directory-ui-proof'}\n"
             ),
         }
     )
@@ -335,14 +335,14 @@ def _function_bundle(name: str) -> bytes:
 def _service_bundle(name: str) -> bytes:
     return _bundle(
         {
-            "goblin-repository.json": json.dumps(
+            "goblin-directory.json": json.dumps(
                 {
                     "schema_version": 1,
                     "name": name,
                     "type": "notebook_service",
                     "entrypoint": "service.py",
-                    "display_name": "Repository UI Service",
-                    "description": "ASGI service submitted through the repository UI proof.",
+                    "display_name": "Directory UI Service",
+                    "description": "ASGI service submitted through the directory UI proof.",
                     "tags": ["ui-proof", "service"],
                     "app_name": "app",
                     "requirements": ["fastapi>=0.115,<1"],
@@ -355,8 +355,8 @@ def _service_bundle(name: str) -> bytes:
                 "@app.get('/hello')\n"
                 "def hello():\n"
                 "    return {\n"
-                "        'message': 'Hello from repository UI service',\n"
-                "        'source': 'repository-ui-proof',\n"
+                "        'message': 'Hello from directory UI service',\n"
+                "        'source': 'directory-ui-proof',\n"
                 "    }\n"
             ),
         }

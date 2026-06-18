@@ -1,0 +1,94 @@
+{{- if .Values.directoryUi.enabled }}
+{{- $apiUrl := default (printf "http://%s-api:%v" (include "goblin-king.fullname" .) .Values.api.port) .Values.directoryUi.apiUrl -}}
+{{- $repositoryUrl := default (include "goblin-king.repositoryUrl" .) .Values.directoryUi.repositoryUrl -}}
+{{- $hubApiUrl := default .Values.config.jupyterhub.apiUrl .Values.directoryUi.hubApiUrl -}}
+{{- $tokenSecretName := default .Values.config.jupyterhub.serviceTokenSecret.name .Values.directoryUi.serviceTokenSecret.name -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "goblin-king.fullname" . }}-directory-ui
+spec:
+  replicas: {{ .Values.directoryUi.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: directory-ui
+      app.kubernetes.io/name: {{ include "goblin-king.name" . }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: directory-ui
+        app.kubernetes.io/name: {{ include "goblin-king.name" . }}
+        {{- with .Values.directoryUi.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "goblin-king.directoryUiServiceAccountName" . }}
+      {{- include "goblin-king.imagePullSecrets" . | nindent 6 }}
+      {{- include "goblin-king.podSecurityContext" . | nindent 6 }}
+      containers:
+        - name: directory-ui
+          image: "{{ .Values.directoryUi.image.repository }}:{{ .Values.directoryUi.image.tag }}"
+          imagePullPolicy: {{ .Values.directoryUi.image.pullPolicy }}
+          {{- include "goblin-king.containerSecurityContext" . | nindent 10 }}
+          ports:
+            - containerPort: {{ .Values.directoryUi.port }}
+          env:
+            - name: GOBLIN_KING_DIRECTORY_UI_API_URL
+              value: {{ $apiUrl | quote }}
+            {{- if $repositoryUrl }}
+            - name: GOBLIN_KING_DIRECTORY_UI_REPOSITORY_URL
+              value: {{ $repositoryUrl | quote }}
+            {{- end }}
+            - name: GOBLIN_KING_DIRECTORY_UI_HUB_API_URL
+              value: {{ $hubApiUrl | quote }}
+            - name: GOBLIN_KING_DIRECTORY_UI_HUB_BASE_URL
+              value: {{ .Values.directoryUi.hubBaseUrl | quote }}
+            {{- if .Values.directoryUi.publicUrl }}
+            - name: GOBLIN_KING_DIRECTORY_UI_PUBLIC_URL
+              value: {{ .Values.directoryUi.publicUrl | quote }}
+            {{- end }}
+            - name: GOBLIN_KING_DIRECTORY_UI_SERVICE_NAME
+              value: {{ .Values.directoryUi.serviceName | quote }}
+            - name: GOBLIN_KING_DIRECTORY_UI_SERVICE_PREFIX
+              value: {{ .Values.directoryUi.servicePrefix | quote }}
+            - name: GOBLIN_KING_DIRECTORY_UI_ADMIN_GROUPS
+              value: {{ join "," .Values.directoryUi.adminGroups | quote }}
+            - name: GOBLIN_KING_DIRECTORY_UI_REQUEST_TIMEOUT_SECONDS
+              value: {{ .Values.directoryUi.requestTimeoutSeconds | quote }}
+            - name: GOBLIN_KING_DIRECTORY_UI_SESSION_TTL_SECONDS
+              value: {{ .Values.directoryUi.sessionTtlSeconds | quote }}
+            - name: GOBLIN_KING_DIRECTORY_UI_MAX_BUNDLE_BYTES
+              value: {{ .Values.directoryUi.bundleLimits.maxBundleBytes | quote }}
+            - name: GOBLIN_KING_DIRECTORY_UI_MAX_SOURCE_BYTES
+              value: {{ .Values.directoryUi.bundleLimits.maxSourceBytes | quote }}
+            - name: GOBLIN_KING_DIRECTORY_UI_MAX_REQUIREMENTS_BYTES
+              value: {{ .Values.directoryUi.bundleLimits.maxRequirementsBytes | quote }}
+            - name: GOBLIN_KING_DIRECTORY_UI_MAX_FILES
+              value: {{ .Values.directoryUi.bundleLimits.maxFiles | quote }}
+            - name: GOBLIN_KING_DIRECTORY_UI_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $tokenSecretName | quote }}
+                  key: {{ .Values.directoryUi.serviceTokenSecret.key | quote }}
+          {{- with .Values.directoryUi.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- include "goblin-king.podPlacement" .Values.directoryUi | nindent 6 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "goblin-king.fullname" . }}-directory-ui
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: directory-ui
+    app.kubernetes.io/name: {{ include "goblin-king.name" . }}
+  ports:
+    - name: http
+      port: {{ .Values.directoryUi.port }}
+      targetPort: {{ .Values.directoryUi.port }}
+{{- end }}

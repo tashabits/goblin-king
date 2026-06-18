@@ -2,7 +2,7 @@ api:
   podLabels:
     hub.jupyter.org/network-access-hub: "true"
 
-repositoryUi:
+directoryUi:
   podLabels:
     hub.jupyter.org/network-access-hub: "true"
 
