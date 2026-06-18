@@ -165,7 +165,7 @@ Enable the optional Directory API and Hub browser UI with:
 ```bash
 make jupyterhub-stack-up \
   JUPYTERHUB_STACK_REBUILD=1 \
-  GOBLIN_REPOSITORY_ENABLED=1 \
+  GOBLIN_DIRECTORY_ENABLED=1 \
   GOBLIN_DIRECTORY_UI_ENABLED=1
 ```
 

@@ -27,7 +27,7 @@ Approval is a sharing gate rather than a security certification.
 
 ## API And Auth Contract
 
-The repository API is enabled only when the API settings include:
+The Directory API is enabled only when the API settings include:
 
 ```json
 {
@@ -279,8 +279,8 @@ mounted at:
 
 The UI uses Hub OAuth for browser login and keeps the Hub OAuth token in the service
 backend. Browser requests go through relative `ui-api/...` routes, and the service
-forwards only authenticated repository/job/run requests to the Goblin King API or
-repository API as the signed-in Hub user. There is no token-paste login in this path.
+forwards only authenticated Directory/job/run requests to the Goblin King API or
+Directory API as the signed-in Hub user. There is no token-paste login in this path.
 
 The UI exposes:
 
@@ -292,12 +292,12 @@ The UI exposes:
 - Runtime Results: run function goblins and start/probe/proxy/stop service goblins by
   directory name.
 
-Enable it locally with the repository API:
+Enable it locally with the Directory API:
 
 ```bash
 make jupyterhub-stack-up \
   JUPYTERHUB_STACK_REBUILD=1 \
-  GOBLIN_REPOSITORY_ENABLED=1 \
+  GOBLIN_DIRECTORY_ENABLED=1 \
   GOBLIN_DIRECTORY_UI_ENABLED=1
 ```
 
@@ -346,7 +346,7 @@ Enable the picker locally by rebuilding the Hub stack with the Directory UI enab
 ```bash
 make jupyterhub-stack-up \
   JUPYTERHUB_STACK_REBUILD=1 \
-  GOBLIN_REPOSITORY_ENABLED=1 \
+  GOBLIN_DIRECTORY_ENABLED=1 \
   GOBLIN_DIRECTORY_UI_ENABLED=1
 ```
 
@@ -407,7 +407,7 @@ Service bundle example:
 }
 ```
 
-The UI backend rejects unsafe bundles before submitting to the repository API:
+The UI backend rejects unsafe bundles before submitting to the Directory API:
 
 - path traversal or absolute paths
 - missing manifest or missing entrypoint
@@ -431,22 +431,21 @@ small override file or edit that JSON directly:
 }
 ```
 
-The Compose stack also includes a dedicated optional `repository` profile. Start it with
-Redis and the API/admin stack when you want a separate local service endpoint:
+The Compose stack also includes a dedicated optional Directory service. Start it with
+Redis and the API/admin stack through Make when you want a separate local service endpoint:
 
 ```bash
-GOBLIN_REPOSITORY_ENABLED=true \
-docker compose --profile api --profile admin --profile repository up -d --build redis api admin repository
+GOBLIN_DIRECTORY_ENABLED=true make admin-up
 ```
 
 Use a project-scoped token for normal search calls and the bootstrap/admin token only
-for review and publication actions. The repository uses the same SQLite database and
-artifact volume as the rest of the local API, so `docker compose down --volumes` removes
-repository rows along with jobs, runs, and auth records.
+for review and publication actions. The Directory service uses the same SQLite database
+and artifact volume as the rest of the local API, so `docker compose down --volumes`
+removes Directory rows along with jobs, runs, and auth records.
 
 ## Helm Enablement
 
-In Kubernetes, enable the repository through chart values so the rendered API
+In Kubernetes, enable the Directory API through chart values so the rendered API
 ConfigMap contains the same JSON settings:
 
 ```yaml
@@ -474,7 +473,7 @@ Review and publication actions must remain admin-only.
 
 ## JupyterHub Stack Enablement
 
-JupyterHub-backed users can search the repository when Hub auth is enabled and their Hub
+JupyterHub-backed users can search the Directory when Hub auth is enabled and their Hub
 groups map to a project. Add the repository settings beside the existing Hub settings in
 the stack values:
 
@@ -510,30 +509,30 @@ With that mapping:
 - Users in `goblin-users` can search published entries for `default`.
 - Users in `goblin-admins` can review and publish entries.
 - Users outside allowed Hub groups receive the normal JupyterHub auth denial before any
-  repository lookup happens.
+  Directory lookup happens.
 
-When zero-to-jupyterhub network policies are enabled, the repository API and repository
+When zero-to-jupyterhub network policies are enabled, the Directory API and Directory
 UI pods need `hub.jupyter.org/network-access-hub: "true"` so they can validate Hub user
 tokens and complete OAuth token exchange against the Hub API.
 
-The local stack proof should enable the repository in
+The local stack proof should enable the Directory API in
 `examples/jupyterhub-goblin-king/goblin-king.values.yaml` and then run:
 
 ```bash
 make jupyterhub-stack-up JUPYTERHUB_STACK_REBUILD=1
 ```
 
-After the stack is up, call the repository API with a Hub user token from a notebook or
+After the stack is up, call the Directory API with a Hub user token from a notebook or
 from the Hub service route. Do not use the Hub service token for user search flows; it is
 only for the API to validate Hub user tokens.
 
 For the full local proof, use the one-command target:
 
 ```bash
-make jupyterhub-repository-proof
+make jupyterhub-directory-proof
 ```
 
-It brings up JupyterHub, Goblin King, and the optional repository service; uses Hub user
+It brings up JupyterHub, Goblin King, and the optional Directory API; uses Hub user
 tokens for `bob`, `alice`, `carol`, and an unauthorized `mallory`; proves submit,
 validate, review, publish, discover, run, start, probe, proxy, stop; and tears the stack
 down with a resource audit.

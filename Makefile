@@ -26,7 +26,9 @@ HELM_EXTRA_ARGS ?=
 HELM_PVC ?= $(HELM_RELEASE)-data
 HELM_WITH_JUPYTERHUB ?= 0
 GOBLIN_REPOSITORY_ENABLED ?= 0
-GOBLIN_DIRECTORY_UI_ENABLED ?= 0
+GOBLIN_REPOSITORY_UI_ENABLED ?= 0
+GOBLIN_DIRECTORY_ENABLED ?= $(GOBLIN_REPOSITORY_ENABLED)
+GOBLIN_DIRECTORY_UI_ENABLED ?= $(GOBLIN_REPOSITORY_UI_ENABLED)
 GOBLIN_DIRECTORY_PICKER_ENABLED ?= $(GOBLIN_DIRECTORY_UI_ENABLED)
 GOBLIN_REPOSITORY_LOCAL_URL ?= http://127.0.0.1:8010
 JUPYTERHUB_REPOSITORY_URL ?= http://$(HELM_RELEASE)-directory-api.$(HELM_NAMESPACE).svc.cluster.local:8000
@@ -79,11 +81,11 @@ JUPYTERHUB_WORKBOOK_API_URL ?= http://127.0.0.1:18000
 JUPYTERHUB_WORKBOOK_KIND ?= notebook.workbook-short-hello
 HELM_JUPYTERHUB_ARGS ?= --set config.jupyterhub.enabled=true --set config.jupyterhub.apiUrl=http://hub.$(HELM_NAMESPACE).svc.cluster.local:8081/hub/api --set config.jupyterhub.hubUrl=http://proxy-public.$(HELM_NAMESPACE).svc.cluster.local --set config.jupyterhub.serviceTokenSecret.name=$(JUPYTERHUB_SERVICE_TOKEN_SECRET) --set config.jupyterhub.serviceTokenSecret.key=$(JUPYTERHUB_SERVICE_TOKEN_KEY) --set config.jupyterhub.allowedGroups[0]=goblin-users --set config.jupyterhub.projectGroups.goblin-users=default
 JUPYTERHUB_STACK_REBUILD_HELM_ARGS ?= --set image.tag=$(JUPYTERHUB_STACK_IMAGE_TAG) --set image.pullPolicy=Never --set admin.image.tag=$(JUPYTERHUB_STACK_IMAGE_TAG) --set admin.image.pullPolicy=Never --set workers.exampleLongHello.image=goblin-king-example-long-hello:$(JUPYTERHUB_STACK_IMAGE_TAG) --set workers.exampleLongHello.pullPolicy=Never --set config.notebookFunctionImage=goblin-king-notebook-python-function:$(JUPYTERHUB_STACK_IMAGE_TAG) --set config.notebookServiceImage=goblin-king-notebook-asgi-service:$(JUPYTERHUB_STACK_IMAGE_TAG)
-COMPOSE_REPOSITORY_PROFILE = $(if $(filter 1 true yes,$(GOBLIN_REPOSITORY_ENABLED)),--profile repository,)
-COMPOSE_REPOSITORY_SERVICE = $(if $(filter 1 true yes,$(GOBLIN_REPOSITORY_ENABLED)),repository,)
-NOTEBOOK_REPOSITORY_PROOF_ARGS = $(if $(filter 1 true yes,$(GOBLIN_REPOSITORY_ENABLED)),--repository-url $(GOBLIN_REPOSITORY_LOCAL_URL),)
-HELM_OPTIONAL_REPOSITORY_ARGS = $(if $(filter 1 true yes,$(GOBLIN_REPOSITORY_ENABLED)),$(HELM_REPOSITORY_ARGS),)
-JUPYTERHUB_OPTIONAL_REPOSITORY_ARGS = $(if $(filter 1 true yes,$(GOBLIN_REPOSITORY_ENABLED)),$(JUPYTERHUB_REPOSITORY_ARGS),)
+COMPOSE_REPOSITORY_PROFILE = $(if $(filter 1 true yes,$(GOBLIN_DIRECTORY_ENABLED)),--profile repository,)
+COMPOSE_REPOSITORY_SERVICE = $(if $(filter 1 true yes,$(GOBLIN_DIRECTORY_ENABLED)),repository,)
+NOTEBOOK_REPOSITORY_PROOF_ARGS = $(if $(filter 1 true yes,$(GOBLIN_DIRECTORY_ENABLED)),--repository-url $(GOBLIN_REPOSITORY_LOCAL_URL),)
+HELM_OPTIONAL_REPOSITORY_ARGS = $(if $(filter 1 true yes,$(GOBLIN_DIRECTORY_ENABLED)),$(HELM_REPOSITORY_ARGS),)
+JUPYTERHUB_OPTIONAL_REPOSITORY_ARGS = $(if $(filter 1 true yes,$(GOBLIN_DIRECTORY_ENABLED)),$(JUPYTERHUB_REPOSITORY_ARGS),)
 HELM_OPTIONAL_DIRECTORY_UI_ARGS = $(if $(filter 1 true yes,$(GOBLIN_DIRECTORY_UI_ENABLED)),$(HELM_DIRECTORY_UI_ARGS),)
 JUPYTERHUB_OPTIONAL_DIRECTORY_UI_ARGS = $(if $(filter 1 true yes,$(GOBLIN_DIRECTORY_UI_ENABLED)),$(JUPYTERHUB_DIRECTORY_UI_ARGS),)
 JUPYTERHUB_OPTIONAL_DIRECTORY_PICKER_ARGS = $(if $(filter 1 true yes,$(GOBLIN_DIRECTORY_PICKER_ENABLED)),$(JUPYTERHUB_DIRECTORY_PICKER_ARGS),)
@@ -114,8 +116,9 @@ help:
 	@echo "  helm-up        Install/upgrade the Helm stack and wait for readiness"
 	@echo "  jupyterhub-stack-up Install local Kubernetes stack with JupyterHub auth"
 	@echo "                 Set JUPYTERHUB_STACK_REBUILD=1 to build fresh local images first"
-	@echo "                 Set GOBLIN_REPOSITORY_ENABLED=1 to add the optional directory API service"
+	@echo "                 Set GOBLIN_DIRECTORY_ENABLED=1 to add the optional directory API service"
 	@echo "                 Set GOBLIN_DIRECTORY_UI_ENABLED=1 to add the Hub directory UI service"
+	@echo "                 Legacy GOBLIN_REPOSITORY_ENABLED/GOBLIN_REPOSITORY_UI_ENABLED aliases still work"
 	@echo "                 Directory UI rebuilds also install the JupyterLab Goblin Directory picker"
 	@echo "                 Seeds Alice/Bob/Carol workbook examples by default; set JUPYTERHUB_SEED_WORKBOOKS=0 to skip"
 	@echo "  jupyterhub-stack-down Remove local Kubernetes stack with JupyterHub auth"
@@ -254,7 +257,7 @@ jupyterhub-down:
 	-kubectl delete secret $(JUPYTERHUB_SERVICE_TOKEN_SECRET) --namespace $(HELM_NAMESPACE) --ignore-not-found
 
 jupyterhub-workbook-proof:
-	$(PYTHON) $(JUPYTERHUB_FULL_STACK_PROOF) --stack-config $(JUPYTERHUB_STACK_CONFIG) --namespace $(HELM_NAMESPACE) --release $(HELM_RELEASE) --token $(JUPYTERHUB_WORKBOOK_USER_TOKEN) --kind $(JUPYTERHUB_WORKBOOK_KIND) --workbook-proof $(JUPYTERHUB_WORKBOOK_PROOF) $(if $(filter 1 true yes,$(GOBLIN_REPOSITORY_ENABLED)),--repository-url $(JUPYTERHUB_REPOSITORY_URL),)
+	$(PYTHON) $(JUPYTERHUB_FULL_STACK_PROOF) --stack-config $(JUPYTERHUB_STACK_CONFIG) --namespace $(HELM_NAMESPACE) --release $(HELM_RELEASE) --token $(JUPYTERHUB_WORKBOOK_USER_TOKEN) --kind $(JUPYTERHUB_WORKBOOK_KIND) --workbook-proof $(JUPYTERHUB_WORKBOOK_PROOF) $(if $(filter 1 true yes,$(GOBLIN_DIRECTORY_ENABLED)),--repository-url $(JUPYTERHUB_REPOSITORY_URL),)
 
 jupyterhub-directory-proof:
 	$(PYTHON) $(JUPYTERHUB_REPOSITORY_FULL_STACK_PROOF) --stack-config $(JUPYTERHUB_STACK_CONFIG) --namespace $(HELM_NAMESPACE) --release $(HELM_RELEASE) --jupyterhub-release $(JUPYTERHUB_RELEASE) --alice-token $(JUPYTERHUB_WORKBOOK_ALICE_TOKEN) --bob-token $(JUPYTERHUB_WORKBOOK_BOB_TOKEN) --carol-token $(JUPYTERHUB_WORKBOOK_CAROL_TOKEN) --mallory-token $(JUPYTERHUB_WORKBOOK_MALLORY_TOKEN)
