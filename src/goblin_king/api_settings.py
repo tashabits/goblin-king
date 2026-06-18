@@ -51,6 +51,13 @@ class JupyterHubSettings(BaseModel):
     default_project_id: str | None = None
 
 
+class RepositorySettings(BaseModel):
+    """Optional repository service discovery settings."""
+
+    enabled: bool = False
+    url: str | None = None
+
+
 class ApiSettings(BaseModel):
     """Resolve settings needed by the API app and its dependencies."""
 
@@ -70,6 +77,7 @@ class ApiSettings(BaseModel):
     project: Path | None = None
     oidc: OidcSettings = Field(default_factory=OidcSettings)
     jupyterhub: JupyterHubSettings = Field(default_factory=JupyterHubSettings)
+    repository: RepositorySettings = Field(default_factory=RepositorySettings)
 
     def model_post_init(self, __context: object) -> None:
         """Keep explicit legacy auth_token settings usable as bootstrap tokens."""
@@ -105,6 +113,14 @@ class ApiSettings(BaseModel):
         notebook_service_runtime = os.environ.get("GOBLIN_KING_NOTEBOOK_SERVICE_RUNTIME")
         if notebook_service_runtime:
             payload["notebook_service_runtime"] = notebook_service_runtime
+        repository_enabled = os.environ.get("GOBLIN_KING_REPOSITORY_ENABLED")
+        if repository_enabled is not None:
+            repository_payload = _ensure_dict(payload, "repository")
+            repository_payload["enabled"] = _env_bool(repository_enabled)
+        repository_url = os.environ.get("GOBLIN_KING_REPOSITORY_URL")
+        if repository_url:
+            repository_payload = _ensure_dict(payload, "repository")
+            repository_payload["url"] = repository_url
         hub_token = os.environ.get("GOBLIN_KING_JUPYTERHUB_SERVICE_TOKEN")
         if hub_token:
             hub_payload = payload.setdefault("jupyterhub", {})
@@ -151,3 +167,17 @@ def _resolve(root: Path, path: Path) -> Path:
     if path.is_absolute():
         return path
     return (root / path).resolve()
+
+
+def _ensure_dict(payload: dict[str, object], key: str) -> dict[str, object]:
+    """Return a mutable mapping field, replacing invalid values."""
+    value = payload.get(key)
+    if not isinstance(value, dict):
+        value = {}
+        payload[key] = value
+    return value
+
+
+def _env_bool(value: str) -> bool:
+    """Parse common deployment boolean strings."""
+    return value.strip().lower() in {"1", "true", "yes", "on"}

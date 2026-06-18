@@ -286,10 +286,14 @@ def _row_to_repository_entry(payload: dict[str, Any]) -> RepositoryEntryRecord:
 
 
 def _row_to_repository_version(payload: dict[str, Any]) -> RepositoryVersionRecord:
+    kind = payload.get("kind") or (
+        f"repository.{payload['entry_id']}.v{payload['version']}".replace("_", "-")
+    )
     return RepositoryVersionRecord(
         id=payload["id"],
         entry_id=payload["entry_id"],
         version=payload["version"],
+        kind=kind,
         source_hash=payload["source_hash"],
         runner_image=payload["runner_image"],
         validation_proof=json.loads(payload.get("validation_proof_json") or "{}"),

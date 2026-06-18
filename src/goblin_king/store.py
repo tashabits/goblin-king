@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import create_engine, delete, func, or_, select, update
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import OperationalError
 
 from goblin_king.contracts import (
     ApiTokenRecord,
@@ -97,10 +99,30 @@ REPOSITORY_STATUS_TRANSITIONS = {
 REPOSITORY_VERSION_IDENTITY_FIELDS = {
     "entry_id",
     "version",
+    "kind",
     "source_hash",
     "runner_image",
     "created_at",
 }
+
+
+def _initialize_schema(engine: Engine) -> None:
+    """Create or migrate SQLite schema, tolerating parallel first startup."""
+    retryable = ("already exists", "duplicate column name", "database is locked")
+    last_error: OperationalError | None = None
+    for attempt in range(10):
+        try:
+            metadata.create_all(engine)
+            ensure_schema_columns(engine)
+            return
+        except OperationalError as error:
+            message = str(error).lower()
+            if not any(token in message for token in retryable):
+                raise
+            last_error = error
+            time.sleep(0.1 * (attempt + 1))
+    if last_error is not None:
+        raise last_error
 
 
 class SQLiteStore:
@@ -110,8 +132,7 @@ class SQLiteStore:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.engine: Engine = create_engine(f"sqlite:///{self.db_path}")
-        metadata.create_all(self.engine)
-        ensure_schema_columns(self.engine)
+        _initialize_schema(self.engine)
 
     def save_job(self, job: JobRecord) -> None:
         """Insert one submitted job record."""
@@ -1893,6 +1914,7 @@ def _repository_version_values(record: RepositoryVersionRecord) -> dict[str, Any
         "id": record.id,
         "entry_id": record.entry_id,
         "version": record.version,
+        "kind": record.kind,
         "source_hash": record.source_hash,
         "runner_image": record.runner_image,
         "validation_proof_json": json.dumps(record.validation_proof),

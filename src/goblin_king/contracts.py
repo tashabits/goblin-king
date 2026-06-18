@@ -334,6 +334,7 @@ class RepositoryVersionRecord(BaseModel):
     id: str = Field(min_length=1)
     entry_id: str = Field(min_length=1)
     version: int = Field(gt=0)
+    kind: str
     source_hash: str = Field(min_length=1)
     runner_image: str = Field(min_length=1)
     validation_proof: dict[str, Any] = Field(default_factory=dict)
@@ -344,6 +345,13 @@ class RepositoryVersionRecord(BaseModel):
     published_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("kind")
+    @classmethod
+    def validate_kind(cls, value: str) -> str:
+        if not GOBLIN_KIND_PATTERN.match(value):
+            raise ValueError("kind must use lowercase letters, digits, dots, or dashes")
+        return value
 
 
 class ImagePromotionRecord(BaseModel):

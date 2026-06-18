@@ -64,6 +64,7 @@ def ensure_schema_columns(engine: Engine) -> None:
     repository_version_additions = {
         "entry_id": "TEXT NOT NULL DEFAULT ''",
         "version": "INTEGER NOT NULL DEFAULT 1",
+        "kind": "TEXT NOT NULL DEFAULT 'repository.unknown.v1'",
         "source_hash": "TEXT NOT NULL DEFAULT ''",
         "runner_image": "TEXT NOT NULL DEFAULT ''",
         "validation_proof_json": "TEXT NOT NULL DEFAULT '{}'",

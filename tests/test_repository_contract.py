@@ -42,6 +42,7 @@ def _repository_version(
     version_id: str = "entry-1-v1",
     entry_id: str = "entry-1",
     version: int = 1,
+    kind: str | None = None,
     source_hash: str = "sha256:one",
     status: str = "draft",
     approval_status: str = "draft",
@@ -53,6 +54,7 @@ def _repository_version(
         id=version_id,
         entry_id=entry_id,
         version=version,
+        kind=kind or f"repository.shared.hello.v{version}",
         source_hash=source_hash,
         runner_image="goblin-king-notebook-python-function:local",
         validation_proof={"status": "passed", "validator": "test"} if status != "draft" else {},
@@ -74,6 +76,7 @@ def test_repository_records_validate_status_type_and_identifiers() -> None:
     assert entry.kind == "repository.shared.hello"
     assert entry.type == "notebook_function"
     assert entry.tags == ["demo", "hello"]
+    assert version.kind == "repository.shared.hello.v1"
     assert version.status == "draft"
 
     for status in (
@@ -101,6 +104,9 @@ def test_repository_records_validate_status_type_and_identifiers() -> None:
 
     with pytest.raises(ValidationError):
         _repository_entry(entry_type="raw_pod")
+
+    with pytest.raises(ValidationError):
+        _repository_version(kind="repository/shared/hello")
 
 
 def test_store_creates_lists_and_loads_repository_entries_and_versions(
