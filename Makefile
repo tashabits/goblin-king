@@ -44,6 +44,9 @@ JUPYTERHUB_VALUES ?= examples/jupyterhub-goblin-king/zero-to-jupyterhub.values.y
 JUPYTERHUB_SERVICE_TOKEN_SECRET ?= goblin-king-jupyterhub-auth
 JUPYTERHUB_SERVICE_TOKEN_KEY ?= service-token
 JUPYTERHUB_SERVICE_TOKEN ?= local-goblin-king-hub-token
+JUPYTERHUB_NOTEBOOK_PACKAGE_BRANCH ?= $(shell git branch --show-current)
+JUPYTERHUB_NOTEBOOK_PACKAGE ?= $(if $(JUPYTERHUB_NOTEBOOK_PACKAGE_BRANCH),git+https://github.com/tashabits/goblin-king.git@$(JUPYTERHUB_NOTEBOOK_PACKAGE_BRANCH),git+https://github.com/tashabits/goblin-king.git)
+JUPYTERHUB_NOTEBOOK_PACKAGE_ARGS ?= --set-string singleuser.extraEnv.GOBLIN_KING_NOTEBOOK_PACKAGE=$(JUPYTERHUB_NOTEBOOK_PACKAGE)
 JUPYTERHUB_WORKBOOK_USER_TOKEN_KEY ?= workbook-user-token
 JUPYTERHUB_WORKBOOK_USER_TOKEN ?= local-goblin-king-workbook-token
 JUPYTERHUB_WORKBOOK_ALICE_TOKEN ?= local-goblin-king-alice-token
@@ -222,7 +225,7 @@ jupyterhub-up:
 	kubectl create secret generic $(JUPYTERHUB_SERVICE_TOKEN_SECRET) --namespace $(HELM_NAMESPACE) --from-literal=$(JUPYTERHUB_SERVICE_TOKEN_KEY)=$(JUPYTERHUB_SERVICE_TOKEN) --from-literal=$(JUPYTERHUB_REPOSITORY_UI_SERVICE_TOKEN_KEY)=$(JUPYTERHUB_REPOSITORY_UI_SERVICE_TOKEN) --from-literal=$(JUPYTERHUB_WORKBOOK_USER_TOKEN_KEY)=$(JUPYTERHUB_WORKBOOK_USER_TOKEN) --from-literal=alice-token=$(JUPYTERHUB_WORKBOOK_ALICE_TOKEN) --from-literal=bob-token=$(JUPYTERHUB_WORKBOOK_BOB_TOKEN) --from-literal=carol-token=$(JUPYTERHUB_WORKBOOK_CAROL_TOKEN) --from-literal=mallory-token=$(JUPYTERHUB_WORKBOOK_MALLORY_TOKEN) --dry-run=client -o yaml | kubectl apply -f -
 	helm repo add jupyterhub https://hub.jupyter.org/helm-chart/
 	helm repo update jupyterhub
-	helm upgrade --install $(JUPYTERHUB_RELEASE) $(JUPYTERHUB_CHART) --namespace $(HELM_NAMESPACE) --create-namespace --wait --timeout $(HELM_TIMEOUT) -f $(JUPYTERHUB_VALUES) $(JUPYTERHUB_EXTRA_ARGS) $(JUPYTERHUB_OPTIONAL_REPOSITORY_ARGS) $(JUPYTERHUB_OPTIONAL_REPOSITORY_UI_ARGS)
+	helm upgrade --install $(JUPYTERHUB_RELEASE) $(JUPYTERHUB_CHART) --namespace $(HELM_NAMESPACE) --create-namespace --wait --timeout $(HELM_TIMEOUT) -f $(JUPYTERHUB_VALUES) $(JUPYTERHUB_NOTEBOOK_PACKAGE_ARGS) $(JUPYTERHUB_EXTRA_ARGS) $(JUPYTERHUB_OPTIONAL_REPOSITORY_ARGS) $(JUPYTERHUB_OPTIONAL_REPOSITORY_UI_ARGS)
 
 jupyterhub-down:
 	-kubectl delete pod --namespace $(HELM_NAMESPACE) -l app.kubernetes.io/instance=$(JUPYTERHUB_RELEASE),app.kubernetes.io/component=singleuser-server --ignore-not-found
