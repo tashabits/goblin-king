@@ -150,8 +150,18 @@ goblin-king project goblins list --project goblin-king-project.json
 Validate worker images before scheduling:
 
 ```bash
-goblin-king workers validate --project goblin-king-project.json --input inputs/hello.json --kind myproject.hello --build --require-success
-goblin-king workers validate --project goblin-king-project.json --input inputs/artifact.json --kind myproject.artifact --build --require-success
+goblin-king workers validate \
+  --project goblin-king-project.json \
+  --input inputs/hello.json \
+  --kind myproject.hello \
+  --build \
+  --require-success
+goblin-king workers validate \
+  --project goblin-king-project.json \
+  --input inputs/artifact.json \
+  --kind myproject.artifact \
+  --build \
+  --require-success
 goblin-king workers validation-status --kind myproject.hello
 goblin-king workers validation-status --kind myproject.artifact
 ```
@@ -160,7 +170,11 @@ Submit, schedule, run, and inspect:
 
 ```bash
 goblin-king jobs submit myproject.hello --project goblin-king-project.json --input inputs/hello.json --runtime docker
-goblin-king schedules add myproject.hello --project goblin-king-project.json --input inputs/hello.json --cron "* * * * *" --due-now
+goblin-king schedules add myproject.hello \
+  --project goblin-king-project.json \
+  --input inputs/hello.json \
+  --cron "* * * * *" \
+  --due-now
 goblin-king scheduler run-once --project goblin-king-project.json --runtime docker
 goblin-king runs show <run-id> --with-job
 ```
@@ -488,8 +502,15 @@ make deploy
 Create and run a due schedule through Docker:
 
 ```bash
-goblin-king schedules add example.echo --cron "* * * * *" --input examples/input.json --registry demo-goblins.json --due-now
-goblin-king scheduler run-once --registry demo-goblins.json --images demo-images.json --redis-url redis://localhost:6379/0
+goblin-king schedules add example.echo \
+  --cron "* * * * *" \
+  --input examples/input.json \
+  --registry demo-goblins.json \
+  --due-now
+goblin-king scheduler run-once \
+  --registry demo-goblins.json \
+  --images demo-images.json \
+  --redis-url redis://localhost:6379/0
 goblin-king jobs list
 ```
 
@@ -848,8 +869,10 @@ Sample goblins include:
 - `example.controlled-failure`: returns a predictable failed result.
 - `example.progress`: emits step-style progress data and handoff metadata.
 
-See [Goblin Examples Index](docs/examples-index.md), [Choose Your Runtime](docs/choose-your-runtime.md),
-[Writing Goblins](docs/writing-goblins.md), [Goblin Dockerfiles](docs/goblin-dockerfiles.md), and
+See [Goblin Examples Index](docs/examples-index.md),
+[Choose Your Runtime](docs/choose-your-runtime.md),
+[Writing Goblins](docs/writing-goblins.md),
+[Goblin Dockerfiles](docs/goblin-dockerfiles.md), and
 [Language-Agnostic Workers](docs/language-agnostic-workers.md).
 
 ## Advanced Commands And Local Proof
@@ -951,78 +974,105 @@ Goblin King provides:
 
 ### Getting Started
 
-| Document | Purpose |
-| --- | --- |
-| [User Guide](docs/USER_GUIDE.md) | End-to-end operator and developer guide for Docker, admin UI, sample goblins, API, scheduler, and optional Helm deployment. |
-| [First Hour Guide](docs/FIRST_HOUR.md) | Fast path from internal install to first project goblin run. |
-| [Adopting Projects](docs/ADOPTING_PROJECTS.md) | How another project installs Goblin King, defines project goblins, builds workers, and proves the integration. |
-| [Adopter Guide](docs/adopter-guide.md) | Complete project-owned goblin path from template to Docker, Helm, admin, results, artifacts, and failures. |
+- [User Guide](docs/USER_GUIDE.md): End-to-end operator and developer guide for
+  Docker, admin UI, sample goblins, API, scheduler, and optional Helm deployment.
+- [First Hour Guide](docs/FIRST_HOUR.md): Fast path from internal install to first
+  project goblin run.
+- [Adopting Projects](docs/ADOPTING_PROJECTS.md): How another project installs Goblin
+  King, defines project goblins, builds workers, and proves the integration.
+- [Adopter Guide](docs/adopter-guide.md): Complete project-owned goblin path from
+  template to Docker, Helm, admin, results, artifacts, and failures.
 
 ### Core Concepts
 
-| Document | Purpose |
-| --- | --- |
-| [Goblin Workload Types](docs/goblin-workload-types.md) | Shared model for task, service, notebook, and Directory goblins as validated container-backed workloads. |
-| [What Is A Goblin?](docs/what-is-a-goblin.md) | Plain-language model of goblins as validated container-backed workloads. |
-| [Goblin Container Contract](docs/goblin-container-contract.md) | Canonical language-agnostic worker container contract. |
-| [Writing Goblins](docs/writing-goblins.md) | Practical steps for building a contract-compliant goblin. |
-| [Goblin Dockerfiles](docs/goblin-dockerfiles.md) | Minimal, multi-stage, non-root, read-only, and WASI wrapper Dockerfile patterns. |
-| [Language-Agnostic Workers](docs/language-agnostic-workers.md) | Guidance for writing goblins in any container-packaged runtime. |
-| [Goblin Examples Index](docs/examples-index.md) | Cross-language, WASI, and behavior sample goblins with proof commands. |
-| [Choose Your Runtime](docs/choose-your-runtime.md) | Runtime comparison guide for picking a worker language. |
+- [Goblin Workload Types](docs/goblin-workload-types.md): Shared model for task,
+  service, notebook, and Directory goblins as validated container-backed workloads.
+- [What Is A Goblin?](docs/what-is-a-goblin.md): Plain-language model of goblins as
+  validated container-backed workloads.
+- [Goblin Container Contract](docs/goblin-container-contract.md): Canonical
+  language-agnostic worker container contract.
+- [Writing Goblins](docs/writing-goblins.md): Practical steps for building a
+  contract-compliant goblin.
+- [Goblin Dockerfiles](docs/goblin-dockerfiles.md): Minimal, multi-stage, non-root,
+  read-only, and WASI wrapper Dockerfile patterns.
+- [Language-Agnostic Workers](docs/language-agnostic-workers.md): Guidance for writing
+  goblins in any container-packaged runtime.
+- [Goblin Examples Index](docs/examples-index.md): Cross-language, WASI, and behavior
+  sample goblins with proof commands.
+- [Choose Your Runtime](docs/choose-your-runtime.md): Runtime comparison guide for
+  picking a worker language.
 
 ### Project Adoption
 
-| Document | Purpose |
-| --- | --- |
-| [Using Goblin King As Your Project Scheduler](docs/using-goblin-king-as-a-project-scheduler.md) | Practical guide for defining project task and service goblins as validated container-backed workloads. |
-| [Project Goblin Config](docs/project-goblin-config.md) | Versioned `GoblinProject` config for defining container goblins without editing Goblin King source. |
-| [Project Template Quickstart](docs/project-template-quickstart.md) | Copy-paste path for generating, validating, and proving a standalone adopter project. |
-| [Using Goblin King From A Vendored Checkout](docs/using-goblin-king-from-a-vendored-checkout.md) | Submodule, subtree, and local path dependency workflow for host projects. |
-| [Adopter Admin Dev/Test Stack](docs/adopter-admin-dev-stack.md) | Local Docker Compose/admin workflow for testing project-defined goblins. |
-| [Testing Your Project With The Admin Panel](docs/testing-your-project-with-the-admin-panel.md) | Do-this, see-this quickstart for validating, launching, and inspecting project goblins in the admin. |
-| [Project Adoption](docs/project-adoption.md) | Notes for adapting existing queue, worker, heartbeat, and operator proof flows. |
+- [Using Goblin King As Your Project Scheduler](docs/using-goblin-king-as-a-project-scheduler.md):
+  Practical guide for defining project task and service goblins as validated
+  container-backed workloads.
+- [Project Goblin Config](docs/project-goblin-config.md): Versioned `GoblinProject`
+  config for defining container goblins without editing Goblin King source.
+- [Project Template Quickstart](docs/project-template-quickstart.md): Copy-paste path
+  for generating, validating, and proving a standalone adopter project.
+- [Using Goblin King From A Vendored Checkout](docs/using-goblin-king-from-a-vendored-checkout.md):
+  Submodule, subtree, and local path dependency workflow for host projects.
+- [Adopter Admin Dev/Test Stack](docs/adopter-admin-dev-stack.md): Local Docker
+  Compose/admin workflow for testing project-defined goblins.
+- [Testing Your Project With The Admin Panel](docs/testing-your-project-with-the-admin-panel.md):
+  Do-this, see-this quickstart for validating, launching, and inspecting project
+  goblins in the admin.
+- [Project Adoption](docs/project-adoption.md): Notes for adapting existing queue,
+  worker, heartbeat, and operator proof flows.
 
 ### Admin And Operations
 
-| Document | Purpose |
-| --- | --- |
-| [Admin Guide](docs/ADMIN_GUIDE.md) | Screenshot walkthrough for logging in, spawning goblins, watching task goblins, probing service goblins, reading events, and cleaning old rows. |
-| [Admin Runtime Audit](docs/admin-runtime-audit.md) | Required Docker and Helm browser audit for proving every registered goblin kind works from the admin consoles. |
-| [Goblin Contract Validation](docs/goblin-contract-validation.md) | Local validation command for image builds, result envelopes, and artifacts. |
-| [Goblin Resource Policies](docs/goblin-resource-policies.md) | Per-goblin resource expectations, defaults, ceilings, and Docker/Kubernetes mapping. |
-| [Release Checklist](docs/RELEASE_CHECKLIST.md) | Internal wheel, Docker image, local CI, Docker adoption, and Helm proof checklist. |
-| [Compatibility Matrix](docs/COMPATIBILITY.md) | Contract and schema compatibility versions for project-ready adoption. |
-| [Upgrade Guide](docs/UPGRADING.md) | Host-project upgrade procedure and compatibility fixture policy. |
-| [Migration Guide](docs/MIGRATION_GUIDE.md) | How to move existing scripts and workers into project goblins. |
+- [Admin Guide](docs/ADMIN_GUIDE.md): Screenshot walkthrough for logging in, spawning
+  goblins, watching task goblins, probing service goblins, reading events, and cleaning
+  old rows.
+- [Admin Runtime Audit](docs/admin-runtime-audit.md): Required Docker and Helm browser
+  audit for proving every registered goblin kind works from the admin consoles.
+- [Goblin Contract Validation](docs/goblin-contract-validation.md): Local validation
+  command for image builds, result envelopes, and artifacts.
+- [Goblin Resource Policies](docs/goblin-resource-policies.md): Per-goblin resource
+  expectations, defaults, ceilings, and Docker/Kubernetes mapping.
+- [Release Checklist](docs/RELEASE_CHECKLIST.md): Internal wheel, Docker image, local
+  CI, Docker adoption, and Helm proof checklist.
+- [Compatibility Matrix](docs/COMPATIBILITY.md): Contract and schema compatibility
+  versions for project-ready adoption.
+- [Upgrade Guide](docs/UPGRADING.md): Host-project upgrade procedure and compatibility
+  fixture policy.
+- [Migration Guide](docs/MIGRATION_GUIDE.md): How to move existing scripts and workers
+  into project goblins.
 
 ### JupyterHub And Directory
 
-| Document | Purpose |
-| --- | --- |
-| [JupyterHub Service Access](docs/jupyterhub-service-access.md) | Same-cluster JupyterHub auth provider, notebook runner, service proxy, and local proof stack guide. |
-| [Goblin Directory](docs/goblin-directory.md) | Deployment-local Directory API, bundle format, browser UI, JupyterLab picker, and shared goblin workflow. |
+- [JupyterHub Service Access](docs/jupyterhub-service-access.md): Same-cluster
+  JupyterHub auth provider, notebook runner, service proxy, and local proof stack guide.
+- [Goblin Directory](docs/goblin-directory.md): Deployment-local Directory API, bundle
+  format, browser UI, JupyterLab picker, and shared goblin workflow.
 
 ### Security And API
 
-| Document | Purpose |
-| --- | --- |
-| [Security Policy](SECURITY.md) | Supported alpha security posture, reporting path, and Docker socket cautions. |
-| [Security Model](docs/security-model.md) | Honest container security expectations and runtime hardening guidance. |
-| [Public API Boundary](docs/PUBLIC_API.md) | Stable root imports, semi-public commands, internal modules, and internal wheel compatibility policy. |
-| [API Roadmap](docs/api-roadmap.md) | Covered API surfaces and maintainer notes. |
+- [Security Policy](SECURITY.md): Supported alpha security posture, reporting path, and
+  Docker socket cautions.
+- [Security Model](docs/security-model.md): Honest container security expectations and
+  runtime hardening guidance.
+- [Public API Boundary](docs/PUBLIC_API.md): Stable root imports, semi-public commands,
+  internal modules, and internal wheel compatibility policy.
+- [API Roadmap](docs/api-roadmap.md): Covered API surfaces and maintainer notes.
 
 ### Maintainer Notes
 
-| Document | Purpose |
-| --- | --- |
-| [Goblin King Scheduler Plan](docs/goblin-king-plan.md) | Architecture notes and roadmap history for maintainers. |
-| [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md) | Maintainer closeout audit and proof surfaces. |
-| [Code Cleanup Notes](docs/CODE_CLEANUP.md) | Refactor notes and helper-module rules. |
-| [Code Documentation Audit](docs/code-documentation-audit.md) | Maintainer audit plan for file-level comments, docstrings, and useful code documentation. |
-| [Language-Agnostic Closeout](docs/language-agnostic-closeout.md) | Audit summary for the container-first worker phases and remaining deferrals. |
-| [Contributing](CONTRIBUTING.md) | Short public contribution entrypoint for local CI, container-first expectations, and PR proof. |
-| [Detailed Contributing Guide](docs/CONTRIBUTING.md) | Branch, PR, local CI, commenting, goblin documentation, and test expectations. |
+- [Goblin King Scheduler Plan](docs/goblin-king-plan.md): Architecture notes and
+  roadmap history for maintainers.
+- [Production Roadmap Closeout](docs/ROADMAP_CLOSEOUT.md): Maintainer closeout audit
+  and proof surfaces.
+- [Code Cleanup Notes](docs/CODE_CLEANUP.md): Refactor notes and helper-module rules.
+- [Code Documentation Audit](docs/code-documentation-audit.md): Maintainer audit plan
+  for file-level comments, docstrings, and useful code documentation.
+- [Language-Agnostic Closeout](docs/language-agnostic-closeout.md): Audit summary for
+  the container-first worker phases and remaining deferrals.
+- [Contributing](CONTRIBUTING.md): Short public contribution entrypoint for local CI,
+  container-first expectations, and PR proof.
+- [Detailed Contributing Guide](docs/CONTRIBUTING.md): Branch, PR, local CI,
+  commenting, goblin documentation, and test expectations.
 
 ## Future Work
 
