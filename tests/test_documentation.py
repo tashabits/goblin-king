@@ -9,17 +9,30 @@ from pathlib import Path
 def test_readme_table_of_contents_reaches_primary_sections() -> None:
     """Verify the simplified README TOC reaches each primary section."""
     readme = Path("README.md").read_text(encoding="utf-8")
-    h2_headings = [
-        line.lstrip("# ").strip()
-        for line in readme.splitlines()
-        if line.startswith("## ") and line.strip() != "## Table of Contents"
+    expected_headings = [
+        "Why Goblin King?",
+        "Mental Model",
+        "Quick Start",
+        "Use Goblin King In Your Project",
+        "Validation Gate",
+        "Resource Policies",
+        "Admin UI",
+        "Docker, Compose, Kubernetes, And Helm",
+        "JupyterHub Lab Compatibility",
+        "Goblin Directory",
+        "Examples",
+        "Documentation",
+        "Future Work",
+        "Contributing, Security, And License",
     ]
     toc_end = readme.index("## Quick Start")
     toc = readme[:toc_end]
 
-    for heading in h2_headings:
+    for heading in expected_headings:
         anchor = "#" + re.sub(r"[^a-z0-9 -]", "", heading.lower()).replace(" ", "-")
         assert f"]({anchor})" in toc
+
+    assert "Advanced Commands And Local Proof" not in toc
 
 
 def test_adopter_guide_is_linked_from_readme() -> None:

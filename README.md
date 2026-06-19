@@ -1,13 +1,12 @@
 # Goblin King
 
 Goblin King is a container-driven task scheduler and control plane for Docker and
-Kubernetes. It runs validated goblin containers as project-defined jobs and services,
-then records status, logs, results, artifacts, events, audit proof, and resource policy.
+Kubernetes. It runs validated goblin containers as project-defined jobs and managed
+services, then records status, logs, results, artifacts, and resource policy.
 
 Use it when your project needs background tasks or service-style workers without forcing
-every worker into the same language runtime. A goblin can be Python, Node.js, Go, Rust,
-Java, PHP, Ruby, shell, .NET, or a container-wrapped WASI module, as long as it follows
-the Goblin Container Contract.
+every worker into the same language runtime. Goblin King schedules containers, not
+language runtimes.
 
 Docker and Compose are the default local/self-hosted path. Kubernetes is optional
 through the Helm chart. JupyterHub compatibility is available for shared lab and
@@ -31,7 +30,6 @@ hardening.
 - [JupyterHub Lab Compatibility](#jupyterhub-lab-compatibility)
 - [Goblin Directory](#goblin-directory)
 - [Examples](#examples)
-- [Operational Commands](#operational-commands)
 - [Documentation](#documentation)
 - [Future Work](#future-work)
 - [Contributing, Security, And License](#contributing-security-and-license)
@@ -66,14 +64,18 @@ Goblin King schedules containers, not language runtimes.
 
 A goblin is a validated container-backed task or service. The container boundary,
 Goblin Container Contract, validation gate, resource policy, and project/deployment
-scope are the core model.
+scope are the core model:
 
+- The container is the unit of execution.
+- The Goblin Container Contract is the interface.
 - Task goblins run, read input/context, write results/artifacts/logs/events, and exit.
 - Service goblins start, become ready, answer probes/proxy requests, and are stopped or
   managed by Goblin King.
 - Notebook-authored goblins still execute inside configured runner containers.
 - Directory goblins are deployment-local shared goblins that were submitted, validated,
   reviewed, and published for users in one Goblin King deployment.
+- Resource policies constrain execution.
+- CLI and admin UI inspect the same runs, results, artifacts, and services.
 
 Validation proves contract compliance, not trustworthiness. Run only trusted project
 images and trusted deployment-local submissions unless your deployment adds the review,
@@ -121,15 +123,8 @@ Stop the demo when you are done:
 goblin-king demo down
 ```
 
-Run the local checks:
-
-```bash
-python -m pytest
-python -m ruff check .
-```
-
-The longer Docker, API, Helm, JupyterHub, and admin proof commands are below. New users
-should try the demo first.
+That is the shortest happy path. Deeper Docker, API, Helm, JupyterHub, Directory, and
+admin proof commands are later in this README and in the linked manuals.
 
 ## Use Goblin King In Your Project
 
@@ -253,15 +248,25 @@ For the full adopter path, see:
 
 Container-backed goblins are validation-gated: validate first, then schedule.
 
-The scheduler will not execute a Docker or Kubernetes worker unless the current resolved
-image identity has passed the Goblin Container Contract validator for
+The scheduler will not execute a Docker or Kubernetes worker unless the current
+resolved image identity has passed the Goblin Container Contract validator for
 `goblin-king/v1alpha1`. Missing or stale proof triggers validation before execution;
-execution continues only if proof passes. Proof is tied to goblin kind, resolved image
-identity or digest, contract version, validator version, validation timestamp, status,
-failure reasons, and effective runtime policy summary when one is available.
+execution continues only if proof passes.
 
-Use [Goblin Contract Validation](docs/goblin-contract-validation.md) to build and run
-worker images with temporary contract mounts:
+Validation proof records goblin kind, resolved image identity or digest, contract
+version, validator version, validation timestamp, status, failure reasons, and effective
+runtime policy summary when one is available. It proves contract compliance for the
+current image identity.
+
+Validation is not a trust guarantee. Operators still decide which images, runner
+containers, secrets, network paths, and users are trusted.
+
+Proof becomes stale when the resolved image identity changes or when the recorded proof
+no longer matches the current contract, validator, goblin kind, or runtime expectations.
+Use [Goblin Contract Validation](docs/goblin-contract-validation.md) for the detailed
+validation behavior and scheduler gate.
+
+Build and run worker validation with temporary contract mounts:
 
 ```bash
 python -m goblin_king.cli workers validate \
@@ -298,10 +303,6 @@ Inspect persisted proof:
 ```bash
 goblin-king workers validation-status
 ```
-
-Validation is not a trust guarantee. It proves contract compliance for the current
-image identity; operators still decide which images, runner containers, secrets,
-network paths, and users are trusted.
 
 For host-project deployment integration, see `examples/adopting-project/`. It includes:
 
@@ -476,7 +477,7 @@ prefills `http://long-hello:8080` and Helm prefills `http://goblin-king-long-hel
 
 ## Docker, Compose, Kubernetes, And Helm
 
-### Local Docker / Compose
+### Docker And Compose
 
 Build worker images and start Redis:
 
@@ -555,7 +556,7 @@ Use `--runtime in-process` on `jobs submit`, `scheduler run-once`, or `scheduler
 when debugging trusted local Python goblins without Docker. In-process execution is a
 developer convenience; the worker model is the container contract.
 
-### Clean Restarts
+### Runtime Notes
 
 Use these targets when you want to tear a stack down and keep no runtime data. They
 remove Docker Compose volumes or the Helm PVC before starting fresh.
@@ -594,7 +595,7 @@ The Helm targets use overridable variables:
 make helm-restart-clean HELM_RELEASE=goblin-king HELM_NAMESPACE=default
 ```
 
-### Kubernetes / Helm
+### Kubernetes And Helm
 
 Render the optional Kubernetes chart:
 
@@ -851,7 +852,10 @@ See [Goblin Examples Index](docs/examples-index.md), [Choose Your Runtime](docs/
 [Writing Goblins](docs/writing-goblins.md), [Goblin Dockerfiles](docs/goblin-dockerfiles.md), and
 [Language-Agnostic Workers](docs/language-agnostic-workers.md).
 
-## Operational Commands
+## Advanced Commands And Local Proof
+
+This section keeps useful operator and developer proof commands out of the first-time
+path while preserving them for maintainers and adopters who need deeper local checks.
 
 Queue a fanout batch and inspect it:
 
@@ -1049,6 +1053,13 @@ the current quickstart path and may not be implemented yet.
 Contributions should keep Goblin King container-first, validation-gated, and honest
 about its alpha safety boundary. Start with [Contributing](CONTRIBUTING.md) and the
 [Detailed Contributing Guide](docs/CONTRIBUTING.md).
+
+Run the local checks before opening docs or code changes:
+
+```bash
+python -m pytest
+python -m ruff check .
+```
 
 Security posture and reporting are documented in [Security Policy](SECURITY.md) and
 [Security Model](docs/security-model.md). Treat Docker socket access, service tokens,
