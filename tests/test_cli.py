@@ -547,6 +547,58 @@ def test_project_init_creates_adopter_template(tmp_path: Path) -> None:
     assert (tmp_path / "adopter" / "workers" / "acme.artifact" / "Dockerfile").exists()
 
 
+def test_project_templates_list_prints_profiles() -> None:
+    """Verify template profiles are discoverable from the CLI."""
+    result = runner.invoke(app, ["project", "templates", "list"])
+
+    assert result.exit_code == 0
+    assert "basic\t" in result.stdout
+    assert "worker-backbone\t" in result.stdout
+    assert "rag-worker-backbone\t" in result.stdout
+
+
+def test_project_init_creates_worker_backbone_profile(tmp_path: Path) -> None:
+    """Verify the worker-backbone profile is reachable from the CLI."""
+    result = runner.invoke(
+        app,
+        [
+            "project",
+            "init",
+            str(tmp_path / "backbone"),
+            "--prefix",
+            "acme",
+            "--profile",
+            "worker-backbone",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert (tmp_path / "backbone" / "workers" / "acme.task" / "Dockerfile").exists()
+    assert (tmp_path / "backbone" / "workers" / "acme.artifact" / "worker.py").exists()
+    assert (tmp_path / "backbone" / "workers" / "acme.long-service" / "service.py").exists()
+
+
+def test_project_init_creates_rag_worker_backbone_profile(tmp_path: Path) -> None:
+    """Verify the RAG worker-backbone profile is reachable from the CLI."""
+    result = runner.invoke(
+        app,
+        [
+            "project",
+            "init",
+            str(tmp_path / "rag"),
+            "--prefix",
+            "acme",
+            "--profile",
+            "rag-worker-backbone",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert (tmp_path / "rag" / "inputs" / "rag.retrieve.json").exists()
+    assert (tmp_path / "rag" / "workers" / "acme.rag.retrieve" / "worker.py").exists()
+    assert (tmp_path / "rag" / "workers" / "acme.rag.answer" / "Dockerfile").exists()
+
+
 def test_project_validate_rejects_missing_worker_mapping(tmp_path: Path) -> None:
     """Verify project validation catches missing worker image coverage."""
     project = tmp_path / "project"
