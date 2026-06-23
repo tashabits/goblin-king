@@ -62,6 +62,8 @@ while time.monotonic() < deadline:
 raise SystemExit(f"result file not found before timeout: {result_path}")
 """
 
+_KUBERNETES_PREFERRED_PLACEMENT_WEIGHT = 50
+
 
 class InProcessRuntime:
     """Execute trusted goblin code directly in the current Python process for Phase 1."""
@@ -400,6 +402,74 @@ class DockerRuntime:
             return GoblinResult.failed(error=f"worker produced invalid result JSON: {error}")
 
 
+def _placement_metadata(
+    definition: GoblinDefinition | None,
+    context: GoblinContext,
+) -> dict[str, dict[str, str]] | None:
+    metadata_sources: list[Any] = []
+    if definition is not None:
+        metadata_sources.append(definition.metadata)
+    context_definition = context.metadata.get("goblin_definition")
+    if isinstance(context_definition, dict):
+        metadata_sources.append(context_definition.get("metadata"))
+    metadata_sources.append(context.metadata)
+
+    for metadata in metadata_sources:
+        placement = _normalize_placement(metadata)
+        if placement is not None:
+            return placement
+    return None
+
+
+def _normalize_placement(metadata: Any) -> dict[str, dict[str, str]] | None:
+    if not isinstance(metadata, dict):
+        return None
+    placement = metadata.get("placement")
+    if not isinstance(placement, dict):
+        return None
+
+    required = _placement_label_map(placement.get("required"))
+    preferred = _placement_label_map(placement.get("preferred"))
+    if not required and not preferred:
+        return None
+    return {"required": required, "preferred": preferred}
+
+
+def _placement_label_map(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    labels: dict[str, str] = {}
+    for key, label_value in value.items():
+        if isinstance(key, str) and key and isinstance(label_value, str) and label_value:
+            labels[key] = label_value
+    return dict(sorted(labels.items()))
+
+
+def _apply_kubernetes_placement(
+    pod_spec: dict[str, Any],
+    placement: dict[str, dict[str, str]],
+) -> None:
+    required = placement.get("required") or {}
+    if required:
+        pod_spec["nodeSelector"] = required
+
+    preferred = placement.get("preferred") or {}
+    if preferred:
+        affinity = pod_spec.setdefault("affinity", {})
+        node_affinity = affinity.setdefault("nodeAffinity", {})
+        node_affinity["preferredDuringSchedulingIgnoredDuringExecution"] = [
+            {
+                "weight": _KUBERNETES_PREFERRED_PLACEMENT_WEIGHT,
+                "preference": {
+                    "matchExpressions": [
+                        {"key": key, "operator": "In", "values": [value]}
+                        for key, value in preferred.items()
+                    ]
+                },
+            }
+        ]
+
+
 class KubernetesRuntime:
     """Execute goblins as short-lived Kubernetes Jobs and collect Redis results."""
 
@@ -472,6 +542,7 @@ class KubernetesRuntime:
                     worker_id=worker_id,
                     timeout_seconds=timeout_seconds,
                     resource_policy=resource_policy,
+                    placement=_placement_metadata(definition, context),
                 ),
             )
             result = self._wait_for_result(
@@ -507,6 +578,7 @@ class KubernetesRuntime:
         worker_id: str,
         timeout_seconds: int | None,
         resource_policy: ResourcePolicy | None = None,
+        placement: dict[str, dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         """Build the Kubernetes Job manifest that mirrors the Docker worker contract."""
         worker_container: dict[str, Any] = {
@@ -590,6 +662,9 @@ class KubernetesRuntime:
                 },
             },
         }
+        placement = placement or _placement_metadata(None, context)
+        if placement is not None:
+            _apply_kubernetes_placement(spec["template"]["spec"], placement)
         if timeout_seconds is not None:
             spec["activeDeadlineSeconds"] = timeout_seconds
         return {
