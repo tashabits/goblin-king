@@ -20,6 +20,10 @@ test("bundle upload calls preview and submit endpoints", () => {
 });
 
 test("runtime actions cover functions and services by directory name", () => {
+  assert.match(html, /runtimeEntrySelect/);
+  assert.doesNotMatch(html, /id="runtimeName"/);
+  assert.match(js, /loadRuntimeEntries/);
+  assert.match(js, /selectRuntimeEntry/);
   assert.match(js, /directory\/functions\/.*\/run/);
   assert.match(js, /directory\/services\/.*\/start/);
   assert.match(js, /directory\/services\/.*\/probe/);
@@ -38,6 +42,15 @@ test("review view loads approved entries so admins can publish after approval", 
   assert.match(js, /status=approved/);
   assert.match(js, /Approved and awaiting publication/);
   assert.match(js, /Publish/);
+});
+
+test("live views expose refresh status and polling", () => {
+  for (const id of ["directoryStatus", "mineStatus", "reviewStatus", "runtimeStatus"]) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  assert.match(js, /setInterval/);
+  assert.match(js, /status=all/);
+  assert.match(js, /status=pending_review/);
 });
 
 test("published entries support retirement, deletion after retirement, and notebook cells", () => {

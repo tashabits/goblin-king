@@ -40,6 +40,7 @@
             </select>
           </label>
           <button id="refreshDirectory" type="button">Refresh</button>
+          <span id="directoryStatus" class="view-status" role="status"></span>
         </div>
         <div id="directoryList" class="list"></div>
       </section>
@@ -67,6 +68,7 @@
       <section data-view="mine" class="view">
         <div class="toolbar">
           <button id="refreshMine" type="button">Refresh</button>
+          <span id="mineStatus" class="view-status" role="status"></span>
         </div>
         <div id="mineList" class="list"></div>
       </section>
@@ -74,6 +76,7 @@
       <section data-view="review" class="view">
         <div class="toolbar">
           <button id="refreshReview" type="button">Refresh</button>
+          <span id="reviewStatus" class="view-status" role="status"></span>
         </div>
         <p id="reviewHint"></p>
         <div id="reviewList" class="list"></div>
@@ -86,6 +89,7 @@
             <input id="entryIdInput" type="text" placeholder="goblin entry id" />
           </label>
           <button id="loadEntry" type="button">Load</button>
+          <span id="detailStatus" class="view-status" role="status"></span>
         </div>
         <div id="entryDetail" class="detail"></div>
       </section>
@@ -95,16 +99,12 @@
           <form id="runtimeForm" class="panel">
             <h2>Invoke Published Entry</h2>
             <label>
-              Name
-              <input id="runtimeName" type="text" placeholder="shared.hello" />
-            </label>
-            <label>
-              Type
-              <select id="runtimeType">
-                <option value="notebook_function">Function</option>
-                <option value="notebook_service">Service</option>
+              Published Goblin
+              <select id="runtimeEntrySelect">
+                <option value="">Loading published entries...</option>
               </select>
             </label>
+            <div id="runtimeSelectedSummary" class="selection-summary"></div>
             <label>
               JSON Input
               <textarea id="runtimeInput" rows="6">{"name":"Directory"}</textarea>
@@ -120,6 +120,7 @@
               <button id="proxyService" type="button">Proxy</button>
               <button id="stopService" type="button">Stop</button>
             </div>
+            <span id="runtimeStatus" class="view-status" role="status"></span>
           </form>
           <section class="panel">
             <h2>Runtime Proof</h2>

@@ -2,6 +2,9 @@ const state = {
   me: null,
   selectedEntry: null,
   selectedBundle: null,
+  runtimeEntries: [],
+  runtimeEntry: null,
+  refreshTimer: null,
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -57,6 +60,18 @@ function showError(error) {
   showToast(error.message || String(error));
 }
 
+function setStatus(name, message, error = false) {
+  const node = $(`#${name}Status`);
+  if (!node) return;
+  node.textContent = message;
+  node.classList.toggle("error", error);
+}
+
+function markRefreshed(name, count) {
+  const suffix = count === undefined ? "" : ` (${count})`;
+  setStatus(name, `Updated ${new Date().toLocaleTimeString()}${suffix}`);
+}
+
 function renderJson(node, payload) {
   node.textContent = JSON.stringify(payload, null, 2);
 }
@@ -72,7 +87,7 @@ function entryVersions(entryDetail) {
 
 function latestVersion(entryDetail) {
   const versions = entryVersions(entryDetail);
-  return versions.length ? versions[versions.length - 1] : null;
+  return versions.length ? versions[versions.length - 1] : entryDetail.version || null;
 }
 
 function entryStatus(entryDetail) {
@@ -96,6 +111,15 @@ function statusMessage(entryDetail) {
   return "";
 }
 
+function entryLabel(entryDetail) {
+  const entry = entryDetail.entry || entryDetail;
+  const version = latestVersion(entryDetail);
+  const display = entry.display_name || entry.name;
+  const versionText = version?.version ? ` v${version.version}` : "";
+  const typeText = entry.type === "notebook_service" ? "service" : "function";
+  return `${display}${versionText} (${typeText})`;
+}
+
 function entryCard(entryDetail, { review = false } = {}) {
   const entry = entryDetail.entry || entryDetail;
   const article = document.createElement("article");
@@ -109,8 +133,10 @@ function entryCard(entryDetail, { review = false } = {}) {
           <span>${escapeHtml(entry.name)}</span>
           <span>${escapeHtml(entry.type)}</span>
           <span class="${statusClass(status)}">${escapeHtml(status)}</span>
+          <span>project ${escapeHtml(entry.project_id || "default")}</span>
           <span>owner ${escapeHtml(entry.owner || "unknown")}</span>
           ${version ? `<span>v${version.version}</span>` : ""}
+          ${version?.source_hash ? `<span>${escapeHtml(String(version.source_hash).slice(0, 12))}</span>` : ""}
         </div>
       </div>
       <button type="button" data-action="detail">Detail</button>
@@ -156,11 +182,7 @@ function renderEntryActions(node, entryDetail, { review = false } = {}) {
   }
   if (status === "published") {
     buttons.push(
-      actionButton("Use", () => {
-        $("#runtimeName").value = entry.name;
-        $("#runtimeType").value = entry.type;
-        switchTab("runtime");
-      }, "primary"),
+      actionButton("Use", () => selectRuntimeEntry(entry.id), "primary"),
       actionButton("Copy Notebook Cell", () => copyNotebookCell(entryDetail)),
     );
     if (state.me?.is_admin) {
@@ -196,48 +218,67 @@ function actionButton(label, handler, className = "") {
 }
 
 async function loadDirectory() {
-  const params = new URLSearchParams({ status: "published", limit: "50" });
+  setStatus("directory", "Loading...");
+  const params = new URLSearchParams({ status: "published", limit: "100" });
   const q = $("#directoryQuery").value.trim();
   const type = $("#directoryType").value;
   if (q) params.set("q", q);
   if (type) params.set("type", type);
-  const published = await api(`/directory/entries?${params.toString()}`);
-  const items = [...(published.items || [])];
-  if (state.me?.is_admin) {
-    const approvedParams = new URLSearchParams(params);
-    approvedParams.set("status", "approved");
-    const approved = await api(`/directory/entries?${approvedParams.toString()}`);
-    items.push(...(approved.items || []));
+  try {
+    const published = await api(`/directory/entries?${params.toString()}`);
+    const items = [...(published.items || [])];
+    if (state.me?.is_admin) {
+      const approvedParams = new URLSearchParams(params);
+      approvedParams.set("status", "approved");
+      const approved = await api(`/directory/entries?${approvedParams.toString()}`);
+      items.push(...(approved.items || []));
+    }
+    const merged = mergeItems(items);
+    renderList($("#directoryList"), merged);
+    markRefreshed("directory", merged.length);
+  } catch (error) {
+    setStatus("directory", error.message || String(error), true);
+    throw error;
   }
-  renderList($("#directoryList"), mergeItems(items));
 }
 
 async function loadMine() {
-  const payload = await api("/directory/entries?status=all&limit=100");
-  const mine = (payload.items || []).filter((item) => item.entry.owner === state.me.user);
-  renderList($("#mineList"), mine);
+  setStatus("mine", "Loading...");
+  try {
+    const payload = await api("/directory/entries?status=all&limit=500");
+    const mine = (payload.items || []).filter((item) => item.entry.owner === state.me.user);
+    renderList($("#mineList"), mine);
+    markRefreshed("mine", mine.length);
+  } catch (error) {
+    setStatus("mine", error.message || String(error), true);
+    throw error;
+  }
 }
 
 async function loadReview() {
   $("#reviewHint").textContent = state.me?.is_admin
     ? "Pending entries are ready for approval; approved entries are ready for publication; retired entries can be permanently deleted."
     : "Review actions are available only to directory admins.";
-  const [pending, approved, rejected, retired] = await Promise.all([
-    api("/directory/entries?status=pending_review&limit=100"),
-    api("/directory/entries?status=approved&limit=100"),
-    api("/directory/entries?status=rejected&limit=100"),
-    api("/directory/entries?status=retired&limit=100"),
-  ]);
-  renderList(
-    $("#reviewList"),
-    mergeItems([
+  setStatus("review", "Loading...");
+  try {
+    const [pending, approved, rejected, retired] = await Promise.all([
+      api("/directory/entries?status=pending_review&limit=100"),
+      api("/directory/entries?status=approved&limit=100"),
+      api("/directory/entries?status=rejected&limit=100"),
+      api("/directory/entries?status=retired&limit=100"),
+    ]);
+    const items = mergeItems([
       ...(pending.items || []),
       ...(approved.items || []),
       ...(rejected.items || []),
       ...(retired.items || []),
-    ]),
-    { review: true },
-  );
+    ]);
+    renderList($("#reviewList"), items, { review: true });
+    markRefreshed("review", items.length);
+  } catch (error) {
+    setStatus("review", error.message || String(error), true);
+    throw error;
+  }
 }
 
 function mergeItems(items) {
@@ -248,6 +289,19 @@ function mergeItems(items) {
   return [...byId.values()].sort((left, right) =>
     String(right.entry.updated_at || "").localeCompare(String(left.entry.updated_at || "")),
   );
+}
+
+async function loadRuntimeEntries({ preserveSelection = true } = {}) {
+  setStatus("runtime", "Loading published entries...");
+  try {
+    const payload = await api("/directory/entries?status=published&limit=500");
+    state.runtimeEntries = payload.items || [];
+    renderRuntimeSelect(preserveSelection);
+    markRefreshed("runtime", state.runtimeEntries.length);
+  } catch (error) {
+    setStatus("runtime", error.message || String(error), true);
+    throw error;
+  }
 }
 
 function renderList(node, items, options = {}) {
@@ -266,9 +320,11 @@ function renderList(node, items, options = {}) {
 async function loadEntry() {
   const id = $("#entryIdInput").value.trim();
   if (!id) throw new Error("Entry ID is required");
+  setStatus("detail", "Loading...");
   const detail = await api(`/directory/entries/${encodeURIComponent(id)}`);
   state.selectedEntry = detail;
   renderEntryDetail(detail);
+  markRefreshed("detail");
 }
 
 function renderEntryDetail(detail) {
@@ -295,6 +351,7 @@ function renderEntryDetail(detail) {
 async function validateEntry(id) {
   const payload = await jsonPost(`/directory/entries/${encodeURIComponent(id)}/validate`, {
     require_success: true,
+    timeout_seconds: 180,
   });
   showToast("Validation complete");
   await refreshActiveLists();
@@ -449,7 +506,69 @@ async function submitBundle() {
   state.selectedEntry = payload;
   $("#entryIdInput").value = payload.entry.id;
   showToast("Draft submitted");
-  await loadMine();
+  await refreshActiveLists();
+}
+
+function renderRuntimeSelect(preserveSelection) {
+  const select = $("#runtimeEntrySelect");
+  const previous = preserveSelection ? select.value : "";
+  select.replaceChildren();
+  if (!state.runtimeEntries.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No published goblins available";
+    select.append(option);
+    state.runtimeEntry = null;
+    renderRuntimeSelection();
+    return;
+  }
+  for (const item of state.runtimeEntries) {
+    const entry = item.entry;
+    const option = document.createElement("option");
+    option.value = entry.id;
+    option.textContent = entryLabel(item);
+    select.append(option);
+  }
+  const nextValue = state.runtimeEntries.some((item) => item.entry.id === previous)
+    ? previous
+    : state.runtimeEntries[0].entry.id;
+  select.value = nextValue;
+  selectRuntimeEntry(nextValue, { switchToRuntime: false });
+}
+
+function selectRuntimeEntry(entryId, { switchToRuntime = true } = {}) {
+  const detail = state.runtimeEntries.find((item) => item.entry.id === entryId) || null;
+  state.runtimeEntry = detail;
+  $("#runtimeEntrySelect").value = detail?.entry.id || "";
+  renderRuntimeSelection();
+  if (switchToRuntime) switchTab("runtime");
+}
+
+function renderRuntimeSelection() {
+  const detail = state.runtimeEntry;
+  const summary = $("#runtimeSelectedSummary");
+  const functionButton = $("#runFunction");
+  const serviceButtons = [$("#startService"), $("#probeService"), $("#proxyService"), $("#stopService")];
+  if (!detail) {
+    summary.textContent = "No published goblin selected.";
+    functionButton.disabled = true;
+    serviceButtons.forEach((button) => {
+      button.disabled = true;
+    });
+    return;
+  }
+  const entry = detail.entry;
+  const version = latestVersion(detail);
+  summary.innerHTML = `
+    <strong>${escapeHtml(entry.display_name || entry.name)}</strong>
+    <span>${escapeHtml(entry.name)} - ${escapeHtml(entry.type)} - project ${escapeHtml(entry.project_id || "default")}${version ? ` - v${version.version}` : ""}</span>
+    <span>${(entry.tags || []).map((tag) => escapeHtml(tag)).join(", ")}</span>
+  `;
+  const isFunction = entry.type === "notebook_function";
+  functionButton.disabled = !isFunction;
+  serviceButtons.forEach((button) => {
+    button.disabled = isFunction;
+  });
 }
 
 function runtimeInput() {
@@ -462,47 +581,58 @@ function runtimeInput() {
   }
 }
 
-function runtimeName() {
-  const name = $("#runtimeName").value.trim();
-  if (!name) throw new Error("Goblin name is required");
-  return encodeURIComponent(name);
+function requireRuntimeEntry(expectedType) {
+  const detail = state.runtimeEntry;
+  if (!detail) throw new Error("Choose a published goblin first");
+  if (expectedType && detail.entry.type !== expectedType) {
+    throw new Error(`Selected goblin is ${detail.entry.type}, not ${expectedType}`);
+  }
+  return detail.entry;
 }
 
 async function runFunction() {
-  const payload = await jsonPost(`/directory/functions/${runtimeName()}/run`, {
+  const entry = requireRuntimeEntry("notebook_function");
+  const payload = await jsonPost(`/directory/functions/${encodeURIComponent(entry.name)}/run`, {
     input: runtimeInput(),
   });
   renderJson($("#runtimeOutput"), payload);
   showToast(`Queued job ${payload.job?.id || ""}`.trim());
+  await refreshActiveLists();
 }
 
 async function startService() {
-  const payload = await jsonPost(`/directory/services/${runtimeName()}/start`, {});
+  const entry = requireRuntimeEntry("notebook_service");
+  const payload = await jsonPost(`/directory/services/${encodeURIComponent(entry.name)}/start`, {});
   renderJson($("#runtimeOutput"), payload);
   showToast("Service started");
+  await refreshActiveLists();
 }
 
 async function probeService() {
-  const payload = await jsonPost(`/directory/services/${runtimeName()}/probe`, {});
+  const entry = requireRuntimeEntry("notebook_service");
+  const payload = await jsonPost(`/directory/services/${encodeURIComponent(entry.name)}/probe`, {});
   renderJson($("#runtimeOutput"), payload);
   showToast("Probe complete");
 }
 
 async function proxyService() {
+  const entry = requireRuntimeEntry("notebook_service");
   const path = $("#runtimeProxyPath").value.trim().replace(/^\/+/, "");
-  const payload = await api(`/directory/services/${runtimeName()}/proxy/${path}`);
+  const payload = await api(`/directory/services/${encodeURIComponent(entry.name)}/proxy/${path}`);
   renderJson($("#runtimeOutput"), payload);
   showToast("Proxy call complete");
 }
 
 async function stopService() {
-  const payload = await jsonPost(`/directory/services/${runtimeName()}/stop`, {});
+  const entry = requireRuntimeEntry("notebook_service");
+  const payload = await jsonPost(`/directory/services/${encodeURIComponent(entry.name)}/stop`, {});
   renderJson($("#runtimeOutput"), payload);
   showToast("Service stopped");
+  await refreshActiveLists();
 }
 
 async function refreshActiveLists() {
-  await Promise.allSettled([loadDirectory(), loadMine(), loadReview()]);
+  await Promise.allSettled([loadDirectory(), loadMine(), loadReview(), loadRuntimeEntries()]);
 }
 
 function escapeHtml(value) {
@@ -531,6 +661,7 @@ async function init() {
   $("#refreshMine").addEventListener("click", () => loadMine().catch(showError));
   $("#refreshReview").addEventListener("click", () => loadReview().catch(showError));
   $("#loadEntry").addEventListener("click", () => loadEntry().catch(showError));
+  $("#runtimeEntrySelect").addEventListener("change", (event) => selectRuntimeEntry(event.target.value));
   $("#runFunction").addEventListener("click", () => runFunction().catch(showError));
   $("#startService").addEventListener("click", () => startService().catch(showError));
   $("#probeService").addEventListener("click", () => probeService().catch(showError));
@@ -539,6 +670,9 @@ async function init() {
   $("#closeSnippet").addEventListener("click", closeSnippet);
   $("#copySnippetAgain").addEventListener("click", () => copySnippetAgain().catch(showError));
   await refreshActiveLists();
+  state.refreshTimer = window.setInterval(() => {
+    refreshActiveLists().catch(showError);
+  }, 15000);
 }
 
 init().catch(showError);
