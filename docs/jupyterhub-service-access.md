@@ -281,6 +281,13 @@ that configured package with `--no-deps` and clear cached imports before loading
 the helper, so uploaded notebooks match the running stack instead of a stale user
 site package.
 
+When the stack is rebuilt locally with the Directory picker enabled, the proof image
+preparation also builds a `goblin-king-directory-singleuser:<tag>` image. That
+single-user image installs the notebook helper, enables the Jupyter Server
+`/goblin-directory/api/...` proxy, and installs the JupyterLab Goblin Directory panel.
+Users can open the panel in JupyterLab to select published function or service goblins
+from a dropdown and launch them as their own Hub identity.
+
 Install the default Hub and Goblin King together:
 
 ```bash
@@ -618,6 +625,7 @@ curl -X POST http://goblin-king.default.example/services/long-running \
 | Project access denied | Hub group did not map to the service project. | Add the group to `projectGroups` or set `defaultProjectId`. |
 | `ModuleNotFoundError: goblin_king` in a notebook | The single-user image does not include the helper package and cannot install it. | Set `GOBLIN_KING_NOTEBOOK_PACKAGE`, preinstall the package in the notebook image, or use the workbook install cell. |
 | `GoblinKingNotebookClient.__init__()` rejects `repository_url` | The notebook installed an older helper package than the running stack expects. | Rebuild the stack with `JUPYTERHUB_NOTEBOOK_PACKAGE=git+https://github.com/tashabits/goblin-king.git@develop`, or upload the latest repository workbook and rerun its first cell. |
+| The Goblin Directory panel is missing in JupyterLab | The user server is using the default single-user image. | Rebuild with `JUPYTERHUB_STACK_REBUILD=1 GOBLIN_DIRECTORY_PICKER_ENABLED=1` so the local `goblin-king-directory-singleuser:<tag>` image is built and configured. |
 | Notebook install/import cell stays at `[*]` for a long time | The notebook is installing from GitHub in the running kernel. | Use `workbook-launch-branch.ipynb`, which installs quietly with `--no-deps`; restart the kernel once after a failed install/import attempt. |
 | `kubectl port-forward` reports `lost connection to pod` while browsing JupyterHub | The local tunnel to the Hub proxy was reset or the proxy pod restarted. | Start the port-forward again with `kubectl port-forward -n default svc/proxy-public 8080:http`, then refresh JupyterLab. |
 | Notebook validation says runner image is unavailable | `config.notebookFunctionImage` is not present on the scheduler node or registry. | Build/push/load `goblin-king-notebook-python-function:local` or point `config.notebookFunctionImage` to a pullable image. |

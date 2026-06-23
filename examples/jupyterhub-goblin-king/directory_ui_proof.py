@@ -37,6 +37,7 @@ def main() -> None:
             [
                 "GOBLIN_DIRECTORY_ENABLED=1",
                 "GOBLIN_DIRECTORY_UI_ENABLED=1",
+                "GOBLIN_DIRECTORY_PICKER_ENABLED=0",
                 f"JUPYTERHUB_STACK_IMAGE_TAG={tag}",
                 f"JUPYTERHUB_WORKBOOK_USER_TOKEN={args.alice_token}",
                 f"JUPYTERHUB_WORKBOOK_ALICE_TOKEN={args.alice_token}",
@@ -87,8 +88,23 @@ def main() -> None:
             bob,
             _service_bundle(args.service_name),
         )["entry"]
+        bob_mine = _ui_json(proxy_url, bob, "GET", "/directory/entries?status=all&limit=100")
+        bob_names = {item["entry"]["name"] for item in bob_mine["items"]}
+        if args.function_name not in bob_names or args.service_name not in bob_names:
+            raise RuntimeError(
+                f"bob could not see submitted entries in My Submissions: {bob_names}"
+            )
         _validate_and_request_review(proxy_url, bob, function_entry["id"])
         _validate_and_request_review(proxy_url, bob, service_entry["id"])
+        alice_review = _ui_json(
+            proxy_url,
+            alice,
+            "GET",
+            "/directory/entries?status=pending_review&limit=100",
+        )
+        review_names = {item["entry"]["name"] for item in alice_review["items"]}
+        if args.function_name not in review_names or args.service_name not in review_names:
+            raise RuntimeError(f"alice could not see pending review entries: {review_names}")
         _approve_and_publish(proxy_url, alice, function_entry["id"])
         _approve_and_publish(proxy_url, alice, service_entry["id"])
 

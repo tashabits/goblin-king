@@ -98,6 +98,8 @@ def test_repository_operator_docs_cover_stack_enablement() -> None:
     assert "make jupyterhub-directory-proof" in repository_doc
     assert "client.run_directory_function" in repository_doc
     assert "client.directory_service" in repository_doc
+    assert "JupyterLab Goblin Directory Picker" in repository_doc
+    assert "published entries in a dropdown" in repository_doc
     assert "Non-admin callers cannot request another `project_id`" in repository_doc
     assert "## Directory Scope" in repository_doc
     assert "belongs to one Goblin King deployment" in repository_doc
@@ -119,3 +121,5 @@ def test_jupyterhub_docs_cover_repository_proof_users() -> None:
     assert "configured function runner container" in hub_doc_flat
     assert "configured service runner container" in hub_doc_flat
     assert "deployment-local" in hub_doc
+    assert "goblin-king-directory-singleuser" in hub_doc
+    assert "/goblin-directory/api/..." in hub_doc
