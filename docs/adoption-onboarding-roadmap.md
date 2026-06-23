@@ -40,13 +40,20 @@ submits a job through the admin-proxied API, waits for the scheduler run, and
 prints the admin URL plus `goblin-king demo down` cleanup command.
 
 `goblin-king doctor` checks local prerequisites and current stack state with
-pass/warn/fail output and repair commands.
+pass/warn/fail output and repair commands. It also accepts `--runtime docker`,
+`--runtime kubernetes`, or `--runtime both` so local Docker adoption and
+cluster-backed worker adoption can be diagnosed from the same command.
 
 ## Adoption Phase 2: Better First-Error Experience
 
-Partially implemented by `goblin-king doctor` for missing Docker, unavailable
-Redis, invalid project config, missing worker image coverage, validation proof,
-and admin/API reachability problems.
+Implemented by `goblin-king doctor` for missing Docker, unavailable Redis,
+invalid project config, missing worker image coverage, validation proof,
+effective resource policy, schedule readiness, Docker socket posture,
+placement/runtime mismatch, and admin/API reachability problems.
+
+Optional Kubernetes and Helm checks let a generic RAG-system stack verify the
+worker backbone before moving heavier ingest, retrieval, evaluation, or
+artifact-producing jobs onto node pools or hardware-specific workers.
 
 Errors should include the likely cause, the repair command or doc link, and the
 next verification step.
@@ -73,7 +80,10 @@ applicable, event visibility, heartbeat visibility, and validation status.
 ## Adoption Phase 5: Closeout And Adoption Docs
 
 Close out onboarding work by updating README, adopter docs, screenshots,
-troubleshooting guidance, proof table, and roadmap status.
+troubleshooting guidance, proof table, and roadmap status. The deterministic
+`make diagnostics-placement-proof` target is available for the doctor and
+placement slice; live Docker, admin, Helm, and JupyterHub proofs remain
+environment-dependent checks.
 
 Closeout proof should show the happy path, the first-error path, and the admin
 proof path on a clean checkout.

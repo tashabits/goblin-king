@@ -37,6 +37,7 @@ cd admin-ui && npm run build
 ```bash
 make worker-backbone-proof
 make rag-profile-proof
+make diagnostics-placement-proof
 make project-validate
 make project-build-workers
 make project-discovery-reload
@@ -59,6 +60,11 @@ Run heavier runtime proofs when the release changes worker runtime behavior, not
 runner behavior, JupyterHub auth, or Directory flows:
 
 ```bash
+python -m goblin_king.cli doctor --runtime both --json
+python -m goblin_king.cli doctor \
+  --runtime kubernetes \
+  --helm-values examples/adopting-project/helm-values.yaml \
+  --json
 make validate-cross-language-workers
 make validate-behavior-workers
 make notebook-service-docker-proof
@@ -76,6 +82,9 @@ make jupyterhub-directory-picker-proof
 - Generic worker-backbone proof output.
 - RAG profile proof output, including whether the bundled local fixture or a private
   RAG profile was used.
+- Diagnostics and placement proof output.
+- Doctor output for the target runtime, including resource policy, validation
+  coverage, schedule readiness, and placement/runtime checks.
 - Local CI output.
 - Docker adoption smoke output.
 - Helm render or live Helm smoke output.

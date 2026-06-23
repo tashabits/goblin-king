@@ -2,8 +2,9 @@
 
 This roadmap describes future work for evolving Goblin King from its current
 project-adoptable scheduler model into Kubernetes placement and, later,
-geographically distributed or federated execution. It is a planning document,
-not an implemented feature.
+geographically distributed or federated execution. Single-cluster project
+placement for Kubernetes worker Jobs is now implemented; federation remains
+planning-only.
 
 Core principles:
 
@@ -39,8 +40,14 @@ resource policies, and result/artifact model. It must not replace them.
 - Docker Compose and local Docker remain the local development path and do not
   support geographic placement.
 - Kubernetes and Helm are the natural future runtime path for placement because
-  Jobs and Pods can use node labels, node selectors, affinity, tolerations, node
-  pools, and zone-aware scheduling.
+  Jobs and Pods can use node labels, node selectors, affinity, node pools, and
+  zone-aware scheduling.
+- Project goblins can now declare single-cluster placement intent with
+  `placement.required` and `placement.preferred` label maps.
+- The Kubernetes runtime maps `required` labels to `nodeSelector` and
+  `preferred` labels to node affinity preferences for worker Jobs.
+- Docker Compose and local Docker ignore placement; doctor warns when placement
+  exists but Docker-only diagnostics are selected.
 - Single-cluster placement can target node pools, zones, hardware pools,
   dedicated worker pools, or labeled probe pools inside one Kubernetes cluster.
 - True Tokyo-to-LA style geography usually requires multiple clusters, remote
@@ -69,19 +76,18 @@ resource policies, and result/artifact model. It must not replace them.
 
 ## Placement Phase 1: Single-Cluster Kubernetes Placement Model
 
-Plan a future design for running Goblin King in one Kubernetes cluster and
-creating goblin Jobs or Pods with placement rules.
+Implemented for project-defined worker Jobs in one Kubernetes cluster.
 
 This should support node pools, zones, labeled probe nodes, hardware-specific
 nodes, dedicated worker pools, and regional or multi-zone clusters where the
 cluster provider supports them.
 
-Future placement intent might look like:
+Placement intent looks like:
 
 ```yaml
 placement:
   required:
-    goblin-king.io/pool: measurement-tokyo
+    goblin-king.io/pool: rag-workers
 ```
 
 or:
@@ -89,37 +95,42 @@ or:
 ```yaml
 placement:
   required:
+    goblin-king.io/accelerator: gpu
+  preferred:
     goblin-king.io/zone: us-west1-a
 ```
 
-These examples are future design sketches, not current supported config.
+The same model can support RAG-system workers that need a GPU pool, a larger
+memory pool, or a labeled batch-worker pool without making RAG the scheduling
+abstraction.
 
 ## Placement Phase 2: Project Config Placement Fields
 
-Plan future placement fields in project config. Placement should be scheduling
-metadata, not part of the goblin container contract.
+Implemented for project goblins. Placement is scheduling metadata, not part of
+the goblin container contract.
 
-A future project goblin might eventually express placement intent like:
+A project goblin can express placement intent like:
 
 ```yaml
 goblins:
-  tokyo-probe:
-    image: example/network-probe:local
+  rag-retrieve:
+    image: example/rag-retrieve:local
     placement:
       required:
-        goblin-king.io/city: tokyo
+        goblin-king.io/pool: rag-workers
       preferred:
-        goblin-king.io/provider: gke
+        goblin-king.io/accelerator: gpu
 ```
 
-Field names are future design examples and must align with project config
-versioning when implemented.
+Only `required` and `preferred` label maps are accepted in the first pass.
+Raw pod spec fields, tolerations, and arbitrary Kubernetes fragments are
+rejected by project config validation.
 
 ## Placement Phase 3: Placement Validation And Allowlisted Labels
 
-Plan validation for placement requests before scheduling. Future validation
-should cover allowed placement label keys, allowed values where practical,
-runtime support, and whether a requested selector can be accepted safely.
+Implemented for project config shape. Validation covers Kubernetes-style label
+keys and non-empty string values. Doctor reports when placement exists but the
+selected runtime diagnostics are Docker-only.
 
 Future errors should be clear, for example:
 
@@ -129,30 +140,24 @@ Runtime: docker
 Requested placement: goblin-king.io/city=tokyo
 ```
 
-or:
-
-```text
-No Kubernetes nodes match requested placement.
-Selector: goblin-king.io/city=tokyo
-```
-
-Placement validation must be separate from container contract validation, and
-both must pass before scheduling.
+Live node-match validation remains future work because it depends on a reachable
+cluster and cluster-specific label policy.
 
 ## Placement Phase 4: Kubernetes Runtime Mapping
 
-Plan future mapping from placement policy to Kubernetes primitives:
+Implemented mapping from placement policy to Kubernetes primitives:
 
 - `nodeSelector`
 - `nodeAffinity`
 - `preferredDuringSchedulingIgnoredDuringExecution`
-- tolerations for dedicated pools
-- labels and annotations for run traceability
 - resource requests and limits from effective resource policy
 - active deadline and timeout mapping where already modeled
 
 Raw pod spec injection should remain out of scope for the first placement pass.
 Placement chooses nodes; effective resource policy controls consumption.
+
+Tolerations, placement annotations, and resolved node visibility remain future
+work.
 
 ## Placement Phase 5: Placement Visibility In CLI And Admin
 
@@ -315,10 +320,11 @@ without implying untrusted public execution or production multi-tenant safety.
 
 ## Non-Goals
 
-- No implementation in this roadmap document.
 - No federation in the current local Docker path.
 - No Docker Compose geographic placement.
 - No raw pod spec injection.
+- No tolerations in the first placement pass.
+- No live node inventory or node-match guarantee in the first placement pass.
 - No bypass of the validation gate.
 - No bypass of resource policies or global ceilings.
 - No untrusted third-party container execution.
@@ -341,4 +347,5 @@ without implying untrusted public execution or production multi-tenant safety.
 - The roadmap provides a phased path from node-pool placement to geographic
   federation.
 - Non-goals and safety guardrails are explicit.
-- No implementation code or behavior changes are introduced by this roadmap.
+- The implemented first placement pass remains bounded to single-cluster
+  Kubernetes worker Jobs.

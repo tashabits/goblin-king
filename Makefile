@@ -98,7 +98,7 @@ HELM_OPTIONAL_DIRECTORY_UI_ARGS = $(if $(filter 1 true yes,$(GOBLIN_DIRECTORY_UI
 JUPYTERHUB_OPTIONAL_DIRECTORY_UI_ARGS = $(if $(filter 1 true yes,$(GOBLIN_DIRECTORY_UI_ENABLED)),$(JUPYTERHUB_DIRECTORY_UI_ARGS),)
 JUPYTERHUB_OPTIONAL_DIRECTORY_PICKER_ARGS = $(if $(filter 1 true yes,$(GOBLIN_DIRECTORY_PICKER_ENABLED)),$(JUPYTERHUB_DIRECTORY_PICKER_ARGS),)
 
-.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean notebook-service-docker-proof jupyterhub-stack-up jupyterhub-stack-down jupyterhub-up jupyterhub-down jupyterhub-seed-workbooks jupyterhub-workbook-proof jupyterhub-directory-proof jupyterhub-repository-proof jupyterhub-directory-ui-proof jupyterhub-directory-picker-proof helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit doctor demo demo-down project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel worker-backbone-proof rag-profile-proof release-check helm-template helm-admin-smoke kind-smoke clean clean-all docker-clean
+.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean notebook-service-docker-proof jupyterhub-stack-up jupyterhub-stack-down jupyterhub-up jupyterhub-down jupyterhub-seed-workbooks jupyterhub-workbook-proof jupyterhub-directory-proof jupyterhub-repository-proof jupyterhub-directory-ui-proof jupyterhub-directory-picker-proof helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit doctor demo demo-down project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel worker-backbone-proof rag-profile-proof diagnostics-placement-proof release-check helm-template helm-admin-smoke kind-smoke clean clean-all docker-clean
 
 help:
 	@echo "Targets:"
@@ -162,6 +162,7 @@ help:
 	@echo "  release-wheel  Build the internal wheel into DIST"
 	@echo "  worker-backbone-proof Run static generic portable worker backbone release proof"
 	@echo "  rag-profile-proof Run static RAG profile shape proof; override RAG_PROFILE_PROJECT for a real profile"
+	@echo "  diagnostics-placement-proof Run deterministic doctor and placement proof tests"
 	@echo "  release-check  Run local release/adoption proof commands"
 	@echo "  helm-template  Render the optional Helm chart"
 	@echo "  helm-admin-smoke Exercise Helm React admin through goblin-king.local"
@@ -364,7 +365,11 @@ rag-profile-proof:
 	$(PYTHON) -m pytest tests/test_worker_backbone_examples.py -k rag
 	helm template $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE) $(RAG_PROFILE_HELM_VALUES_ARG) $(HELM_ARGS) $(HELM_EXTRA_ARGS)
 
-release-check: local-ci worker-backbone-proof rag-profile-proof helm-template
+diagnostics-placement-proof:
+	$(PYTHON) -m pytest tests/test_demo_doctor.py tests/test_project.py tests/test_runtime.py
+	$(PYTHON) -m ruff check src/goblin_king/doctor.py src/goblin_king/project.py src/goblin_king/runtime.py src/goblin_king/cli.py tests/test_demo_doctor.py tests/test_project.py tests/test_runtime.py
+
+release-check: local-ci diagnostics-placement-proof worker-backbone-proof rag-profile-proof helm-template
 	cd admin-ui && npm test -- --run
 	cd admin-ui && npm run build
 

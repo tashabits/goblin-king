@@ -1,8 +1,9 @@
 # Demo And Doctor Roadmap
 
 This roadmap describes one-command demo and diagnostic flows for Goblin King.
-The first local Docker/admin slice is implemented; deeper diagnostic categories
-remain planned follow-up work.
+The first local Docker/admin slice and expanded integration diagnostics are
+implemented; remaining follow-up work is documentation polish, screenshots, and
+deeper environment-specific troubleshooting.
 
 Mental model:
 
@@ -54,17 +55,29 @@ The demo must validate generated or referenced images before scheduling them.
 ## Doctor Phase 1: Environment Checks
 
 Implemented for Python import, Docker availability, Docker daemon, Docker
-Compose, Redis reachability, and admin/API readiness. Docker socket posture,
-npm/admin build prerequisites, filesystem storage, and optional Helm tool checks
-remain future follow-up.
+Compose, Docker socket posture, Redis reachability, admin/API readiness,
+Kubernetes client tooling, and optional Helm rendering.
+
+`goblin-king doctor` defaults to Docker diagnostics. Use
+`--runtime kubernetes` or `--runtime both` when diagnosing a cluster-backed
+worker path, and add `--helm-values <path>` when a local chart render should be
+part of the proof.
+
+npm/admin build prerequisites and filesystem storage checks remain future
+follow-up.
 
 Checks should report pass, warning, or failure with repair guidance.
 
 ## Doctor Phase 2: Project And Validation Checks
 
 Implemented for project config shape, image map coverage, Dockerfile presence,
-and validation status. Resolved image identity freshness, effective resource
-policy detail, and schedule readiness remain future follow-up.
+validation status, selected-runtime image validation coverage, effective
+resource policy detail, schedule readiness, and placement/runtime guidance.
+
+The resource-policy check can layer project defaults and operator policies by
+passing `--resource-policies <path>`. This is useful for generic RAG-system
+stacks where ingest, retrieval, evaluation, report, or service workers may have
+different memory, filesystem, network, timeout, or retry expectations.
 
 Doctor should explain that validation proves contract compliance, not whether an
 image is safe to trust.
@@ -97,6 +110,9 @@ one intentionally broken environment or project setting.
 
 - Demo work has a clear happy-path proof target.
 - Doctor work has clear diagnostic categories and repair-output goals.
+- `make diagnostics-placement-proof` covers the deterministic doctor and
+  placement tests without requiring Docker, Redis, Helm, or Kubernetes to be
+  running.
 - Implemented commands are documented as available, while follow-up checks remain
   explicitly future work.
 - Docker socket and validation limitations remain explicit.
