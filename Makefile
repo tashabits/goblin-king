@@ -14,6 +14,14 @@ LONG_HELLO_URL ?= http://long-hello:8080
 HOST_PROJECT ?= examples/adopting-project
 PROJECT ?= $(HOST_PROJECT)/goblin-king-project.json
 PROJECT_IMAGES ?= $(HOST_PROJECT)/goblin-images.json
+WORKER_BACKBONE_PROJECT ?= examples/worker-backbone/goblin-king-project.json
+WORKER_BACKBONE_HELM_VALUES ?=
+WORKER_BACKBONE_HELM_VALUES_ARG = $(if $(WORKER_BACKBONE_HELM_VALUES),-f $(WORKER_BACKBONE_HELM_VALUES),)
+RAG_PROFILE_PROJECT ?= $(WORKER_BACKBONE_PROJECT)
+RAG_PROFILE_HELM_VALUES ?= $(WORKER_BACKBONE_HELM_VALUES)
+RAG_PROFILE_HELM_VALUES_ARG = $(if $(RAG_PROFILE_HELM_VALUES),-f $(RAG_PROFILE_HELM_VALUES),)
+RAG_PROFILE_KIND ?= example.worker-backbone.local-rag
+RAG_PROFILE_RESOURCE_POLICIES ?= examples/worker-backbone/goblin-resource-policies.json
 ADMIN_BASE ?= http://127.0.0.1:8080
 ADMIN_TOKEN ?= local-dev-token
 DIST ?= dist
@@ -90,7 +98,7 @@ HELM_OPTIONAL_DIRECTORY_UI_ARGS = $(if $(filter 1 true yes,$(GOBLIN_DIRECTORY_UI
 JUPYTERHUB_OPTIONAL_DIRECTORY_UI_ARGS = $(if $(filter 1 true yes,$(GOBLIN_DIRECTORY_UI_ENABLED)),$(JUPYTERHUB_DIRECTORY_UI_ARGS),)
 JUPYTERHUB_OPTIONAL_DIRECTORY_PICKER_ARGS = $(if $(filter 1 true yes,$(GOBLIN_DIRECTORY_PICKER_ENABLED)),$(JUPYTERHUB_DIRECTORY_PICKER_ARGS),)
 
-.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean notebook-service-docker-proof jupyterhub-stack-up jupyterhub-stack-down jupyterhub-up jupyterhub-down jupyterhub-seed-workbooks jupyterhub-workbook-proof jupyterhub-directory-proof jupyterhub-repository-proof jupyterhub-directory-ui-proof jupyterhub-directory-picker-proof helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit doctor demo demo-down project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel release-check helm-template helm-admin-smoke kind-smoke clean clean-all docker-clean
+.PHONY: help install test lint local-ci build-workers build-cross-language-workers run-cross-language-proof validate-cross-language-workers build-behavior-workers run-behavior-proof validate-behavior-workers admin-build redis-up redis-down deploy docker-up docker-wipe docker-restart-clean notebook-service-docker-proof jupyterhub-stack-up jupyterhub-stack-down jupyterhub-up jupyterhub-down jupyterhub-seed-workbooks jupyterhub-workbook-proof jupyterhub-directory-proof jupyterhub-repository-proof jupyterhub-directory-ui-proof jupyterhub-directory-picker-proof helm-up helm-wipe helm-restart-clean stack-wipe stack-restart-clean run-once schedule simulate events-smoke api api-smoke admin-up long-hello-up long-hello-down admin-smoke admin-runtime-audit doctor demo demo-down project-validate project-build-workers project-discovery-reload project-admin-proof adopter-smoke release-wheel worker-backbone-proof rag-profile-proof release-check helm-template helm-admin-smoke kind-smoke clean clean-all docker-clean
 
 help:
 	@echo "Targets:"
@@ -152,6 +160,8 @@ help:
 	@echo "  project-admin-proof Prove host-project goblins are visible through admin API"
 	@echo "  adopter-smoke  Generate, validate, schedule, run, inspect, and clean adopter goblins"
 	@echo "  release-wheel  Build the internal wheel into DIST"
+	@echo "  worker-backbone-proof Run static generic portable worker backbone release proof"
+	@echo "  rag-profile-proof Run static RAG profile shape proof; override RAG_PROFILE_PROJECT for a real profile"
 	@echo "  release-check  Run local release/adoption proof commands"
 	@echo "  helm-template  Render the optional Helm chart"
 	@echo "  helm-admin-smoke Exercise Helm React admin through goblin-king.local"
@@ -341,7 +351,20 @@ adopter-smoke: redis-up
 release-wheel:
 	$(PYTHON) -m pip wheel . -w $(DIST)
 
-release-check: local-ci project-validate helm-template
+worker-backbone-proof:
+	$(PYTHON) -m goblin_king.cli project validate --project $(WORKER_BACKBONE_PROJECT)
+	$(PYTHON) -m goblin_king.cli project goblins list --project $(WORKER_BACKBONE_PROJECT)
+	$(PYTHON) -m pytest tests/test_worker_backbone_examples.py
+	helm template $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE) $(WORKER_BACKBONE_HELM_VALUES_ARG) $(HELM_ARGS) $(HELM_EXTRA_ARGS)
+
+rag-profile-proof:
+	$(PYTHON) -m goblin_king.cli project validate --project $(RAG_PROFILE_PROJECT)
+	$(PYTHON) -m goblin_king.cli project goblins list --project $(RAG_PROFILE_PROJECT)
+	$(PYTHON) -m goblin_king.cli resource-policies inspect $(RAG_PROFILE_KIND) --policies $(RAG_PROFILE_RESOURCE_POLICIES)
+	$(PYTHON) -m pytest tests/test_worker_backbone_examples.py -k rag
+	helm template $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE) $(RAG_PROFILE_HELM_VALUES_ARG) $(HELM_ARGS) $(HELM_EXTRA_ARGS)
+
+release-check: local-ci worker-backbone-proof rag-profile-proof helm-template
 	cd admin-ui && npm test -- --run
 	cd admin-ui && npm run build
 
