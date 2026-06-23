@@ -1,0 +1,10 @@
+{
+  "registry": "registries/worker-backbone.json",
+  "images": "goblin-images.json",
+  "db": ".goblin-king/goblin-king.sqlite3",
+  "redis_url": "redis://localhost:6379/0",
+  "artifact_root": ".goblin-king/artifacts",
+  "resource_policies": null,
+  "project": "goblin-king-project.json"
+}
+

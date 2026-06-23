@@ -95,7 +95,12 @@ from goblin_king.runtime_helpers import docker_policy_args, kubernetes_policy_fi
 from goblin_king.scheduler import DEFAULT_INTERVAL_SECONDS, Scheduler, next_run_after
 from goblin_king.smoke import run_adopter_project_smoke
 from goblin_king.store import DEFAULT_DB_PATH, SQLiteStore
-from goblin_king.templates import TemplateError, init_package, init_project
+from goblin_king.templates import (
+    TemplateError,
+    init_package,
+    init_project,
+    list_project_templates,
+)
 from goblin_king.validation import validate_workers, validation_record
 from goblin_king.workers import WorkerConfigError, WorkerImageDefinition, WorkerImageMap
 
@@ -112,6 +117,7 @@ deploy_promotions_app = typer.Typer(help="Plan and inspect worker image promotio
 demo_app = typer.Typer(help="Run the local Docker admin onboarding demo.")
 project_app = typer.Typer(help="Inspect and scaffold reusable Goblin King projects.")
 project_goblins_app = typer.Typer(help="Inspect project-discovered goblins.")
+project_templates_app = typer.Typer(help="List scaffold project templates.")
 runs_app = typer.Typer(help="Inspect goblin runs.")
 schedules_app = typer.Typer(help="Create and inspect schedules.")
 scheduler_app = typer.Typer(help="Run scheduler passes.")
@@ -130,6 +136,7 @@ deploy_app.add_typer(deploy_promotions_app, name="promotions")
 app.add_typer(deploy_app, name="deploy")
 app.add_typer(demo_app, name="demo")
 project_app.add_typer(project_goblins_app, name="goblins")
+project_app.add_typer(project_templates_app, name="templates")
 app.add_typer(project_app, name="project")
 app.add_typer(runs_app, name="runs")
 app.add_typer(schedules_app, name="schedules")
@@ -375,6 +382,29 @@ def list_project_goblins(
         typer.echo(f"{definition.kind}\t{definition.display_name}")
 
 
+@project_templates_app.command("list")
+def list_project_template_profiles(
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Print machine-readable project template metadata."),
+    ] = False,
+) -> None:
+    """Print available project template profiles."""
+    profiles = list_project_templates()
+    if json_output:
+        typer.echo(
+            pretty_json(
+                [
+                    {"name": profile.name, "description": profile.description}
+                    for profile in profiles
+                ]
+            )
+        )
+        return
+    for profile in profiles:
+        typer.echo(f"{profile.name}\t{profile.description}")
+
+
 @project_app.command("validate")
 def validate_project(
     project: Annotated[
@@ -469,10 +499,14 @@ def init_project_template(
         str,
         typer.Option("--prefix", help="Kind and image prefix for generated goblins."),
     ] = "project",
+    profile: Annotated[
+        str,
+        typer.Option("--profile", help="Generated project template profile."),
+    ] = "basic",
 ) -> None:
     """Generate a standalone adopter project with contract-compliant workers."""
     try:
-        created = init_project(target_dir, prefix=prefix)
+        created = init_project(target_dir, prefix=prefix, profile=profile)
     except TemplateError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(1) from error

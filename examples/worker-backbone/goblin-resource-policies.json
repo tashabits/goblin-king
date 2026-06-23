@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "defaults": {
+    "timeout_seconds": 60,
+    "max_retries": 0,
+    "memory": {
+      "limit": "256Mi"
+    },
+    "network": {
+      "mode": "none"
+    },
+    "filesystem": {
+      "read_only_root": true,
+      "artifact_max_files": 4,
+      "artifact_max_bytes": 65536
+    },
+    "logs": {
+      "max_bytes": 8192
+    }
+  },
+  "goblins": {
+    "example.worker-backbone.artifact-manifest": {
+      "filesystem": {
+        "artifact_max_files": 2,
+        "artifact_max_bytes": 32768
+      }
+    },
+    "example.worker-backbone.catalog-service": {
+      "timeout_seconds": 120,
+      "network": {
+        "mode": "default"
+      },
+      "filesystem": {
+        "read_only_root": false
+      }
+    },
+    "example.worker-backbone.local-rag": {
+      "timeout_seconds": 60,
+      "memory": {
+        "limit": "256Mi"
+      }
+    }
+  },
+  "ceilings": {
+    "timeout_seconds": 180,
+    "max_retries": 2,
+    "memory": {
+      "limit": "512Mi"
+    },
+    "filesystem": {
+      "artifact_max_files": 8,
+      "artifact_max_bytes": 1048576
+    },
+    "logs": {
+      "max_bytes": 65536
+    },
+    "concurrency": {
+      "max_running": 4,
+      "max_project_running": 8
+    }
+  }
+}

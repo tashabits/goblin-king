@@ -9,6 +9,18 @@ runs when `jupyterhub.enabled` is true.
 Use this when JupyterHub already owns user identity and Goblin King owns service
 workload registration, probe proof, and project-scoped access control.
 
+Start with the generic portable worker backbone: project config, worker image maps,
+contract validation, resource policy, and Docker/Helm deployment shape. JupyterHub is
+an optional identity and authoring layer on top of that backbone. A RAG profile can use
+JupyterHub notebooks, notebook ASGI services, the Goblin Directory browser UI, or the
+JupyterLab picker for lab workflows, but RAG workers should still fit the same
+container-backed project model as any other profile.
+
+The notebook function runner, notebook ASGI service runner, Directory API/browser UI,
+and JupyterLab picker are compatible surfaces for the same workload model. They are not
+competing control planes and they do not bypass validation, resource policy, project
+scope, or operator-controlled runner images.
+
 ## Runtime Shape
 
 - JupyterHub authenticates users and issues user API tokens.

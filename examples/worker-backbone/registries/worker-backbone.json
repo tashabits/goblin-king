@@ -1,0 +1,72 @@
+{
+  "goblins": [
+    {
+      "kind": "example.worker-backbone.artifact-manifest",
+      "display_name": "Worker Backbone Artifact Manifest",
+      "module": "goblin_king.container_only",
+      "timeout_seconds": 60,
+      "max_retries": 0,
+      "metadata": {
+        "source": "worker-backbone-example",
+        "workload_type": "task",
+        "description": "Writes a deterministic manifest artifact from local JSON input.",
+        "input_schema": "schemas/artifact-manifest.input.schema.json",
+        "sample_input": "inputs/artifact-manifest.input.json",
+        "artifacts": {
+          "enabled": true,
+          "expected": [
+            "manifest.json"
+          ]
+        },
+        "tags": [
+          "artifact",
+          "local"
+        ]
+      }
+    },
+    {
+      "kind": "example.worker-backbone.local-rag",
+      "display_name": "Worker Backbone Local RAG",
+      "module": "goblin_king.container_only",
+      "timeout_seconds": 60,
+      "max_retries": 0,
+      "metadata": {
+        "source": "worker-backbone-example",
+        "workload_type": "rag",
+        "recipe": "rag-first-use-case",
+        "description": "Retrieves over checked-in local fixture documents and returns a stable answer envelope.",
+        "input_schema": "rag-first-use-case/schemas/query.input.schema.json",
+        "sample_input": "rag-first-use-case/inputs/query.input.json",
+        "fixture": "rag-first-use-case/fixtures/corpus.json",
+        "external_calls": 0,
+        "tags": [
+          "rag",
+          "fixture",
+          "local"
+        ]
+      }
+    },
+    {
+      "kind": "example.worker-backbone.normalize-note",
+      "display_name": "Worker Backbone Normalize Note",
+      "module": "goblin_king.container_only",
+      "timeout_seconds": 30,
+      "max_retries": 0,
+      "metadata": {
+        "source": "worker-backbone-example",
+        "workload_type": "task",
+        "description": "Normalizes local note text and reports deterministic text metrics.",
+        "input_schema": "schemas/normalize-note.input.schema.json",
+        "sample_input": "inputs/normalize-note.input.json",
+        "artifacts": {
+          "enabled": false
+        },
+        "tags": [
+          "task",
+          "local"
+        ]
+      }
+    }
+  ]
+}
+

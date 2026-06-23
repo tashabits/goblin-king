@@ -1,0 +1,6 @@
+{
+  "query": "Which local recipe shows retrieval augmented generation without cloud dependencies?",
+  "top_k": 2,
+  "corpus_path": "fixtures/corpus.json"
+}
+

@@ -1,0 +1,25 @@
+{
+  "documents": [
+    {
+      "id": "artifact-output",
+      "title": "Artifact Output",
+      "text": "Artifact workers write files under GOBLIN_ARTIFACT_ROOT and list them in the result envelope."
+    },
+    {
+      "id": "local-rag",
+      "title": "Local RAG Fixture",
+      "text": "The RAG first-use-case recipe performs retrieval augmented generation over local fixture documents. It returns a deterministic result envelope without model calls, cloud services, or credentials."
+    },
+    {
+      "id": "service-worker",
+      "title": "Service Worker",
+      "text": "Service workers expose local HTTP endpoints with health probes and stable JSON payloads for admin inspection."
+    },
+    {
+      "id": "task-worker",
+      "title": "Task Worker",
+      "text": "Task workers read GOBLIN_INPUT_PATH and GOBLIN_CONTEXT_PATH, then write a success or failed envelope to GOBLIN_RESULT_PATH."
+    }
+  ]
+}
+
