@@ -1,0 +1,20 @@
+{
+  "workers": {
+    "example.worker-backbone.artifact-manifest": {
+      "context": "workers/artifact-manifest",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-worker-backbone-artifact-manifest:local"
+    },
+    "example.worker-backbone.local-rag": {
+      "context": "rag-first-use-case",
+      "dockerfile": "workers/local-rag/Dockerfile",
+      "image": "goblin-worker-backbone-local-rag:local"
+    },
+    "example.worker-backbone.normalize-note": {
+      "context": "workers/normalize-note",
+      "dockerfile": "Dockerfile",
+      "image": "goblin-worker-backbone-normalize-note:local"
+    }
+  }
+}
+

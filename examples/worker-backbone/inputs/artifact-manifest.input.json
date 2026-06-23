@@ -1,0 +1,15 @@
+{
+  "dataset": "local-fixture",
+  "items": [
+    {
+      "name": "alpha.txt",
+      "bytes": 17
+    },
+    {
+      "name": "beta.txt",
+      "bytes": 29
+    }
+  ],
+  "include_totals": true
+}
+

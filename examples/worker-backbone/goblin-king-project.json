@@ -1,0 +1,59 @@
+{
+  "apiVersion": "goblin-king/v1alpha1",
+  "kind": "GoblinProject",
+  "registries": [
+    "registries/worker-backbone.json"
+  ],
+  "entry_points": false,
+  "images": "goblin-images.json",
+  "api_settings": "goblin-king-api.json",
+  "defaults": {
+    "resources": {
+      "timeout_seconds": 60,
+      "max_retries": 0,
+      "memory": {
+        "limit": "256Mi"
+      },
+      "network": {
+        "mode": "none"
+      },
+      "filesystem": {
+        "read_only_root": true,
+        "artifact_max_files": 4,
+        "artifact_max_bytes": 65536
+      }
+    }
+  },
+  "services": {
+    "example.worker-backbone.catalog-service": {
+      "displayName": "Worker Backbone Catalog Service",
+      "description": "Local HTTP service recipe with deterministic health and catalog responses.",
+      "image": "goblin-worker-backbone-catalog-service:local",
+      "context": "workers/catalog-service",
+      "dockerfile": "Dockerfile",
+      "port": 8080,
+      "probePath": "/healthz",
+      "resources": {
+        "timeout_seconds": 120,
+        "network": {
+          "mode": "default"
+        },
+        "filesystem": {
+          "read_only_root": false
+        }
+      },
+      "labels": {
+        "example": "worker-backbone",
+        "workload": "service"
+      },
+      "tags": [
+        "service",
+        "local"
+      ],
+      "env": {
+        "WORKER_BACKBONE_MODE": "fixture"
+      }
+    }
+  }
+}
+

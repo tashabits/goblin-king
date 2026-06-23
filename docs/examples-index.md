@@ -47,4 +47,25 @@ Use:
 make validate-behavior-workers
 ```
 
+## Worker Backbone Recipes
+
+| Kind | Folder | Demonstrates |
+| --- | --- | --- |
+| `example.worker-backbone.normalize-note` | `examples/worker-backbone/workers/normalize-note` | Generic task worker with a deterministic result envelope |
+| `example.worker-backbone.artifact-manifest` | `examples/worker-backbone/workers/artifact-manifest` | Artifact-producing task worker and metadata |
+| `example.worker-backbone.local-rag` | `examples/worker-backbone/rag-first-use-case` | Local RAG-style retrieval over checked-in fixtures |
+| `example.worker-backbone.catalog-service` | `examples/worker-backbone/workers/catalog-service` | Project-configured service worker with `/healthz` proof |
+
+Use:
+
+```bash
+goblin-king project validate --project examples/worker-backbone/goblin-king-project.json
+python -m pytest tests/test_worker_backbone_examples.py
+make worker-backbone-proof
+make rag-profile-proof
+```
+
+The worker backbone fixture is local-only: no external model, cloud service, or
+credential is required for the RAG first-use-case proof.
+
 The King likes demos best when they can be rebuilt while someone skeptical is watching.

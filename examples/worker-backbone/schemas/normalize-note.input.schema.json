@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Normalize Note Input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "text"
+  ],
+  "properties": {
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "case": {
+      "type": "string",
+      "enum": [
+        "preserve",
+        "lower",
+        "upper"
+      ],
+      "default": "preserve"
+    },
+    "collapse_whitespace": {
+      "type": "boolean",
+      "default": true
+    }
+  }
+}
+
