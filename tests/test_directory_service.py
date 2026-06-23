@@ -839,6 +839,18 @@ def test_repository_list_search_filters_status_type_and_tag_text(
         for item in response.json()["items"]
     ] == [("analytics.summary", "notebook_function")]
 
+    owner_all = client.get(
+        "/repository/entries",
+        headers=_bearer(token),
+        params={"status": "all", "limit": 10, "offset": 0},
+    )
+
+    assert owner_all.status_code == 200
+    assert [item["entry"]["name"] for item in owner_all.json()["items"]] == [
+        "analytics.draft",
+        "analytics.summary",
+    ]
+
 
 def test_repository_project_scoping_hides_other_project_entries(tmp_path, monkeypatch) -> None:
     client, _ = build_repository_api_client(tmp_path)

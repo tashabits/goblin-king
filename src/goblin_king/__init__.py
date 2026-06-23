@@ -1,5 +1,7 @@
 """Lightweight public package surface for Goblin King adopters."""
 
+from pathlib import Path
+
 from goblin_king.api_settings import ApiSettings, ApiSettingsError
 from goblin_king.contracts import (
     ApiTokenRecord,
@@ -126,3 +128,10 @@ def __getattr__(name: str) -> object:
 def __dir__() -> list[str]:
     """Return the documented root surface, including lazy compatibility exports."""
     return sorted(set(globals()) | set(__all__))
+
+
+def _jupyter_labextension_paths() -> list[dict[str, str]]:
+    """Return JupyterLab extension metadata for notebook user servers."""
+    if not (Path(__file__).parent / "labextension" / "package.json").exists():
+        return []
+    return [{"src": "labextension", "dest": "goblin-king-jupyterlab"}]

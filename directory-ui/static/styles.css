@@ -52,9 +52,29 @@ h2 {
 }
 
 #sessionSummary,
-#reviewHint {
+#reviewHint,
+.view-status,
+.selection-summary {
   color: var(--muted);
   margin-top: 4px;
+}
+
+.view-status {
+  min-height: 38px;
+  padding: 9px 0;
+}
+
+.view-status.error {
+  color: var(--danger);
+}
+
+.selection-summary {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: grid;
+  gap: 4px;
+  min-height: 64px;
+  padding: 10px;
 }
 
 .tabs {
@@ -164,6 +184,11 @@ button:hover {
   border-color: var(--accent);
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 button.primary,
 #submitBundle,
 #runFunction,
@@ -233,6 +258,10 @@ button.danger {
 
 .status-pending_review {
   color: var(--warn);
+}
+
+.status-draft {
+  color: var(--muted);
 }
 
 .status-rejected,

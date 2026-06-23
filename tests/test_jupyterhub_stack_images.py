@@ -47,3 +47,12 @@ def test_stack_image_prepare_keeps_singleuser_optional() -> None:
 
     assert "singleuser" not in images
     assert all("singleuser" not in image for image in contexts)
+
+
+def test_directory_ui_and_picker_proofs_split_singleuser_image() -> None:
+    ui_proof = (STACK_DIR / "directory_ui_proof.py").read_text(encoding="utf-8")
+    picker_proof = (STACK_DIR / "directory_picker_proof.py").read_text(encoding="utf-8")
+
+    assert '"GOBLIN_DIRECTORY_PICKER_ENABLED=0"' in ui_proof
+    assert '"GOBLIN_DIRECTORY_PICKER_ENABLED=1"' in picker_proof
+    assert "include_singleuser=True" in picker_proof

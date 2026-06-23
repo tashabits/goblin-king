@@ -1,8 +1,10 @@
 .goblin-king/
 .pytest_cache/
 .ruff_cache/
+.runlogs/
 __pycache__/
 *.egg-info/
 *.pyc
+src/goblin_king/labextension/
 directory-ui/dist/
 directory-ui/node_modules/

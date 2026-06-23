@@ -306,11 +306,13 @@ The UI exposes:
 
 - Directory: search approved published entries by name, type, tag, owner, or text.
 - Submit Bundle: upload and preview a v1 zip bundle, then submit a draft.
-- My Submissions: validate owned drafts and request review.
-- Review Queue: admin-only approve, reject, publish, and retire actions.
+- My Submissions: live view of owned drafts, validated entries, pending review entries,
+  and published entries, including submissions created from a notebook or library call.
+- Review Queue: admin-only approve, reject, publish, and retire actions for pending
+  entries, refreshed after every review action.
 - Entry Detail: version, source hash, validation proof, owner, status, and tags.
-- Runtime Results: run function goblins and start/probe/proxy/stop service goblins by
-  directory name.
+- Runtime Results: choose from published entries in a dropdown, then run function
+  goblins or start/probe/proxy/stop service goblins by Directory name.
 
 Enable it locally with the Directory API:
 
@@ -320,6 +322,10 @@ make jupyterhub-stack-up \
   GOBLIN_DIRECTORY_ENABLED=1 \
   GOBLIN_DIRECTORY_UI_ENABLED=1
 ```
+
+With `JUPYTERHUB_STACK_REBUILD=1`, the local stack can also build and use the
+`goblin-king-directory-singleuser:<tag>` image so the JupyterLab Goblin Directory
+picker and server proxy are available in each user notebook server.
 
 Then port-forward the Hub proxy and open the UI:
 
@@ -566,3 +572,13 @@ make jupyterhub-directory-ui-proof
 It brings up the directory UI service at `/services/goblin-directory/`, completes Hub
 OAuth for the proof users, uploads v1 bundles through the UI backend, publishes them,
 invokes the published goblins by name, and tears the stack down.
+
+For the JupyterLab picker proof, use:
+
+```bash
+make jupyterhub-directory-picker-proof
+```
+
+It verifies the custom single-user image, the `/goblin-directory/api` user-server
+proxy, the JupyterLab Goblin Directory panel, and the same published function/service
+launch flow from Carol's notebook server.
