@@ -7,9 +7,54 @@ imports.
 This template focuses on task goblins. Project config can also define service goblins;
 both use the same validation gate and container-backed model.
 
+Think of the generated project as the portable worker backbone. It describes workers,
+images, resource posture, validation, and deployment wiring without assuming the
+business domain. A RAG profile should be the first profile layered onto this backbone:
+indexing, retrieval, embedding, evaluation, or chat-service workers are still ordinary
+project goblins with their own images, schemas, resources, and proof.
+
+Notebook-declared Python functions, notebook-declared ASGI services, the Goblin
+Directory UI, and the JupyterLab Directory picker are compatible paths when a
+JupyterHub-backed deployment wants notebook authoring or deployment-local sharing.
+They do not compete with this template. All paths still resolve to container-backed
+goblins behind the same validation and resource-policy gates.
+
 If your host project vendors Goblin King under a path such as `vendor/goblin-king`, see
 [Using Goblin King From A Vendored Checkout](using-goblin-king-from-a-vendored-checkout.md)
 before wiring the generated project into the local admin stack.
+
+## Backbone First, Profiles Second
+
+Use the generic proof first:
+
+```bash
+make worker-backbone-proof
+```
+
+That checks the bundled adopter project config, lists discovered goblins, and renders
+the Helm chart with host-project values. It proves the reusable skeleton before any
+domain-specific profile is considered.
+
+Use the RAG profile proof as a profile-shape check:
+
+```bash
+make rag-profile-proof
+```
+
+By default this target points at `examples/worker-backbone`, including its bundled
+local RAG first-use-case worker and resource-policy fixture. When a private RAG profile
+exists, point the target at that profile:
+
+```bash
+make rag-profile-proof \
+  RAG_PROFILE_PROJECT=/path/to/rag-profile/goblin-king-project.json \
+  RAG_PROFILE_HELM_VALUES=/path/to/rag-profile/helm-values.yaml \
+  RAG_PROFILE_KIND=rag.index
+```
+
+The expectation is deliberately modest: a RAG profile should fit the same project
+config, image-map, resource-policy, and Helm render path as any other adopter project.
+Runtime proof can then add profile-specific worker validation or end-to-end checks.
 
 ## Create The Project
 

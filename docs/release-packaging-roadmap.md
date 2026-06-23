@@ -14,6 +14,9 @@ boundaries.
 
 - Plan a repeatable release checklist for Python packages, Docker images, Helm
   charts, docs, and local proof.
+- Keep the generic portable worker backbone proof ahead of profile-specific proof.
+- Treat RAG as the first profile/use case layered onto that backbone, not as a
+  separate runtime or deployment model.
 - Make future installs friendlier for trusted self-hosted adopters.
 - Keep release notes tied to validation, admin proof, and adopter smoke proof.
 - Leave security signing and provenance as explicit follow-up until implemented.
@@ -27,6 +30,37 @@ boundaries.
 - Packaging must not weaken the validation gate.
 - Goblin task containers must not receive the Docker socket.
 - Docker images and Helm charts should remain configurable for self-hosted use.
+- JupyterHub notebook function, notebook ASGI service, Goblin Directory browser UI, and
+  JupyterLab picker paths must be documented as compatible optional surfaces over the
+  same backbone, not as competing release tracks.
+
+## Release Proof Slice: Portable Worker Backbone
+
+The current release proof should establish the generic backbone before any profile
+story:
+
+```bash
+make worker-backbone-proof
+```
+
+That target is intentionally static: it validates the adopter project config, lists the
+resolved project goblins, and renders the Helm chart with host-project values. Runtime
+proof can add Docker/Redis/Kubernetes checks when the change touches runtime behavior.
+
+RAG is the first planned profile/use case for this backbone. The profile proof target
+checks that a profile-shaped project still fits the same project config, image-map,
+resource-policy, and Helm render path:
+
+```bash
+make rag-profile-proof
+```
+
+The target defaults to the bundled portable worker-backbone fixture and its local RAG
+first-use-case worker. A private RAG profile can override `RAG_PROFILE_PROJECT`,
+`RAG_PROFILE_HELM_VALUES`, `RAG_PROFILE_KIND`, and `RAG_PROFILE_RESOURCE_POLICIES`.
+
+This proof slice does not publish packages, container images, Helm charts, or docs. It
+only gives release candidates a repeatable local evidence path.
 
 ## Release Phase 1: Versioning And Release Checklist
 
@@ -90,6 +124,10 @@ These should remain follow-up items until implemented and proven.
 ## Acceptance Criteria
 
 - Future release work has a clear packaging and proof sequence.
+- `make worker-backbone-proof` proves the generic portable worker backbone before
+  profile checks.
+- `make rag-profile-proof` documents and exercises the first profile/use-case shape
+  without creating a separate runtime model.
 - Planned install commands are clearly marked as future examples.
 - Release docs preserve the project-adoptable alpha safety posture.
 - Docker image, Helm chart, and Python package plans remain self-hosted and
