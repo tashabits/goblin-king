@@ -70,7 +70,7 @@ from goblin_king.demo import (
     run_demo_up,
 )
 from goblin_king.deployment import helm_template_command, image_push_command, run_command
-from goblin_king.doctor import run_doctor
+from goblin_king.doctor import DoctorRuntimeSelection, run_doctor
 from goblin_king.events import (
     DEFAULT_EVENT_CHANNEL,
     DEFAULT_EVENT_STREAM,
@@ -330,6 +330,18 @@ def doctor(
         str,
         typer.Option("--redis-url", help="Redis URL checked by diagnostics."),
     ] = DEFAULT_REDIS_URL,
+    runtime: Annotated[
+        DoctorRuntimeSelection,
+        typer.Option("--runtime", help="Runtime diagnostics to include."),
+    ] = "docker",
+    resource_policies: Annotated[
+        Path | None,
+        typer.Option("--resource-policies", help="Optional runtime resource policy JSON path."),
+    ] = None,
+    helm_values: Annotated[
+        Path | None,
+        typer.Option("--helm-values", help="Optional Helm values file for a local render check."),
+    ] = None,
     json_output: Annotated[
         bool,
         typer.Option("--json", help="Print machine-readable diagnostic checks."),
@@ -342,6 +354,9 @@ def doctor(
         admin_url=admin_url,
         token=token,
         redis_url=redis_url,
+        runtime=runtime,
+        resource_policies=resource_policies,
+        helm_values=helm_values,
     )
     if json_output:
         typer.echo(result.model_dump_json(indent=2))

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -21,9 +22,43 @@ from goblin_king.resource_policies import ResourcePolicy, ResourcePolicyError, R
 from goblin_king.versions import PROJECT_CONFIG_API_VERSION, PROJECT_CONFIG_KIND
 from goblin_king.workers import WorkerImageDefinition
 
+_LABEL_NAME_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?$")
+_DNS_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
 
 class ProjectSettingsError(ValueError):
     """Raised when project integration settings cannot be loaded."""
+
+
+class ProjectPlacementSpec(BaseModel):
+    """Scheduling placement intent expressed as validated Kubernetes-style labels."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    required: dict[str, str] = Field(default_factory=dict)
+    preferred: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("required", "preferred", mode="before")
+    @classmethod
+    def validate_label_map(cls, value: Any) -> dict[str, str]:
+        """Accept only label selector maps, not raw pod spec fragments."""
+        if not isinstance(value, dict):
+            raise ValueError("placement labels must be an object")
+        for key, label_value in value.items():
+            if not isinstance(key, str):
+                raise ValueError("placement label keys must be strings")
+            if not isinstance(label_value, str):
+                raise ValueError("placement label values must be strings")
+            _validate_label_key(key)
+            _validate_label_value(label_value)
+        return value
+
+    def normalized(self) -> dict[str, dict[str, str]]:
+        """Return a stable JSON-ready placement object for definition metadata."""
+        return {
+            "required": dict(sorted(self.required.items())),
+            "preferred": dict(sorted(self.preferred.items())),
+        }
 
 
 class ProjectDefaults(BaseModel):
@@ -51,6 +86,7 @@ class ProjectGoblinSpec(BaseModel):
     artifacts: dict[str, Any] = Field(default_factory=dict)
     labels: dict[str, str] = Field(default_factory=dict)
     tags: list[str] = Field(default_factory=list)
+    placement: ProjectPlacementSpec = Field(default_factory=ProjectPlacementSpec)
     env: dict[str, str] = Field(default_factory=dict)
     secret_refs: list[str] = Field(default_factory=list, alias="secretRefs")
     schedule: dict[str, Any] = Field(default_factory=dict)
@@ -324,6 +360,33 @@ def _display_name(kind: str) -> str:
     return " ".join(part.capitalize() for part in kind.replace("-", ".").split("."))
 
 
+def _validate_label_key(value: str) -> None:
+    """Validate Kubernetes label key syntax for project placement selectors."""
+    if not value:
+        raise ValueError("placement label keys must not be empty")
+    if "/" in value:
+        prefix, name = value.rsplit("/", 1)
+        if not prefix or not name or "/" in prefix:
+            raise ValueError(f"invalid placement label key: {value!r}")
+        if len(prefix) > 253:
+            raise ValueError(f"placement label key prefix is too long: {value!r}")
+        prefix_parts = prefix.split(".")
+        if any(not part or not _DNS_LABEL_RE.match(part) for part in prefix_parts):
+            raise ValueError(f"invalid placement label key prefix: {value!r}")
+    else:
+        name = value
+    if len(name) > 63 or not _LABEL_NAME_RE.match(name):
+        raise ValueError(f"invalid placement label key name: {value!r}")
+
+
+def _validate_label_value(value: str) -> None:
+    """Validate Kubernetes label value syntax while rejecting empty values."""
+    if not value:
+        raise ValueError("placement label values must not be empty")
+    if len(value) > 63 or not _LABEL_NAME_RE.match(value):
+        raise ValueError(f"invalid placement label value: {value!r}")
+
+
 def _project_metadata(spec: ProjectGoblinSpec) -> dict[str, Any]:
     """Return metadata preserved for project-config documentation and future phases."""
     return {
@@ -335,6 +398,7 @@ def _project_metadata(spec: ProjectGoblinSpec) -> dict[str, Any]:
         "artifacts": spec.artifacts,
         "labels": spec.labels,
         "tags": spec.tags,
+        "placement": spec.placement.normalized(),
         "env": spec.env,
         "secret_refs": spec.secret_refs,
         "schedule": spec.schedule,

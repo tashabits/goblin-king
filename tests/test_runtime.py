@@ -93,6 +93,99 @@ def test_kubernetes_job_includes_result_forwarder() -> None:
     assert {"name": "result", "mountPath": "/goblin-result"} in forwarder["volumeMounts"]
 
 
+def test_kubernetes_job_omits_placement_fields_without_metadata() -> None:
+    """Verify default Kubernetes manifests do not include placement fields."""
+    workers = WorkerImageMap(
+        {"example.hello": WorkerImageDefinition(context=".", image="hello:local")},
+        root=".",
+    )
+    runtime = KubernetesRuntime(workers=workers, redis_url="redis://redis:6379/0")
+    context = GoblinContext(
+        run_id="run-no-placement",
+        artifact_root=".goblin-king/artifacts/run-no-placement",
+        metadata={"job_id": "job-no-placement"},
+    )
+
+    manifest = runtime._job_manifest(
+        name="gk-example-hello-run-no-placement",
+        config_name="gk-example-hello-run-no-placement-input",
+        image="hello:local",
+        context=context,
+        worker_id="k8s-worker-run-no-placement",
+        timeout_seconds=30,
+    )
+
+    pod_spec = manifest["spec"]["template"]["spec"]
+    assert "nodeSelector" not in pod_spec
+    assert "affinity" not in pod_spec
+    assert "tolerations" not in pod_spec
+
+
+def test_kubernetes_job_maps_placement_to_node_selector_and_affinity() -> None:
+    """Verify Kubernetes manifests map placement metadata to scheduling fields."""
+    workers = WorkerImageMap(
+        {"example.placement": WorkerImageDefinition(context=".", image="placement:local")},
+        root=".",
+    )
+    runtime = KubernetesRuntime(workers=workers, redis_url="redis://redis:6379/0")
+    context = GoblinContext(
+        run_id="run-placement",
+        artifact_root=".goblin-king/artifacts/run-placement",
+        metadata={
+            "job_id": "job-placement",
+            "goblin_definition": {
+                "kind": "example.placement",
+                "metadata": {
+                    "placement": {
+                        "required": {"node.example.com/pool": "batch"},
+                        "preferred": {
+                            "node.example.com/zone": "west-a",
+                            "node.example.com/disk": "ssd",
+                        },
+                        "tolerations": [{"operator": "Exists"}],
+                    }
+                },
+            },
+        },
+    )
+
+    manifest = runtime._job_manifest(
+        name="gk-example-placement-run-placement",
+        config_name="gk-example-placement-run-placement-input",
+        image="placement:local",
+        context=context,
+        worker_id="k8s-worker-run-placement",
+        timeout_seconds=30,
+    )
+
+    pod_spec = manifest["spec"]["template"]["spec"]
+    assert pod_spec["nodeSelector"] == {"node.example.com/pool": "batch"}
+    assert pod_spec["affinity"] == {
+        "nodeAffinity": {
+            "preferredDuringSchedulingIgnoredDuringExecution": [
+                {
+                    "weight": 50,
+                    "preference": {
+                        "matchExpressions": [
+                            {
+                                "key": "node.example.com/disk",
+                                "operator": "In",
+                                "values": ["ssd"],
+                            },
+                            {
+                                "key": "node.example.com/zone",
+                                "operator": "In",
+                                "values": ["west-a"],
+                            },
+                        ]
+                    },
+                }
+            ]
+        }
+    }
+    assert "tolerations" not in pod_spec
+
+
 def test_docker_command_includes_resource_policy_flags(tmp_path) -> None:
     """Verify Docker runtime maps supported resource policy fields to docker run flags."""
     runtime = DockerRuntime(

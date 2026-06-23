@@ -118,8 +118,49 @@ python -m goblin_king.cli resource-policies inspect myproject.hello \
   --policies goblin-resource-policies.json
 ```
 
+Run doctor when the stack, validation state, or runtime target is unclear:
+
+```bash
+python -m goblin_king.cli doctor \
+  --project goblin-king-project.json \
+  --kind myproject.hello \
+  --runtime docker \
+  --resource-policies goblin-resource-policies.json
+```
+
+For a Kubernetes-backed worker path, switch to `--runtime kubernetes` or
+`--runtime both`. Add `--helm-values values.yaml` when a local Helm render should be
+part of the diagnostic proof.
+
 For the complete proof lifecycle and failure table, see
 [Goblin Contract Validation](goblin-contract-validation.md).
+
+## Kubernetes Placement
+
+Project goblins may carry single-cluster Kubernetes placement intent. This metadata is
+ignored by Docker/local execution and applied only by the Kubernetes worker Job runtime.
+
+```json
+{
+  "goblins": {
+    "myproject.retrieve": {
+      "image": "myproject-retrieve:local",
+      "placement": {
+        "required": {
+          "goblin-king.io/pool": "rag-workers"
+        },
+        "preferred": {
+          "goblin-king.io/accelerator": "gpu"
+        }
+      }
+    }
+  }
+}
+```
+
+`required` labels become Kubernetes `nodeSelector` entries. `preferred` labels become
+node affinity preferences. Raw pod spec fields, tolerations, empty values, and
+non-string selectors are rejected by project validation.
 
 ## Adopt
 

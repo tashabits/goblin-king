@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from urllib.error import URLError
 
@@ -9,16 +10,18 @@ from redis.exceptions import RedisError
 from typer.testing import CliRunner
 
 from goblin_king.cli import app
+from goblin_king.contracts import ScheduleRecord, utc_now
 from goblin_king.demo import (
     CompletedCommand,
     DemoResult,
     compose_command,
+    load_demo_context,
     run_demo_up,
 )
 from goblin_king.doctor import DoctorCheck, DoctorResult, run_doctor
 from goblin_king.store import SQLiteStore
 from goblin_king.templates import init_project
-from goblin_king.validation import WorkerValidationResult
+from goblin_king.validation import WorkerValidationResult, validation_record
 
 runner = CliRunner()
 
@@ -26,8 +29,14 @@ runner = CliRunner()
 class FakeCommandRunner:
     """Capture subprocess-style commands without touching Docker."""
 
-    def __init__(self, *, returncode: int = 0) -> None:
+    def __init__(
+        self,
+        *,
+        returncode: int = 0,
+        responses: dict[tuple[str, ...], CompletedCommand] | None = None,
+    ) -> None:
         self.returncode = returncode
+        self.responses = responses or {}
         self.commands: list[list[str]] = []
         self.envs: list[dict[str, str] | None] = []
 
@@ -40,6 +49,9 @@ class FakeCommandRunner:
     ) -> CompletedCommand:
         self.commands.append(args)
         self.envs.append(env)
+        response = self.responses.get(tuple(args))
+        if response is not None:
+            return response.model_copy(update={"args": args})
         return CompletedCommand(
             args=args,
             returncode=self.returncode,
@@ -203,6 +215,10 @@ def test_doctor_reports_actionable_warnings_for_stack_not_running(
             raise RedisError("redis down")
 
     monkeypatch.setattr("goblin_king.doctor.Redis", FakeRedis)
+    monkeypatch.setattr(
+        "goblin_king.doctor.shutil.which",
+        lambda name: f"/usr/bin/{name}" if name == "docker" else None,
+    )
 
     result = run_doctor(
         project=project_dir / "goblin-king-project.json",
@@ -220,6 +236,149 @@ def test_doctor_reports_actionable_warnings_for_stack_not_running(
     assert "workers validate" in checks["validation_status"].repair_command
 
 
+def test_doctor_reports_policy_validation_coverage_and_schedule_readiness(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Verify data-backed onboarding checks use deterministic local state."""
+    project_dir = init_project(tmp_path / "project", prefix="diag")
+    project = project_dir / "goblin-king-project.json"
+    context = load_demo_context(project)
+    store = SQLiteStore(context.api_settings.db)
+    responses: dict[tuple[str, ...], CompletedCommand] = {}
+    for index, (kind, worker) in enumerate(context.workers.items(), start=1):
+        digest = f"sha256:diag-{index}"
+        store.save_worker_validation(
+            validation_record(
+                WorkerValidationResult(
+                    kind=kind,
+                    ok=True,
+                    image=worker.image,
+                    image_digest=digest,
+                    result_status="success",
+                )
+            )
+        )
+        responses[
+            ("docker", "image", "inspect", worker.image, "--format", "{{.Id}}")
+        ] = CompletedCommand(args=[], returncode=0, stdout=digest)
+    now = utc_now()
+    store.save_schedule(
+        ScheduleRecord(
+            id="diag-schedule",
+            kind="diag.hello",
+            input={"name": "test"},
+            cron="* * * * *",
+            created_at=now,
+            next_run_at=now,
+        )
+    )
+    policy_path = project_dir / "policies.json"
+    policy_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "defaults": {
+                    "timeout_seconds": 30,
+                    "memory": {"limit": "256Mi"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class FakeRedis:
+        @classmethod
+        def from_url(cls, _url):
+            return cls()
+
+        def ping(self):
+            return True
+
+    monkeypatch.setattr("goblin_king.doctor.Redis", FakeRedis)
+    monkeypatch.setattr(
+        "goblin_king.doctor.shutil.which",
+        lambda name: f"/usr/bin/{name}" if name == "docker" else None,
+    )
+
+    result = run_doctor(
+        project=project,
+        kind="diag.hello",
+        resource_policies=policy_path,
+        command_runner=FakeCommandRunner(responses=responses),
+        http_client=UnavailableHttpClient(),
+    )
+
+    checks = {check.name: check for check in result.checks}
+    assert result.ok is True
+    assert checks["resource_policy"].status == "pass"
+    assert '"timeout_seconds": 30' in checks["resource_policy"].message
+    assert checks["validation_coverage"].status == "pass"
+    assert "2/2" in checks["validation_coverage"].message
+    assert checks["schedule_readiness"].status == "pass"
+    assert "enabled=1" in checks["schedule_readiness"].message
+
+
+def test_doctor_runtime_both_runs_kubernetes_and_helm_checks(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Verify optional runtime tooling checks are command-runner driven."""
+    project_dir = init_project(tmp_path / "project", prefix="diag")
+    values_path = tmp_path / "values.yaml"
+    values_path.write_text("config: {}\n", encoding="utf-8")
+    responses = {
+        (
+            "kubectl",
+            "version",
+            "--client=true",
+            "--output=json",
+        ): CompletedCommand(args=[], returncode=0, stdout="{}"),
+        (
+            "kubectl",
+            "config",
+            "current-context",
+        ): CompletedCommand(args=[], returncode=0, stdout="local\n"),
+        (
+            "helm",
+            "template",
+            "goblin-king",
+            str(Path("charts/goblin-king")),
+            "-f",
+            str(values_path),
+        ): CompletedCommand(args=[], returncode=0, stdout="rendered"),
+    }
+
+    class FakeRedis:
+        @classmethod
+        def from_url(cls, _url):
+            return cls()
+
+        def ping(self):
+            return True
+
+    monkeypatch.setattr("goblin_king.doctor.Redis", FakeRedis)
+    monkeypatch.setattr(
+        "goblin_king.doctor.shutil.which",
+        lambda name: f"/usr/bin/{name}" if name in {"docker", "kubectl", "helm"} else None,
+    )
+
+    result = run_doctor(
+        project=project_dir / "goblin-king-project.json",
+        kind="diag.hello",
+        runtime="both",
+        helm_values=values_path,
+        command_runner=FakeCommandRunner(responses=responses),
+        http_client=UnavailableHttpClient(),
+    )
+
+    checks = {check.name: check for check in result.checks}
+    assert result.ok is True
+    assert checks["kubectl_cli"].status == "pass"
+    assert checks["kubectl_context"].status == "pass"
+    assert checks["helm_template"].status == "pass"
+
+
 def test_doctor_reports_missing_docker_as_failure(monkeypatch) -> None:
     """Verify missing Docker is a hard prerequisite failure."""
     monkeypatch.setattr("goblin_king.doctor.shutil.which", lambda _name: None)
@@ -234,9 +393,11 @@ def test_doctor_reports_missing_docker_as_failure(monkeypatch) -> None:
 
 def test_doctor_cli_json(monkeypatch) -> None:
     """Verify doctor emits stable JSON diagnostics."""
-    monkeypatch.setattr(
-        "goblin_king.cli.run_doctor",
-        lambda **_kwargs: DoctorResult(
+    seen_kwargs = {}
+
+    def fake_run_doctor(**kwargs):
+        seen_kwargs.update(kwargs)
+        return DoctorResult(
             ok=True,
             project="examples/adopting-project/goblin-king-project.json",
             kind="project.inline.hello",
@@ -248,11 +409,27 @@ def test_doctor_cli_json(monkeypatch) -> None:
                     message="Goblin King imported successfully.",
                 )
             ],
-        ),
+        )
+
+    monkeypatch.setattr("goblin_king.cli.run_doctor", fake_run_doctor)
+
+    result = runner.invoke(
+        app,
+        [
+            "doctor",
+            "--json",
+            "--runtime",
+            "both",
+            "--resource-policies",
+            "policies.json",
+            "--helm-values",
+            "values.yaml",
+        ],
     )
 
-    result = runner.invoke(app, ["doctor", "--json"])
-
     assert result.exit_code == 0
+    assert seen_kwargs["runtime"] == "both"
+    assert seen_kwargs["resource_policies"] == Path("policies.json")
+    assert seen_kwargs["helm_values"] == Path("values.yaml")
     assert '"ok": true' in result.stdout
     assert '"name": "python_package"' in result.stdout
