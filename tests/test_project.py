@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from goblin_king.metadata import goblin_job_metadata
 from goblin_king.project import ProjectSettings, ProjectSettingsError
 from goblin_king.registry import GoblinRegistry
 from goblin_king.resource_policies import ResourcePolicyError, ResourcePolicySet
@@ -129,6 +130,115 @@ def test_project_settings_load_service_workloads(tmp_path: Path) -> None:
     assert workers["project.table.service"].context == (
         project_path.parent / "services" / "table"
     ).resolve()
+
+
+def test_project_settings_accepts_valid_placement(tmp_path: Path) -> None:
+    """Verify placement intent accepts Kubernetes-style label selectors."""
+    project_path = tmp_path / "goblin-king-project.json"
+    project_path.write_text(
+        json.dumps(
+            {
+                "apiVersion": PROJECT_CONFIG_API_VERSION,
+                "kind": PROJECT_CONFIG_KIND,
+                "registries": [],
+                "entry_points": False,
+                "goblins": {
+                    "project.placed": {
+                        "displayName": "Project Placed",
+                        "image": "placed:local",
+                        "placement": {
+                            "required": {
+                                "example.com/node-pool": "batch",
+                                "accelerator": "gpu",
+                            },
+                            "preferred": {"disk-tier": "ssd"},
+                        },
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    settings = ProjectSettings.from_path(project_path)
+    definition = settings.registry_definitions()[0]
+
+    assert definition.metadata["placement"] == {
+        "required": {
+            "accelerator": "gpu",
+            "example.com/node-pool": "batch",
+        },
+        "preferred": {"disk-tier": "ssd"},
+    }
+
+
+@pytest.mark.parametrize(
+    ("placement", "message"),
+    [
+        (
+            {"required": {"example.com/node-pool": ""}},
+            "placement label values must not be empty",
+        ),
+        ({"preferred": {"bad key": "batch"}}, "invalid placement label key"),
+        (
+            {"required": {"example.com/node-pool": "batch"}, "tolerations": []},
+            "tolerations",
+        ),
+        (
+            {"required": {"example.com/node-pool": {"matchExpressions": []}}},
+            "placement label values must be strings",
+        ),
+        ({"required": None}, "placement labels must be an object"),
+    ],
+)
+def test_project_settings_rejects_invalid_placement(
+    tmp_path: Path,
+    placement: dict[str, object],
+    message: str,
+) -> None:
+    """Verify placement rejects empty values and raw scheduler fragments."""
+    project_path = tmp_path / "goblin-king-project.json"
+    project_path.write_text(
+        json.dumps(
+            {
+                "apiVersion": PROJECT_CONFIG_API_VERSION,
+                "kind": PROJECT_CONFIG_KIND,
+                "goblins": {
+                    "project.bad": {
+                        "image": "bad:local",
+                        "placement": placement,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProjectSettingsError, match=message):
+        ProjectSettings.from_path(project_path)
+
+
+def test_project_settings_propagates_placement_to_job_metadata() -> None:
+    """Verify serialized job metadata keeps normalized placement intent."""
+    settings = ProjectSettings(
+        goblins={
+            "project.placed": {
+                "image": "placed:local",
+                "placement": {
+                    "required": {"example.com/node-pool": "batch"},
+                    "preferred": {"disk-tier": "ssd"},
+                },
+            }
+        }
+    )
+    definition = settings.registry_definitions()[0]
+
+    metadata = goblin_job_metadata(definition)
+
+    assert metadata["goblin_definition"]["metadata"]["placement"] == {
+        "required": {"example.com/node-pool": "batch"},
+        "preferred": {"disk-tier": "ssd"},
+    }
 
 
 def test_project_settings_reject_service_without_endpoint(tmp_path: Path) -> None:
