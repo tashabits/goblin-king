@@ -118,12 +118,19 @@ source during smoke proof.
 | `resources` | Per-goblin resource policy override. These fields are merged over `defaults.resources`; nested objects such as `memory`, `filesystem`, `network`, `logs`, and `concurrency` merge key by key. |
 | `artifacts` | Artifact expectations for project docs and future validation. |
 | `labels` / `tags` | Project-owned metadata for grouping and admin display. |
-| `env` | Safe non-secret environment metadata. |
-| `secretRefs` | Secret names only; values are rejected. |
+| `env` | Safe non-secret environment values passed to worker containers. |
+| `secretRefs` | Secret environment variable names only; values are rejected. |
 | `schedule` | Optional schedule metadata used by later adopter workflows. |
 | `baseUrl` | Optional service URL to register directly for a service workload. |
 | `port` | Optional service container port. Service workloads must set `baseUrl` or `port`. |
 | `probePath` | HTTP path used by service probes. Defaults to `/hello` and must start with `/`. |
+
+`env` is intended for literal, non-secret runtime settings. Docker workers receive
+those values as container environment variables. `secretRefs` lists environment
+variable names that must already exist in the scheduler process environment. Docker
+workers receive those names by reference so secret values are copied by Docker without
+being stored in project config, job payloads, result envelopes, or Docker command
+arguments. Missing secret references are skipped.
 
 ## Discovery Behavior
 
