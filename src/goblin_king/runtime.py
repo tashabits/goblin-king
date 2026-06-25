@@ -63,6 +63,7 @@ raise SystemExit(f"result file not found before timeout: {result_path}")
 """
 
 _KUBERNETES_PREFERRED_PLACEMENT_WEIGHT = 50
+DEFAULT_RUNTIME_LOG_CAPTURE_BYTES = 64 * 1024
 
 
 class InProcessRuntime:
@@ -181,8 +182,19 @@ class DockerRuntime:
                 errors="replace",
                 timeout=timeout_seconds,
             )
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as error:
             self._record_worker_heartbeats(context)
+            self._emit_container_log_event(
+                definition=definition,
+                image=worker.image,
+                context=context,
+                worker_id=worker_id,
+                stdout=error.stdout,
+                stderr=error.stderr,
+                exit_code=None,
+                timed_out=True,
+                resource_policy=resource_policy,
+            )
             self._emit_worker_event(
                 "worker.timed_out",
                 context,
@@ -194,6 +206,17 @@ class DockerRuntime:
             )
 
         self._record_worker_heartbeats(context)
+        self._emit_container_log_event(
+            definition=definition,
+            image=worker.image,
+            context=context,
+            worker_id=worker_id,
+            stdout=completed.stdout,
+            stderr=completed.stderr,
+            exit_code=completed.returncode,
+            timed_out=False,
+            resource_policy=resource_policy,
+        )
         result = self._load_result(context.run_id, result_path)
         if result is not None:
             artifact_error = artifact_policy_error(
@@ -264,6 +287,8 @@ class DockerRuntime:
             self.docker_executable,
             "run",
             "--rm",
+            "--name",
+            worker_id,
             "--label",
             "goblin-king.worker=true",
             "--label",
@@ -387,6 +412,34 @@ class DockerRuntime:
             payload=payload,
         )
 
+    def _emit_container_log_event(
+        self,
+        *,
+        definition: GoblinDefinition,
+        image: str,
+        context: GoblinContext,
+        worker_id: str,
+        stdout: str | bytes | None,
+        stderr: str | bytes | None,
+        exit_code: int | None,
+        timed_out: bool,
+        resource_policy: ResourcePolicy | None,
+    ) -> None:
+        """Persist a bounded copy of Docker wrapper output after a short-lived worker exits."""
+        if self.event_bus is None:
+            return
+        payload = _container_log_payload(
+            kind=definition.kind,
+            image=image,
+            container_name=worker_id,
+            stdout=stdout,
+            stderr=stderr,
+            exit_code=exit_code,
+            timed_out=timed_out,
+            resource_policy=resource_policy,
+        )
+        self._emit_worker_event("worker.container_logs", context, worker_id, payload)
+
     def _load_result(self, run_id: str, result_path: Path) -> GoblinResult | None:
         """Load a worker result from Redis first, then from the fallback result file."""
         result_json = None
@@ -424,6 +477,58 @@ def _placement_metadata(
         if placement is not None:
             return placement
     return None
+
+
+def _container_log_payload(
+    *,
+    kind: str,
+    image: str,
+    container_name: str,
+    stdout: str | bytes | None,
+    stderr: str | bytes | None,
+    exit_code: int | None,
+    timed_out: bool,
+    resource_policy: ResourcePolicy | None,
+) -> dict[str, Any]:
+    max_bytes = _log_capture_limit(resource_policy)
+    stdout_limit = (max_bytes + 1) // 2
+    stderr_limit = max_bytes // 2
+    stdout_tail, stdout_truncated, stdout_bytes = _tail_text(stdout, stdout_limit)
+    stderr_tail, stderr_truncated, stderr_bytes = _tail_text(stderr, stderr_limit)
+    return {
+        "kind": kind,
+        "image": image,
+        "container_name": container_name,
+        "exit_code": exit_code,
+        "timed_out": timed_out,
+        "stdout": stdout_tail,
+        "stderr": stderr_tail,
+        "stdout_truncated": stdout_truncated,
+        "stderr_truncated": stderr_truncated,
+        "truncated": stdout_truncated or stderr_truncated,
+        "max_bytes": max_bytes,
+        "stdout_bytes": stdout_bytes,
+        "stderr_bytes": stderr_bytes,
+    }
+
+
+def _log_capture_limit(resource_policy: ResourcePolicy | None) -> int:
+    if resource_policy is not None and resource_policy.logs.max_bytes is not None:
+        return resource_policy.logs.max_bytes
+    return DEFAULT_RUNTIME_LOG_CAPTURE_BYTES
+
+
+def _tail_text(value: str | bytes | None, max_bytes: int) -> tuple[str, bool, int]:
+    if value is None:
+        return "", False, 0
+    text = value.decode("utf-8", errors="replace") if isinstance(value, bytes) else str(value)
+    encoded = text.encode("utf-8")
+    byte_count = len(encoded)
+    if max_bytes <= 0:
+        return "", byte_count > 0, byte_count
+    if byte_count <= max_bytes:
+        return text, False, byte_count
+    return encoded[-max_bytes:].decode("utf-8", errors="replace"), True, byte_count
 
 
 def _normalize_placement(metadata: Any) -> dict[str, dict[str, str]] | None:

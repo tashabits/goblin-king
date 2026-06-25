@@ -1,6 +1,8 @@
 """Local runtime tests for in-process goblin execution."""
 
-from goblin_king.contracts import GoblinContext, GoblinDefinition
+import subprocess
+
+from goblin_king.contracts import GoblinContext, GoblinDefinition, GoblinResult
 from goblin_king.registry import GoblinRegistry
 from goblin_king.resource_policies import ResourcePolicy
 from goblin_king.runtime import (
@@ -225,6 +227,9 @@ def test_docker_command_includes_resource_policy_flags(tmp_path) -> None:
         resource_policy=policy,
     )
 
+    assert ["--name", "worker-policy"] == command[
+        command.index("--name") : command.index("--name") + 2
+    ]
     assert (
         f"GOBLIN_CONTRACT_VERSION={GOBLIN_CONTAINER_CONTRACT_VERSION}" in command
     )
@@ -299,6 +304,80 @@ def test_docker_command_includes_project_env_and_secret_refs(tmp_path, monkeypat
     assert "DEMO_SECRET" in command
     assert "secret-value" not in command
     assert "MISSING_SECRET" not in command
+
+
+def test_docker_runtime_emits_bounded_container_logs(tmp_path, monkeypatch) -> None:
+    """Verify Docker wrapper stdout/stderr are preserved as bounded lifecycle events."""
+
+    class RecordingEventBus:
+        def __init__(self) -> None:
+            self.events = []
+
+        def emit(self, event_type: str, **payload) -> None:
+            self.events.append({"event_type": event_type, **payload})
+
+    event_bus = RecordingEventBus()
+    runtime = DockerRuntime(
+        workers=WorkerImageMap(
+            {"example.hello": WorkerImageDefinition(context=".", image="hello:local")},
+            root=".",
+        ),
+        run_root=tmp_path / "runs",
+        event_bus=event_bus,
+    )
+    context = GoblinContext(
+        run_id="run-logs",
+        artifact_root=str(tmp_path / "artifacts" / "run-logs"),
+        metadata={"job_id": "job-logs"},
+    )
+    definition = GoblinDefinition(
+        kind="example.hello",
+        display_name="Hello",
+        module="unused.by.docker",
+    )
+    policy = ResourcePolicy.model_validate({"logs": {"max_bytes": 10}})
+
+    def fake_run(command, **_kwargs):
+        assert ["--name", "worker-run-logs"] == command[
+            command.index("--name") : command.index("--name") + 2
+        ]
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="abcdefghi",
+            stderr="1234567",
+        )
+
+    monkeypatch.setattr("goblin_king.runtime.subprocess.run", fake_run)
+    monkeypatch.setattr(runtime, "_record_worker_heartbeats", lambda _context: None)
+    monkeypatch.setattr(
+        runtime,
+        "_load_result",
+        lambda _run_id, _result_path: GoblinResult.ok(data={"ok": True}),
+    )
+
+    result = runtime.run(definition, None, {}, context, resource_policy=policy)
+
+    assert result.status == "success"
+    log_event = next(
+        event for event in event_bus.events if event["event_type"] == "worker.container_logs"
+    )
+    assert log_event["worker_id"] == "worker-run-logs"
+    assert log_event["payload"] == {
+        "kind": "example.hello",
+        "image": "hello:local",
+        "container_name": "worker-run-logs",
+        "exit_code": 0,
+        "timed_out": False,
+        "stdout": "efghi",
+        "stderr": "34567",
+        "stdout_truncated": True,
+        "stderr_truncated": True,
+        "truncated": True,
+        "max_bytes": 10,
+        "stdout_bytes": 9,
+        "stderr_bytes": 7,
+    }
 
 
 def test_kubernetes_job_includes_resource_policy_fields() -> None:
