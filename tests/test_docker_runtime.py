@@ -101,6 +101,72 @@ def test_docker_runtime_executes_example_worker(
     assert json.loads(redis_payload)["status"] == "success"
 
 
+def test_docker_runtime_passes_project_env_and_secret_refs(
+    tmp_path: Path,
+    redis_container: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify Docker workers can read project env and secretRefs without echoing values."""
+    del redis_container
+    worker_dir = tmp_path / "env-worker"
+    worker_dir.mkdir()
+    (worker_dir / "Dockerfile").write_text(
+        "FROM python:3.12-slim\nCOPY worker.py /worker.py\nCMD [\"python\", \"/worker.py\"]\n",
+        encoding="utf-8",
+    )
+    (worker_dir / "worker.py").write_text(
+        (
+            "import json, os\n"
+            "from pathlib import Path\n"
+            "result = {\n"
+            "    'status': 'success',\n"
+            "    'data': {\n"
+            "        'mode': os.environ.get('PROJECT_MODE'),\n"
+            "        'secret_present': 'PROJECT_SECRET' in os.environ,\n"
+            "        'secret_length': len(os.environ.get('PROJECT_SECRET', '')),\n"
+            "    },\n"
+            "    'artifacts': [],\n"
+            "    'metrics': {},\n"
+            "    'handoff': [],\n"
+            "    'error': None,\n"
+            "}\n"
+            "Path(os.environ['GOBLIN_RESULT_PATH']).write_text(\n"
+            "    json.dumps(result), encoding='utf-8'\n"
+            ")\n"
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PROJECT_SECRET", "secret-value")
+    workers = WorkerImageMap.from_definitions(
+        {
+            "adopter.env-secret": WorkerImageDefinition(
+                context=worker_dir,
+                image="goblin-env-secret-proof:local",
+            )
+        }
+    )
+    runtime = DockerRuntime(workers=workers, redis_url=REDIS_URL, run_root=tmp_path / "runs")
+    runtime.build_image("adopter.env-secret")
+    context = new_run_context("job-env-secret", "adopter.env-secret")
+    context = context.model_copy(update={"artifact_root": str(tmp_path / "artifacts")})
+    definition = GoblinDefinition(
+        kind="adopter.env-secret",
+        display_name="Env Secret",
+        module="unused.by.docker",
+        metadata={"env": {"PROJECT_MODE": "integration"}, "secret_refs": ["PROJECT_SECRET"]},
+    )
+
+    result = runtime.run(definition, None, {}, context)
+
+    assert result.status == "success"
+    assert result.data == {
+        "mode": "integration",
+        "secret_present": True,
+        "secret_length": len("secret-value"),
+    }
+    assert "secret-value" not in result.model_dump_json()
+
+
 def test_docker_runtime_records_worker_heartbeats(
     tmp_path: Path,
     redis_container: str,

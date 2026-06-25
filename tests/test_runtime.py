@@ -1,9 +1,15 @@
 """Local runtime tests for in-process goblin execution."""
 
-from goblin_king.contracts import GoblinContext
+from goblin_king.contracts import GoblinContext, GoblinDefinition
 from goblin_king.registry import GoblinRegistry
 from goblin_king.resource_policies import ResourcePolicy
-from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRuntime
+from goblin_king.runtime import (
+    DockerRuntime,
+    InProcessRuntime,
+    KubernetesRuntime,
+    _worker_env,
+    _worker_secret_refs,
+)
 from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
 from goblin_king.workers import WorkerImageDefinition, WorkerImageMap
 
@@ -246,6 +252,53 @@ def test_docker_command_includes_resource_policy_flags(tmp_path) -> None:
     assert ["--log-opt", "max-size=2048"] == command[
         command.index("--log-opt") : command.index("--log-opt") + 2
     ]
+
+
+def test_worker_env_metadata_is_normalized() -> None:
+    """Verify project metadata becomes deterministic worker environment config."""
+    definition = GoblinDefinition(
+        kind="example.env",
+        display_name="Env",
+        module="container.only",
+        metadata={
+            "env": {"MODE": "demo", "COUNT": 2, "SKIP": None},
+            "secret_refs": ["DEMO_SECRET", ""],
+        },
+    )
+
+    assert _worker_env(definition) == {"COUNT": "2", "MODE": "demo"}
+    assert _worker_secret_refs(definition) == ["DEMO_SECRET"]
+
+
+def test_docker_command_includes_project_env_and_secret_refs(tmp_path, monkeypatch) -> None:
+    """Verify Docker workers receive env while secret values stay out of argv."""
+    monkeypatch.setenv("DEMO_SECRET", "secret-value")
+    runtime = DockerRuntime(
+        workers=WorkerImageMap(
+            {"example.hello": WorkerImageDefinition(context=".", image="hello:local")},
+            root=".",
+        )
+    )
+    context = GoblinContext(
+        run_id="run-env",
+        artifact_root=str(tmp_path / "artifacts"),
+        metadata={"job_id": "job-env"},
+    )
+
+    command = runtime._docker_run_command(
+        image="hello:local",
+        run_dir=tmp_path / "run",
+        context=context,
+        worker_id="worker-env",
+        timeout_seconds=30,
+        worker_env={"MODE": "demo"},
+        secret_refs=["DEMO_SECRET", "MISSING_SECRET"],
+    )
+
+    assert "MODE=demo" in command
+    assert "DEMO_SECRET" in command
+    assert "secret-value" not in command
+    assert "MISSING_SECRET" not in command
 
 
 def test_kubernetes_job_includes_resource_policy_fields() -> None:

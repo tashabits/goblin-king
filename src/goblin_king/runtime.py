@@ -168,6 +168,8 @@ class DockerRuntime:
             worker_id=worker_id,
             timeout_seconds=timeout_seconds,
             resource_policy=resource_policy,
+            worker_env=_worker_env(definition),
+            secret_refs=_worker_secret_refs(definition),
         )
         try:
             completed = subprocess.run(
@@ -245,6 +247,8 @@ class DockerRuntime:
         worker_id: str,
         timeout_seconds: int | None,
         resource_policy: ResourcePolicy | None = None,
+        worker_env: dict[str, str] | None = None,
+        secret_refs: list[str] | None = None,
     ) -> list[str]:
         """Compose a deterministic docker run command for a worker container."""
         artifact_root = Path(context.artifact_root)
@@ -295,6 +299,7 @@ class DockerRuntime:
             "-e",
             f"GOBLIN_HEARTBEAT_INTERVAL_SECONDS={self.heartbeat_interval_seconds}",
         ]
+        command.extend(_docker_env_args(worker_env or {}, secret_refs or []))
         if resource_policy is not None:
             command.extend(
                 [
@@ -816,6 +821,38 @@ class KubernetesRuntime:
             core.delete_namespaced_config_map(name=config_name, namespace=self.namespace)
         except Exception:
             pass
+
+
+def _worker_env(definition: GoblinDefinition) -> dict[str, str]:
+    """Extract safe literal environment values from project goblin metadata."""
+    metadata_env = definition.metadata.get("env", {})
+    if not isinstance(metadata_env, dict):
+        return {}
+    return {
+        str(key): str(value)
+        for key, value in metadata_env.items()
+        if str(key) and value is not None
+    }
+
+
+def _worker_secret_refs(definition: GoblinDefinition) -> list[str]:
+    """Extract secret environment variable names from project goblin metadata."""
+    metadata_secret_refs = definition.metadata.get("secret_refs", [])
+    if not isinstance(metadata_secret_refs, list):
+        return []
+    return [str(name) for name in metadata_secret_refs if str(name)]
+
+
+def _docker_env_args(worker_env: dict[str, str], secret_refs: list[str]) -> list[str]:
+    """Build Docker environment flags without placing secret values in argv."""
+    args: list[str] = []
+    for key in sorted(worker_env):
+        args.extend(["-e", f"{key}={worker_env[key]}"])
+    for key in sorted(set(secret_refs)):
+        if key in os.environ:
+            args.extend(["-e", key])
+    return args
+
 
 def new_run_context(job_id: str, kind: str, attempt: int = 1) -> GoblinContext:
     """Create a run context shared by CLI and scheduler runtime paths."""
