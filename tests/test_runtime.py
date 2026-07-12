@@ -201,6 +201,64 @@ def test_kubernetes_observed_run_captures_bounded_logs_before_cleanup(monkeypatc
     assert len(deleted) == 2
 
 
+def test_kubernetes_observed_run_captures_logs_when_wait_fails(monkeypatch) -> None:
+    """Verify a post-creation API error still captures diagnostics before cleanup."""
+    pod = SimpleNamespace(
+        metadata=SimpleNamespace(name="failed-validation-pod"),
+        status=SimpleNamespace(container_statuses=[]),
+    )
+    batch = SimpleNamespace(
+        create_namespaced_job=lambda **_kwargs: None,
+        delete_namespaced_job=lambda **_kwargs: None,
+    )
+    core = SimpleNamespace(
+        create_namespaced_config_map=lambda **_kwargs: None,
+        delete_namespaced_config_map=lambda **_kwargs: None,
+        list_namespaced_pod=lambda **_kwargs: SimpleNamespace(items=[pod]),
+        read_namespaced_pod_log=lambda *, container, **_kwargs: f"{container} failure log",
+    )
+    runtime = KubernetesRuntime(
+        workers=WorkerImageMap.from_definitions(
+            {
+                "example.validation": WorkerImageDefinition(
+                    context=".", image="validation:local"
+                )
+            }
+        ),
+        namespace="proof",
+    )
+    monkeypatch.setattr(runtime_module, "kubernetes_clients", lambda: (batch, core))
+
+    def fail_wait(**_kwargs):
+        raise RuntimeError("job status unavailable")
+
+    monkeypatch.setattr(runtime, "_wait_for_result_observed", fail_wait)
+
+    observation = runtime.run_observed(
+        GoblinDefinition(
+            kind="example.validation",
+            display_name="Validation",
+            module="container.only",
+        ),
+        None,
+        {},
+        GoblinContext(
+            run_id="failed-validation-run",
+            artifact_root=".goblin-king/artifacts/failed-validation-run",
+            metadata={"job_id": "failed-validation-job"},
+        ),
+        timeout_seconds=17,
+    )
+
+    assert observation.result.status == "failed"
+    assert observation.job_created is True
+    assert "job status unavailable" in (observation.result.error or "")
+    assert observation.logs == {
+        "worker": "worker failure log",
+        "result-forwarder": "result-forwarder failure log",
+    }
+
+
 def test_kubernetes_job_omits_placement_fields_without_metadata() -> None:
     """Verify default Kubernetes manifests do not include placement fields."""
     workers = WorkerImageMap(
