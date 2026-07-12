@@ -930,7 +930,9 @@ delivery for operators and integrations.
 
 Durable events carry a database-assigned `sequence`, which is authoritative when wall
 clocks repeat, slew, or move backward. Run timestamps are causally clamped and timeout
-decisions use monotonic elapsed time. See
+decisions use monotonic elapsed time. Redis Streams preserve that durable order; pub/sub remains a
+best-effort notification rail whose payloads carry the same sequence. Existing Job/Run statuses,
+result envelopes, and Python constructor requirements remain unchanged. See
 [Causal Lifecycle Ordering](docs/causal-lifecycle-ordering.md) for ordering, cursor,
 migration, and tie behavior.
 

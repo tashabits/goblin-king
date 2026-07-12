@@ -89,6 +89,10 @@ The event `sequence` is the authoritative lifecycle order; `created_at` remains 
 correlation metadata. This distinction keeps fast-task evidence causal when a host
 clock adjusts. See [Causal Lifecycle Ordering](causal-lifecycle-ordering.md).
 
+Use the Redis Stream or durable event API when ordered replay matters. Pub/sub is a low-latency,
+best-effort notification rail; consumers spanning multiple publishers order and deduplicate those
+notifications by the included sequence.
+
 ## Use The API And Admin UI
 
 Start the API:

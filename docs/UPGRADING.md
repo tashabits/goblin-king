@@ -42,6 +42,10 @@ existing database backfills sequences from original insertion order and repairs
 historical terminal Runs whose finish precedes their start. See
 [Causal Lifecycle Ordering](causal-lifecycle-ordering.md).
 
+No Job status, Run status, constructor requirement, or result-envelope shape changes. Existing
+EventRecord construction and the historical `SQLiteStore.save_event()` return contract remain
+valid. Redis Stream consumers should deduplicate by `sequence`; pub/sub remains best-effort.
+
 ## Compatibility Fixtures
 
 The `examples/compatibility/project-ready-v0_1/` fixture is the baseline for the

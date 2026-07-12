@@ -22,3 +22,9 @@ The machine-readable version of this matrix lives at
 Patch releases may add optional fields, commands, docs, and endpoints without breaking
 existing fixtures. Breaking changes require a new compatibility fixture under
 `examples/compatibility/` and explicit migration notes.
+
+The event-ordering update does not add a Job or Run status, replace a result envelope, or require
+new constructor arguments. Pre-sequence EventRecord payloads remain valid and receive sequence zero
+until persisted. `SQLiteStore.save_event()` retains its original no-value return; the ordered
+delivery path uses a new internal persistence method. The nullable Run finish field remains part of
+the Python model for existing callers, while SQLite normalizes terminal rows before API reads.
