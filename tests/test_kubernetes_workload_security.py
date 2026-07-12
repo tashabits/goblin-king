@@ -238,6 +238,57 @@ def test_validation_identity_changes_only_for_restricted_contract() -> None:
     )
 
 
+def test_restricted_identity_binds_normalized_artifact_retention() -> None:
+    image = "registry.example/echo@sha256:" + "a" * 64
+    base = KubernetesRuntimeSettings(workload_security_profile="restricted-v1")
+    first = KubernetesRuntimeSettings(
+        workload_security_profile="restricted-v1",
+        artifact_retention=KubernetesArtifactRetention(
+            claim_name="artifact-pvc",
+            volume_subdirectory="artifacts/./retained",
+            uri_root="/data/artifacts/./retained",
+        ),
+    )
+    normalized = KubernetesRuntimeSettings(
+        workload_security_profile="restricted-v1",
+        artifact_retention=KubernetesArtifactRetention(
+            claim_name="artifact-pvc",
+            volume_subdirectory="artifacts/retained",
+            uri_root="/data/artifacts/retained",
+        ),
+    )
+    changed_claim = normalized.model_copy(
+        update={
+            "artifact_retention": KubernetesArtifactRetention(
+                claim_name="other-pvc",
+                volume_subdirectory="artifacts/retained",
+                uri_root="/data/artifacts/retained",
+            )
+        }
+    )
+
+    base_identity = base.validation_image_identity(image, "example.echo")
+    first_identity = first.validation_image_identity(image, "example.echo")
+    assert first_identity != base_identity
+    assert first_identity == normalized.validation_image_identity(image, "example.echo")
+    assert first_identity != changed_claim.validation_image_identity(image, "example.echo")
+
+    legacy = KubernetesRuntimeSettings(workload_security_profile="legacy")
+    legacy_retained = first.model_copy(update={"workload_security_profile": "legacy"})
+    legacy_changed = changed_claim.model_copy(update={"workload_security_profile": "legacy"})
+    assert legacy.validation_image_identity(image, "example.echo") == f"kubernetes:{image}"
+    assert legacy_retained.validation_image_identity(image, "example.echo") != (
+        legacy.validation_image_identity(image, "example.echo")
+    )
+    assert legacy_retained.validation_image_identity(image, "example.echo") == (
+        normalized.model_copy(update={"workload_security_profile": "legacy"})
+        .validation_image_identity(image, "example.echo")
+    )
+    assert legacy_retained.validation_image_identity(image, "example.echo") != (
+        legacy_changed.validation_image_identity(image, "example.echo")
+    )
+
+
 def test_resource_requests_cannot_exceed_limits() -> None:
     with pytest.raises(ValueError, match="CPU request"):
         KubernetesRuntimeSettings.model_validate(

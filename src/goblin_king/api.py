@@ -146,7 +146,10 @@ from goblin_king.fanout import (
 )
 from goblin_king.kubernetes_runtime_factory import build_kubernetes_runtime
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
-from goblin_king.kubernetes_validation import validate_workers_with_kubernetes
+from goblin_king.kubernetes_validation import (
+    validate_workers_with_kubernetes,
+    with_kubernetes_validation_cleanup,
+)
 from goblin_king.metadata import goblin_job_metadata
 from goblin_king.notebook_services import (
     NotebookServiceRuntimeError,
@@ -424,7 +427,7 @@ def _validate_notebook_with_kubernetes(
             timeout_seconds=timeout_seconds,
         )
     except Exception as error:
-        return WorkerValidationResult(
+        validation = WorkerValidationResult(
             kind=record.kind,
             ok=False,
             image=record.image,
@@ -436,20 +439,22 @@ def _validate_notebook_with_kubernetes(
             error=str(error),
             checks=["kubernetes-job"],
         )
-    ok = run_result.status == "success" or not require_success
-    return WorkerValidationResult(
-        kind=record.kind,
-        ok=ok,
-        image=record.image,
-        image_digest=notebook_validation_identity(
-            image_identity,
-            record.source_hash,
-        ),
-        validated_at=utc_now(),
-        result_status=run_result.status,
-        error=None if ok else run_result.error or "worker returned failed status",
-        checks=["kubernetes-job", "result-envelope"],
-    )
+    else:
+        ok = run_result.status == "success" or not require_success
+        validation = WorkerValidationResult(
+            kind=record.kind,
+            ok=ok,
+            image=record.image,
+            image_digest=notebook_validation_identity(
+                image_identity,
+                record.source_hash,
+            ),
+            validated_at=utc_now(),
+            result_status=run_result.status,
+            error=None if ok else run_result.error or "worker returned failed status",
+            checks=["kubernetes-job", "result-envelope"],
+        )
+    return with_kubernetes_validation_cleanup(validation, runtime_settings, context)
 
 
 def _notebook_service_runtime_manager(state: AppState) -> NotebookServiceRuntimeManager:

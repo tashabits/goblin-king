@@ -25,6 +25,8 @@ from goblin_king.contracts import (
     WorkerValidationRecord,
     utc_now,
 )
+from goblin_king.kubernetes_artifact_config import KubernetesArtifactRetention
+from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 from goblin_king.store import SQLiteStore
 from goblin_king.validation import WorkerValidationResult
 from goblin_king.workers import WorkerImageMap
@@ -63,6 +65,37 @@ def test_health_and_goblins_endpoints(tmp_path: Path) -> None:
     echo = next(item for item in goblins.json() if item["kind"] == "example.echo")
     assert echo["worker_mapped"] is True
     assert echo["validation_status"]["state"] == "unknown"
+
+
+def test_api_state_prepares_restricted_retention_group(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    prepared: dict[str, object] = {}
+
+    def fake_prepare(root: Path, *, shared_gid: int | None = None) -> None:
+        prepared.update(root=root, shared_gid=shared_gid)
+        root.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr("goblin_king.api_state.prepare_shared_artifact_root", fake_prepare)
+    settings = ApiSettings(
+        registry=Path("examples/goblins.json").resolve(),
+        images=Path("goblin-images.json").resolve(),
+        db=tmp_path / "api.sqlite3",
+        artifact_root=tmp_path / "artifacts",
+        kubernetes_runtime=KubernetesRuntimeSettings(
+            workload_security_profile="restricted-v1",
+            restricted_workload={"fs_group": 23456},
+            artifact_retention=KubernetesArtifactRetention(claim_name="artifact-pvc"),
+        ),
+    )
+
+    create_app(settings)
+
+    assert prepared == {
+        "root": (tmp_path / "artifacts").resolve(),
+        "shared_gid": 23456,
+    }
 
 
 def test_goblins_endpoint_reports_validation_status(tmp_path: Path) -> None:

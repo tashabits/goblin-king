@@ -4,20 +4,32 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
+import stat
 import zipfile
 from pathlib import Path
 
 import pytest
 from redis import Redis
 
+from goblin_king import artifact_storage as artifact_storage_module
+from goblin_king import kubernetes_artifacts as kubernetes_artifacts_module
+from goblin_king.artifact_storage import (
+    SHARED_ARTIFACT_DIRECTORY_MODE,
+    SHARED_ARTIFACT_FILE_MODE,
+    prepare_shared_artifact_root,
+)
 from goblin_king.contracts import ArtifactRecord, GoblinResult
 from goblin_king.kubernetes_artifact_config import (
+    ArtifactRetentionError,
     ArtifactRetentionRequest,
     KubernetesArtifactRetention,
 )
 from goblin_king.kubernetes_artifacts import (
+    cleanup_retained_run,
     retain_result_artifacts,
+    retained_run_path,
 )
 from goblin_king.kubernetes_result_forwarder import (
     RESULT_FORWARDER_SCRIPT,
@@ -75,6 +87,14 @@ def test_retains_png_and_zip_with_actual_size_digest_and_project_scope(tmp_path:
     retained_files = sorted(path for path in destination.rglob("*") if path.is_file())
     assert len(retained_files) == 2
     assert {path.suffix for path in retained_files} == {".png", ".zip"}
+    if os.name == "posix":
+        assert stat.S_IMODE(retained_files[0].parent.stat().st_mode) == (
+            SHARED_ARTIFACT_DIRECTORY_MODE
+        )
+        assert all(
+            stat.S_IMODE(path.stat().st_mode) == SHARED_ARTIFACT_FILE_MODE
+            for path in retained_files
+        )
 
 
 @pytest.mark.parametrize(
@@ -235,6 +255,127 @@ def test_rejects_symlink_directories_when_platform_supports_them(tmp_path: Path)
 
     assert retained.status == "failed"
     assert "symbolic links" in (retained.error or "")
+
+
+@pytest.mark.skipif(
+    os.name != "posix" or not hasattr(os, "O_NOFOLLOW"),
+    reason="descriptor-relative no-follow proof requires POSIX O_NOFOLLOW",
+)
+def test_rejects_source_swapped_to_symlink_after_validation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Refuse an adversarial final-component swap between path validation and copy."""
+    source = tmp_path / "source"
+    source.mkdir()
+    candidate = source / "proof.txt"
+    candidate.write_text("approved", encoding="utf-8")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside secret", encoding="utf-8")
+    original_resolve = kubernetes_artifacts_module._resolve_source
+
+    def resolve_then_swap(source_root: Path, artifact: ArtifactRecord):
+        resolved = original_resolve(source_root, artifact)
+        candidate.unlink()
+        candidate.symlink_to(outside)
+        return resolved
+
+    monkeypatch.setattr(
+        kubernetes_artifacts_module,
+        "_resolve_source",
+        resolve_then_swap,
+    )
+
+    retained = retain_result_artifacts(
+        GoblinResult.ok(artifacts=[ArtifactRecord(name="proof.txt", uri="proof.txt")]),
+        ArtifactRetentionRequest(
+            source_root=source,
+            destination_root=tmp_path / "retained",
+            uri_root="/data/artifacts",
+            run_id="run-swapped-link",
+        ),
+    )
+
+    assert retained.status == "failed"
+    assert "unsafe before retention" in (retained.error or "")
+    assert retained.artifacts == []
+    assert outside.read_text(encoding="utf-8") == "outside secret"
+    assert not [path for path in (tmp_path / "retained").rglob("*") if path.is_file()]
+
+
+def test_portable_copy_rejects_source_replaced_after_validation(tmp_path: Path) -> None:
+    """The fallback pins copying to the file identity validated before opening it."""
+    source = tmp_path / "source"
+    source.mkdir()
+    candidate = source / "proof.txt"
+    candidate.write_text("approved", encoding="utf-8")
+    resolved = kubernetes_artifacts_module._resolve_source(
+        source,
+        ArtifactRecord(name="proof.txt", uri="proof.txt"),
+    )
+    candidate.unlink()
+    candidate.write_text("replacement", encoding="utf-8")
+    destination = tmp_path / "retained.txt"
+
+    with pytest.raises(
+        ArtifactRetentionError,
+        match="changed or became unsafe before retention",
+    ):
+        kubernetes_artifacts_module._copy_and_hash_portable(
+            resolved,
+            destination,
+            1_000,
+            "proof.txt",
+        )
+
+    assert not destination.exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX group and setgid modes")
+def test_prepares_restricted_artifact_root_for_shared_group(tmp_path: Path) -> None:
+    root = tmp_path / "artifacts"
+    root.mkdir(mode=0o755)
+
+    prepare_shared_artifact_root(root, shared_gid=os.getgid())
+
+    assert root.stat().st_gid == os.getgid()
+    assert stat.S_IMODE(root.stat().st_mode) == SHARED_ARTIFACT_DIRECTORY_MODE
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX group and setgid modes")
+def test_prepared_shared_root_needs_no_privileged_mutation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """A non-root API may reuse a volume that kubelet prepared for its group."""
+    root = tmp_path / "artifacts"
+    root.mkdir()
+    root.chmod(SHARED_ARTIFACT_DIRECTORY_MODE)
+    current_gid = root.stat().st_gid
+
+    def unexpected_mutation(*_args, **_kwargs) -> None:
+        raise AssertionError("pre-prepared root must not be mutated")
+
+    monkeypatch.setattr(artifact_storage_module.os, "chown", unexpected_mutation)
+    monkeypatch.setattr(Path, "chmod", unexpected_mutation)
+
+    prepare_shared_artifact_root(root, shared_gid=current_gid)
+
+
+def test_cleanup_retained_run_removes_only_validation_scope(tmp_path: Path) -> None:
+    root = tmp_path / "retained"
+    root.mkdir()
+    validation = retained_run_path(str(root), None, "validation-run")
+    durable = retained_run_path(str(root), None, "durable-run")
+    validation.mkdir(parents=True)
+    durable.mkdir(parents=True)
+    (validation / "proof.txt").write_text("ephemeral", encoding="utf-8")
+    (durable / "report.txt").write_text("durable", encoding="utf-8")
+
+    cleanup_retained_run(str(root), None, "validation-run")
+
+    assert not validation.exists()
+    assert (durable / "report.txt").read_text(encoding="utf-8") == "durable"
 
 
 def test_forwarder_publishes_only_the_retained_result(tmp_path: Path) -> None:

@@ -55,6 +55,15 @@ class KubernetesArtifactRetention:
         """Return the sidecar-visible directory receiving retained bytes."""
         return self.volume_mount_path
 
+    def identity_contract(self) -> dict[str, str]:
+        """Return the normalized settings that change the retained workload boundary."""
+        return {
+            "claim_name": self.claim_name,
+            "volume_subdirectory": str(PurePosixPath(self.volume_subdirectory)),
+            "uri_root": str(PurePosixPath(self.uri_root)),
+            "volume_mount_path": str(PurePosixPath(self.volume_mount_path)),
+        }
+
     @classmethod
     def from_environment(
         cls,

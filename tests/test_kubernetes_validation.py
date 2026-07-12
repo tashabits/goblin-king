@@ -3,6 +3,8 @@
 from pathlib import Path
 
 from goblin_king.contracts import ArtifactRecord, GoblinDefinition, GoblinResult
+from goblin_king.kubernetes_artifact_config import KubernetesArtifactRetention
+from goblin_king.kubernetes_artifacts import cleanup_retained_run, retained_run_path
 from goblin_king.kubernetes_pod_diagnostics import KubernetesRunObservation
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 from goblin_king.kubernetes_validation import validate_workers_with_kubernetes
@@ -97,6 +99,71 @@ def test_kubernetes_validation_returns_exact_identity_logs_and_artifacts(monkeyp
     assert result.checks == ["kubernetes-job", "result-envelope", "artifact-metadata"]
     assert captured["input"] == {"value": 7}
     assert captured["timeout_seconds"] == 19
+
+
+def test_kubernetes_validation_removes_unowned_retained_run(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Keep returned proof metadata while removing validation-only PVC bytes."""
+    registry, workers = _registry_and_workers()
+    retention_root = tmp_path / "artifacts"
+    retention_root.mkdir()
+    settings = KubernetesRuntimeSettings(
+        artifact_retention=KubernetesArtifactRetention(
+            claim_name="artifact-pvc",
+            uri_root="/data/artifacts",
+        )
+    )
+    retained_paths: list[Path] = []
+
+    class FakeRuntime:
+        @staticmethod
+        def run_observed(_definition, _entrypoint, _input, context, **_kwargs):
+            directory = retained_run_path(str(retention_root), None, context.run_id)
+            directory.mkdir(parents=True)
+            artifact = directory / "proof.txt"
+            artifact.write_text("validation proof", encoding="utf-8")
+            retained_paths.append(directory)
+            return KubernetesRunObservation(
+                result=GoblinResult.ok(
+                    artifacts=[
+                        ArtifactRecord(
+                            name="proof.txt",
+                            uri=artifact.as_uri(),
+                            media_type="text/plain",
+                        )
+                    ]
+                ),
+                job_created=True,
+                result_received=True,
+                result_envelope_valid=True,
+            )
+
+    monkeypatch.setattr(
+        "goblin_king.kubernetes_validation.build_kubernetes_runtime",
+        lambda **_kwargs: FakeRuntime(),
+    )
+
+    def cleanup_local(_uri_root: str, project_id: str | None, run_id: str) -> None:
+        cleanup_retained_run(str(retention_root), project_id, run_id)
+
+    monkeypatch.setattr(
+        "goblin_king.kubernetes_validation.cleanup_retained_run",
+        cleanup_local,
+    )
+
+    validation = validate_workers_with_kubernetes(
+        registry=registry,
+        workers=workers,
+        input_payload={},
+        kubernetes_runtime_settings=settings,
+    )[0]
+
+    assert validation.ok is True
+    assert validation.artifacts[0].name == "proof.txt"
+    assert retained_paths and not retained_paths[0].exists()
+    assert not [path for path in retention_root.rglob("*") if path.is_file()]
 
 
 def test_kubernetes_validation_rejects_invalid_envelope_even_without_success_gate(

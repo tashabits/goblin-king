@@ -93,10 +93,16 @@ class KubernetesRuntimeSettings(BaseModel):
     def validation_image_identity(self, image: str, kind: str | None) -> str:
         """Bind restricted validation proof to its effective security contract."""
         base = f"kubernetes:{image}"
-        if self.workload_security_profile == "legacy":
+        if self.workload_security_profile == "legacy" and self.artifact_retention is None:
             return base
+        contract: dict[str, object] = self.effective_workload_security(kind)
+        if self.artifact_retention is not None:
+            contract = {
+                "workload_security": contract,
+                "artifact_retention": self.artifact_retention.identity_contract(),
+            }
         payload = json.dumps(
-            self.effective_workload_security(kind),
+            contract,
             sort_keys=True,
             separators=(",", ":"),
         )

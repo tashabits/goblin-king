@@ -22,8 +22,52 @@ def main() -> None:
     parser.add_argument("--api-url", default="http://127.0.0.1:18000")
     parser.add_argument("--token", default="local-dev-token")
     parser.add_argument("--namespace", default="goblin-artifact-proof")
+    parser.add_argument("--release", default="goblin-artifact-proof")
+    parser.add_argument("--artifact-root", default="/data/artifacts")
     parser.add_argument("--timeout-seconds", type=int, default=180)
     args = parser.parse_args()
+
+    validation_response = api_json(
+        args.api_url,
+        args.token,
+        "POST",
+        "/admin/workers/validate-kubernetes",
+        {
+            "kinds": ["example.artifact"],
+            "input": {"proof_bundle": True},
+            "require_success": True,
+            "timeout_seconds": args.timeout_seconds,
+        },
+        timeout_seconds=args.timeout_seconds + 15,
+    )
+    validations = validation_response.get("validations", [])
+    if len(validations) != 1 or not validations[0].get("ok"):
+        raise RuntimeError(f"artifact worker validation failed: {validation_response}")
+    validation = validations[0]
+    identity = str(validation.get("image_digest") or "")
+    if not identity:
+        raise RuntimeError("artifact worker validation returned no scheduler identity")
+    validation_names = {artifact["name"] for artifact in validation.get("artifacts", [])}
+    if validation_names != EXPECTED_ARTIFACTS:
+        raise RuntimeError(
+            f"validation returned unexpected artifact metadata: {sorted(validation_names)}"
+        )
+    goblins = api_json(args.api_url, args.token, "GET", "/goblins")
+    persisted = next(
+        (item for item in goblins if item.get("kind") == "example.artifact"),
+        None,
+    )
+    if (
+        persisted is None
+        or (persisted.get("validation") or {}).get("status") != "passed"
+        or (persisted.get("validation") or {}).get("image_digest") != identity
+    ):
+        raise RuntimeError("persisted artifact validation identity does not match the proof")
+    assert_artifact_root_empty(
+        namespace=args.namespace,
+        deployment=f"{args.release}-api",
+        artifact_root=args.artifact_root,
+    )
     deadline = time.monotonic() + args.timeout_seconds
 
     job = api_json(
@@ -77,6 +121,8 @@ def main() -> None:
         json.dumps(
             {
                 "status": "passed",
+                "validation_identity": identity,
+                "validation_artifact_cleanup": "proved",
                 "job_id": job["id"],
                 "run_id": run["id"],
                 "job_cleanup": "proved",
@@ -87,6 +133,41 @@ def main() -> None:
             sort_keys=True,
         )
     )
+
+
+def assert_artifact_root_empty(
+    *,
+    namespace: str,
+    deployment: str,
+    artifact_root: str,
+) -> None:
+    """Prove validation left no unowned files on the shared artifact volume."""
+    completed = subprocess.run(
+        [
+            "kubectl",
+            "exec",
+            "--namespace",
+            namespace,
+            f"deployment/{deployment}",
+            "--",
+            "find",
+            artifact_root,
+            "-mindepth",
+            "1",
+            "-print",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"validation artifact cleanup check failed: {completed.stderr.strip()}"
+        )
+    if completed.stdout.strip():
+        raise RuntimeError(
+            f"validation left unowned artifact bytes: {completed.stdout.strip()}"
+        )
 
 
 def wait_for_job(api_url: str, token: str, job_id: str, deadline: float) -> dict[str, Any]:
@@ -159,6 +240,8 @@ def api_json(
     method: str,
     path: str,
     payload: dict[str, Any] | None = None,
+    *,
+    timeout_seconds: float = 15,
 ) -> Any:
     """Call one authenticated API route and decode its JSON response."""
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
@@ -171,7 +254,7 @@ def api_json(
         },
         method=method,
     )
-    with urllib.request.urlopen(request, timeout=15) as response:
+    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
         return json.loads(response.read())
 
 

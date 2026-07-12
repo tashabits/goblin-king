@@ -97,6 +97,9 @@ def test_kubernetes_artifact_retention_is_documented_with_honest_proof_limits() 
     proof = Path("docs/proofs/issue-147-kubernetes-artifact-retention.md").read_text(
         encoding="utf-8"
     )
+    acceptance = Path("scripts/kubernetes_artifact_retention_proof.py").read_text(
+        encoding="utf-8"
+    )
     upgrade = Path("docs/UPGRADING.md").read_text(encoding="utf-8")
     security = Path("docs/security-model.md").read_text(encoding="utf-8")
 
@@ -105,6 +108,13 @@ def test_kubernetes_artifact_retention_is_documented_with_honest_proof_limits() 
     assert "all-or-nothing" in retention
     assert "ReadWriteMany" in retention
     assert "scripts/kubernetes_artifact_retention_proof.py" in proof
+    assert acceptance.index('"/admin/workers/validate-kubernetes"') < acceptance.index(
+        '"/jobs"'
+    )
+    assert '"/goblins"' in acceptance
+    assert "assert_artifact_root_empty" in acceptance
+    assert '"-mindepth"' in acceptance
+    assert "validation_identity" in acceptance
     assert "Live kind execution was not performed" in proof
     assert "Kubernetes Artifact Retention" in upgrade
     assert "Kubernetes Artifact Boundary" in security
