@@ -24,6 +24,7 @@ from goblin_king.kubernetes_result_forwarder import (
     ResultForwarderSettings,
     forward_result,
 )
+from goblin_king.kubernetes_result_keys import forwarded_result_key, worker_result_key
 
 PNG_BYTES = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
@@ -272,6 +273,7 @@ def test_forwarder_publishes_only_the_retained_result(tmp_path: Path) -> None:
 
     assert forwarded.status == "success"
     assert len(calls) == 1
+    assert calls[0][0] == forwarded_result_key("run-forwarded")
     published = json.loads(calls[0][1])
     assert published["artifacts"] == [forwarded.artifacts[0].model_dump(mode="json")]
     retained_path = next(path for path in (tmp_path / "retained").rglob("*") if path.is_file())
@@ -309,6 +311,7 @@ def test_legacy_forwarder_rejects_unretained_artifact_metadata(
 
     forwarded = GoblinResult.model_validate_json(published["value"])
     assert exit_info.value.code == 0
+    assert published["key"] == worker_result_key("run-legacy")
     assert forwarded.status == "failed"
     assert forwarded.artifacts == []
     assert forwarded.metrics == {"ordinary": 1}

@@ -17,6 +17,7 @@ from goblin_king.kubernetes_artifacts import (
     artifact_retention_failure,
     retain_result_artifacts,
 )
+from goblin_king.kubernetes_result_keys import forwarded_result_key
 
 RESULT_FORWARDER_SCRIPT = r"""
 import json
@@ -105,7 +106,7 @@ def forward_result(
         result = retain_result_artifacts(result, retention)
     factory = redis_factory or Redis.from_url
     factory(settings.redis_url).set(
-        f"goblin-king:results:{settings.run_id}",
+        forwarded_result_key(settings.run_id),
         result.model_dump_json(),
         ex=3600,
     )

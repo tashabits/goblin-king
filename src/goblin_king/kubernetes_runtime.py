@@ -25,6 +25,7 @@ from goblin_king.kubernetes_pod_diagnostics import (
     find_image_pull_failure,
     read_kubernetes_worker_log_excerpt,
 )
+from goblin_king.kubernetes_result_keys import forwarded_result_key, worker_result_key
 from goblin_king.kubernetes_runtime_settings import (
     DEFAULT_KUBERNETES_IMAGE_PULL_POLICY,
     DEFAULT_RESULT_FORWARDER_IMAGE,
@@ -312,8 +313,13 @@ class KubernetesRuntime:
 
     def _load_result(self, run_id: str) -> GoblinResult | None:
         """Load a Kubernetes worker result from Redis."""
+        key = (
+            forwarded_result_key(run_id)
+            if self.artifact_retention is not None
+            else worker_result_key(run_id)
+        )
         try:
-            raw = Redis.from_url(self.redis_url).get(f"goblin-king:results:{run_id}")
+            raw = Redis.from_url(self.redis_url).get(key)
         except RedisError:
             return None
         if raw is None:

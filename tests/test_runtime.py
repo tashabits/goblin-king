@@ -10,6 +10,7 @@ from goblin_king.kubernetes_pod_diagnostics import (
     DEFAULT_KUBERNETES_LOG_CAPTURE_BYTES,
     KubernetesRunObservation,
 )
+from goblin_king.kubernetes_result_keys import forwarded_result_key, worker_result_key
 from goblin_king.registry import GoblinRegistry
 from goblin_king.resource_policies import ResourcePolicy
 from goblin_king.runtime import (
@@ -841,3 +842,39 @@ def test_failed_kubernetes_job_preserves_only_forwarded_retained_artifacts(
     assert result.data == forwarded.data
     assert result.artifacts == forwarded.artifacts
     assert result.metrics == forwarded.metrics
+
+
+def test_retention_runtime_waits_for_forwarder_owned_result_key(monkeypatch) -> None:
+    """Ignore the worker's early Redis result until retention publishes its final envelope."""
+    run_id = "run-forwarder-order"
+    worker_result = GoblinResult.ok(data={"source": "worker"})
+    retained_result = GoblinResult.ok(data={"source": "forwarder"})
+    values = {worker_result_key(run_id): worker_result.model_dump_json()}
+    requested: list[str] = []
+
+    class FakeRedis:
+        @staticmethod
+        def get(key: str):
+            requested.append(key)
+            return values.get(key)
+
+    monkeypatch.setattr(
+        "goblin_king.kubernetes_runtime.Redis.from_url",
+        lambda _url: FakeRedis(),
+    )
+    runtime = KubernetesRuntime(
+        workers=WorkerImageMap(
+            {"example.artifact": WorkerImageDefinition(context=".", image="artifact:local")},
+            root=".",
+        ),
+        artifact_retention=KubernetesArtifactRetention(claim_name="artifact-pvc"),
+    )
+
+    assert runtime._load_result(run_id) is None
+    assert requested == [forwarded_result_key(run_id)]
+
+    values[forwarded_result_key(run_id)] = retained_result.model_dump_json()
+    loaded = runtime._load_result(run_id)
+
+    assert loaded is not None
+    assert loaded.data == {"source": "forwarder"}
