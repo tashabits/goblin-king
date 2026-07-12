@@ -189,6 +189,7 @@ def test_kubernetes_observed_run_captures_bounded_logs_before_cleanup(monkeypatc
     )
 
     assert observation.result.status == "success"
+    assert observation.job_created is True
     assert observation.result_envelope_valid is True
     assert observation.exit_code == 0
     assert observation.logs == {

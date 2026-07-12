@@ -115,7 +115,8 @@ def _validate_one_with_kubernetes(
             checks=checks,
         )
 
-    checks.append("kubernetes-job")
+    if observation.job_created:
+        checks.append("kubernetes-job")
     result = observation.result
     common = {
         "kind": definition.kind,

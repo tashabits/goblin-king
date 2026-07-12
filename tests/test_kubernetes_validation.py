@@ -65,6 +65,7 @@ def test_kubernetes_validation_returns_exact_identity_logs_and_artifacts() -> No
                         )
                     ],
                 ),
+                job_created=True,
                 result_received=True,
                 result_envelope_valid=True,
                 exit_code=0,
@@ -102,6 +103,7 @@ def test_kubernetes_validation_rejects_invalid_envelope_even_without_success_gat
         def run_observed(self, *_args, **_kwargs):
             return KubernetesRunObservation(
                 result=GoblinResult.failed(error="worker produced invalid result JSON"),
+                job_created=True,
                 result_received=True,
                 result_envelope_valid=False,
                 logs={"worker": "bad output"},
@@ -119,6 +121,29 @@ def test_kubernetes_validation_rejects_invalid_envelope_even_without_success_gat
     assert result.ok is False
     assert result.error == "worker produced invalid result JSON"
     assert result.logs == {"worker": "bad output"}
+
+
+def test_kubernetes_validation_does_not_claim_an_uncreated_job() -> None:
+    """Verify setup failures keep the completed-check list truthful."""
+    registry, workers = _registry_and_workers()
+
+    class FakeRuntime:
+        def run_observed(self, *_args, **_kwargs):
+            return KubernetesRunObservation(
+                result=GoblinResult.failed(error="kubernetes runtime unavailable"),
+            )
+
+    result = validate_workers_with_kubernetes(
+        registry=registry,
+        workers=workers,
+        input_payload={},
+        kinds=["example.generic"],
+        runtime=FakeRuntime(),  # type: ignore[arg-type]
+    )[0]
+
+    assert result.ok is False
+    assert result.checks == []
+    assert result.error == "kubernetes runtime unavailable"
 
 
 def test_kubernetes_validation_reports_unknown_registry_kind() -> None:
