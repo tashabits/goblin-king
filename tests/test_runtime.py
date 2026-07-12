@@ -334,6 +334,147 @@ def test_kubernetes_observed_run_captures_logs_when_wait_fails(monkeypatch) -> N
     }
 
 
+def test_observed_failed_job_retains_forwarded_artifacts_before_cleanup(monkeypatch) -> None:
+    """Capture a final retained envelope and Pod diagnostics before deleting the Job."""
+    events: list[str] = []
+    pod = SimpleNamespace(
+        metadata=SimpleNamespace(name="retained-failure-pod"),
+        status=SimpleNamespace(
+            container_statuses=[
+                SimpleNamespace(
+                    name="worker",
+                    state=SimpleNamespace(terminated=SimpleNamespace(exit_code=2)),
+                )
+            ]
+        ),
+    )
+
+    class FailedBatch:
+        @staticmethod
+        def create_namespaced_job(**_kwargs):
+            return None
+
+        @staticmethod
+        def read_namespaced_job(**_kwargs):
+            return SimpleNamespace(status=SimpleNamespace(succeeded=0, failed=1))
+
+        @staticmethod
+        def delete_namespaced_job(**_kwargs):
+            events.append("delete-job")
+
+    class DiagnosticCore:
+        @staticmethod
+        def create_namespaced_config_map(**_kwargs):
+            return None
+
+        @staticmethod
+        def list_namespaced_pod(**_kwargs):
+            return SimpleNamespace(items=[pod])
+
+        @staticmethod
+        def read_namespaced_pod_log(*, container, **_kwargs):
+            events.append(f"log-{container}")
+            return f"{container} failed"
+
+        @staticmethod
+        def delete_namespaced_config_map(**_kwargs):
+            events.append("delete-config")
+
+    runtime = KubernetesRuntime(
+        workers=WorkerImageMap.from_definitions(
+            {
+                "example.artifact": WorkerImageDefinition(
+                    context=".", image="artifact:local"
+                )
+            }
+        ),
+        namespace="proof",
+        poll_interval_seconds=0,
+    )
+    monkeypatch.setattr(
+        kubernetes_runtime_module,
+        "kubernetes_clients",
+        lambda: (FailedBatch(), DiagnosticCore()),
+    )
+    forwarded = GoblinResult.ok(
+        data={"worker_result": "written"},
+        artifacts=[
+            {
+                "name": "diagnostic.zip",
+                "uri": "file:///data/artifacts/retained.zip",
+                "media_type": "application/zip",
+            }
+        ],
+        metrics={"artifact.diagnostic.zip.sha256": "a" * 64},
+    )
+
+    def load_forwarded(_run_id: str) -> KubernetesRunObservation:
+        events.append("forwarded-result")
+        return KubernetesRunObservation(
+            result=forwarded,
+            result_received=True,
+            result_envelope_valid=True,
+        )
+
+    monkeypatch.setattr(runtime, "_load_result_observed", load_forwarded)
+
+    observation = runtime.run_observed(
+        GoblinDefinition(
+            kind="example.artifact",
+            display_name="Artifact",
+            module="container.only",
+        ),
+        None,
+        {},
+        GoblinContext(
+            run_id="run-retained-failure",
+            artifact_root=".goblin-king/artifacts/run-retained-failure",
+            metadata={"job_id": "job-retained-failure"},
+        ),
+    )
+
+    assert observation.result.status == "failed"
+    assert observation.result.artifacts == forwarded.artifacts
+    assert observation.result.metrics == forwarded.metrics
+    assert observation.job_created is True
+    assert observation.result_received is True
+    assert observation.result_envelope_valid is True
+    assert observation.exit_code == 2
+    assert observation.logs == {
+        "worker": "worker failed",
+        "result-forwarder": "result-forwarder failed",
+    }
+    assert events.index("forwarded-result") < events.index("log-result-forwarder")
+    assert events.index("log-result-forwarder") < events.index("delete-job")
+
+
+def test_kubernetes_run_keeps_result_only_compatibility(monkeypatch) -> None:
+    """Keep the established run method returning only a GoblinResult envelope."""
+    runtime = KubernetesRuntime(
+        workers=WorkerImageMap.from_definitions(
+            {"example.echo": WorkerImageDefinition(context=".", image="echo:local")}
+        )
+    )
+    expected = GoblinResult.ok(data={"compatible": True})
+    captured: dict[str, object] = {}
+
+    def run_observed(*_args, **kwargs) -> KubernetesRunObservation:
+        captured.update(kwargs)
+        return KubernetesRunObservation(result=expected)
+
+    monkeypatch.setattr(runtime, "run_observed", run_observed)
+
+    result = runtime.run(
+        GoblinDefinition(kind="example.echo", display_name="Echo", module="unused"),
+        None,
+        {},
+        GoblinContext(run_id="run-compatible", artifact_root="artifacts"),
+    )
+
+    assert result is expected
+    assert captured["_capture_diagnostics"] is False
+
+
 def test_kubernetes_job_omits_placement_fields_without_metadata() -> None:
     """Verify default Kubernetes manifests do not include placement fields."""
     workers = WorkerImageMap(

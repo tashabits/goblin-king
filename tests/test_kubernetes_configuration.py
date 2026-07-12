@@ -32,11 +32,18 @@ def test_shared_runtime_factory_preserves_typed_settings_and_namespace(monkeypat
         "goblin_king.kubernetes_runtime.current_kubernetes_namespace",
         lambda: "shared-workers",
     )
+    monkeypatch.setenv(ARTIFACT_PVC_CLAIM_ENV, "artifact-pvc")
+    monkeypatch.setenv(ARTIFACT_VOLUME_SUBDIRECTORY_ENV, "retained/tasks")
+    monkeypatch.setenv(ARTIFACT_URI_ROOT_ENV, "/data/retained/tasks")
     settings = KubernetesRuntimeSettings(
         result_forwarder_image=f"registry.example/control@{CONTROL_DIGEST}",
         worker_image_pull_policy="Never",
         result_forwarder_image_pull_policy="Always",
         workload_image_pull_secret_names=["registry-main"],
+        workload_security_profile="restricted-v1",
+        restricted_workload={
+            "worker_service_account_names": {"example.echo": "goblin-echo-reader"}
+        },
     )
 
     runtime = build_kubernetes_runtime(
@@ -52,6 +59,12 @@ def test_shared_runtime_factory_preserves_typed_settings_and_namespace(monkeypat
     assert runtime.image_pull_policy == "Never"
     assert runtime.result_forwarder_image_pull_policy == "Always"
     assert runtime.workload_image_pull_secret_names == ("registry-main",)
+    assert runtime.artifact_retention is settings.artifact_retention
+    assert runtime.artifact_retention is not None
+    assert runtime.artifact_retention.claim_name == "artifact-pvc"
+    assert runtime.settings.effective_workload_security("example.echo")[
+        "service_account_name"
+    ] == "goblin-echo-reader"
 
 
 def test_typed_settings_load_artifact_retention_from_environment(monkeypatch) -> None:

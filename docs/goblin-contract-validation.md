@@ -47,12 +47,13 @@ Validation checks:
 
 The final artifact-file check above is available to Docker validation because the
 validator can inspect the shared run directory. Kubernetes validation executes the same
-configured worker through a Job with `backoffLimit: 0` and an active deadline. It
-requires a valid result envelope, returns its artifact metadata, captures bounded worker
-and result-forwarder logs plus the worker exit code when available, and deletes the
-transient Job and input ConfigMap on completion. Artifact bytes remain inside the
-runtime volume boundary; returned metadata is not proof that external artifact storage
-retained those bytes.
+configured worker through a Job with `backoffLimit: 0` and an active deadline. It loads
+the final forwarded result, captures bounded worker and result-forwarder logs plus the
+worker exit code, and only then deletes the transient Job and input ConfigMap. When
+durable artifact retention is configured, the trusted forwarder validates and copies
+declared bytes before publishing metadata, so validation returns retained artifact
+records. Without durable storage, an artifact-bearing result fails explicitly and
+publishes no artifact records; artifact-free results retain legacy behavior.
 
 By default, a valid failed result envelope is still contract-valid. Use
 `--require-success` when failed result envelopes should fail validation.
@@ -196,13 +197,13 @@ Generic validation does not construct an independent validation-only runtime. Th
 passes its typed `kubernetes_runtime` settings into the same factory used by scheduler
 execution and notebook validation. The CLI builds that same typed settings object from
 the established forwarder-image, worker/forwarder pull-policy, and repeatable pull-secret
-options. The factory retains the runtime's shared namespace discovery and bounded Pod
-diagnostics. A runtime settings file may also select `restricted-v1`; its effective
-profile and per-kind ServiceAccount decision become part of the same validation identity
-used by the scheduler. This prevents validation from passing with a local/default
-forwarder or legacy Pod contract while normal scheduling uses another image, policy,
-Secret set, namespace, security contract, or diagnostic boundary. Legacy constructor
-calls and Docker validation remain unchanged.
+options. The factory retains the runtime's shared namespace discovery, artifact-retention
+settings, and bounded Pod diagnostics. A runtime settings file may also select
+`restricted-v1`; its effective profile and per-kind ServiceAccount decision become part
+of the same validation identity used by the scheduler. This prevents validation from
+passing with a local/default forwarder or legacy Pod contract while normal scheduling
+uses another image, policy, Secret set, namespace, retention boundary, security contract,
+or diagnostic boundary. Legacy constructor calls and Docker validation remain unchanged.
 
 ## Project-Defined Goblins
 

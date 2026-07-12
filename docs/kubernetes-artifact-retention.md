@@ -82,6 +82,12 @@ artifacts can survive without hiding the original error. If the worker writes an
 but its container still exits nonzero, the runtime reports a failed Job while preserving only the
 artifact metadata already proven durable by the forwarder.
 
+Observed Kubernetes runs load that final forwarded envelope before capturing bounded worker and
+result-forwarder logs, the worker exit code, and then deleting the transient Job and ConfigMap.
+Generic validation uses this observed path, so a failed worker Job can report both its final logs
+and successfully retained diagnostic artifacts. The established `run()` method still returns only
+the `GoblinResult`; observation fields are additive for validation and diagnostic callers.
+
 The immutable Run destination makes a safe forwarder retry idempotent when the bytes match. A retry
 that finds different bytes fails rather than replacing prior evidence.
 

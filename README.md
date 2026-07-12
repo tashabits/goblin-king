@@ -294,9 +294,10 @@ python -m goblin_king.cli workers validate \
 ```
 
 For a configured generic worker in Kubernetes, use the same command with the explicit
-runtime. It creates a deadline-bounded Job, captures bounded worker/forwarder logs and
-artifact metadata, and stores proof under the exact identity the Kubernetes scheduler
-checks. Run it where the CLI can reach the cluster and the scheduler's SQLite database:
+runtime. It creates a deadline-bounded Job, loads the final forwarded result, captures
+bounded worker/forwarder logs and retained artifact metadata before cleanup, and stores
+proof under the exact identity the Kubernetes scheduler checks. Run it where the CLI can
+reach the cluster and the scheduler's SQLite database:
 
 ```bash
 python -m goblin_king.cli workers validate \
@@ -329,10 +330,10 @@ command, mount, credential, or Kubernetes manifest. Docker validation remains th
 default, and `--build`/`--run-root` remain Docker-only options. Kubernetes validation,
 scheduled execution, notebook validation, and direct submission all construct their
 runtime from the same typed settings factory, including forwarder image, pull policies,
-pull-secret names, workload-security profile, per-kind ServiceAccount selection,
-namespace discovery, and bounded diagnostics. Under `restricted-v1`, proof identity
-includes that effective security contract, so legacy proof cannot authorize the
-restricted workload.
+pull-secret names, artifact retention, workload-security profile, per-kind
+ServiceAccount selection, namespace discovery, and bounded diagnostics. Under
+`restricted-v1`, proof identity includes that effective security contract, so legacy
+proof cannot authorize the restricted workload.
 
 Adopting projects can validate workers directly from project settings:
 
