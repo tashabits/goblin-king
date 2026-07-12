@@ -9,6 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from goblin_king.kubernetes_artifact_config import KubernetesArtifactRetention
 from goblin_king.kubernetes_workload_security import (
     KubernetesRestrictedWorkloadSettings,
     KubernetesWorkloadSecurityProfile,
@@ -37,6 +38,9 @@ class KubernetesRuntimeSettings(BaseModel):
     workload_security_profile: KubernetesWorkloadSecurityProfile = "legacy"
     restricted_workload: KubernetesRestrictedWorkloadSettings = Field(
         default_factory=KubernetesRestrictedWorkloadSettings
+    )
+    artifact_retention: KubernetesArtifactRetention | None = Field(
+        default_factory=KubernetesArtifactRetention.from_environment
     )
 
     @field_validator("result_forwarder_image")
@@ -106,15 +110,17 @@ class KubernetesRuntimeSettings(BaseModel):
         image_pull_policy: str,
         result_forwarder_image_pull_policy: str | None = None,
         workload_image_pull_secret_names: Sequence[str] = (),
+        artifact_retention: KubernetesArtifactRetention | None = None,
     ) -> KubernetesRuntimeSettings:
         """Translate the compatibility constructor surface into the typed boundary."""
-        return cls.model_validate(
-            {
-                "result_forwarder_image": result_forwarder_image,
-                "worker_image_pull_policy": image_pull_policy,
-                "result_forwarder_image_pull_policy": (
-                    result_forwarder_image_pull_policy or image_pull_policy
-                ),
-                "workload_image_pull_secret_names": workload_image_pull_secret_names,
-            }
-        )
+        values: dict[str, object] = {
+            "result_forwarder_image": result_forwarder_image,
+            "worker_image_pull_policy": image_pull_policy,
+            "result_forwarder_image_pull_policy": (
+                result_forwarder_image_pull_policy or image_pull_policy
+            ),
+            "workload_image_pull_secret_names": workload_image_pull_secret_names,
+        }
+        if artifact_retention is not None:
+            values["artifact_retention"] = artifact_retention
+        return cls.model_validate(values)

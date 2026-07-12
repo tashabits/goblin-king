@@ -16,6 +16,7 @@ from goblin_king.events import (
     EventBus,
     worker_heartbeat_key,
 )
+from goblin_king.kubernetes_artifact_config import KubernetesArtifactRetention
 from goblin_king.kubernetes_job_manifest import build_kubernetes_job_manifest
 from goblin_king.kubernetes_placement import placement_metadata
 from goblin_king.kubernetes_pod_diagnostics import (
@@ -55,16 +56,22 @@ class KubernetesRuntime:
         settings: KubernetesRuntimeSettings | None = None,
         result_forwarder_image_pull_policy: str | None = None,
         workload_image_pull_secret_names: Sequence[str] = (),
+        artifact_retention: KubernetesArtifactRetention | None = None,
     ) -> None:
         self.workers = workers
         self.redis_url = redis_url
         self.namespace = namespace or current_kubernetes_namespace()
-        self.settings = settings or KubernetesRuntimeSettings.from_legacy_options(
-            result_forwarder_image=result_forwarder_image,
-            image_pull_policy=image_pull_policy,
-            result_forwarder_image_pull_policy=result_forwarder_image_pull_policy,
-            workload_image_pull_secret_names=workload_image_pull_secret_names,
-        )
+        if settings is None:
+            settings = KubernetesRuntimeSettings.from_legacy_options(
+                result_forwarder_image=result_forwarder_image,
+                image_pull_policy=image_pull_policy,
+                result_forwarder_image_pull_policy=result_forwarder_image_pull_policy,
+                workload_image_pull_secret_names=workload_image_pull_secret_names,
+                artifact_retention=artifact_retention,
+            )
+        elif artifact_retention is not None:
+            settings = settings.model_copy(update={"artifact_retention": artifact_retention})
+        self.settings = settings
         # Keep the established attributes available to callers that inspect the adapter.
         self.image_pull_policy = self.settings.worker_image_pull_policy
         self.result_forwarder_image = self.settings.result_forwarder_image
@@ -74,6 +81,7 @@ class KubernetesRuntime:
         self.workload_image_pull_secret_names = (
             self.settings.workload_image_pull_secret_names
         )
+        self.artifact_retention = self.settings.artifact_retention
         self.event_bus = event_bus
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
         self.poll_interval_seconds = poll_interval_seconds

@@ -155,6 +155,7 @@ persistence:
   enabled: true
   size: 1Gi
   storageClassName: ""
+  artifactSubdirectory: artifacts
   accessModes:
     - ReadWriteOnce
 

@@ -6,8 +6,18 @@ from typing import Any
 
 from goblin_king.contracts import GoblinContext
 from goblin_king.events import DEFAULT_HEARTBEAT_CHANNEL, worker_heartbeat_key
+from goblin_king.kubernetes_artifact_config import (
+    ARTIFACT_DESTINATION_ROOT_ENV,
+    ARTIFACT_MAX_BYTES_ENV,
+    ARTIFACT_MAX_FILES_ENV,
+    ARTIFACT_PROJECT_ID_ENV,
+    ARTIFACT_SOURCE_ROOT,
+    ARTIFACT_SOURCE_ROOT_ENV,
+    ARTIFACT_URI_ROOT_ENV,
+    DEFAULT_ARTIFACT_MAX_BYTES,
+    DEFAULT_ARTIFACT_MAX_FILES,
+)
 from goblin_king.kubernetes_placement import apply_kubernetes_placement, placement_metadata
-from goblin_king.kubernetes_result_forwarder import RESULT_FORWARDER_SCRIPT
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 from goblin_king.kubernetes_workload_security import apply_restricted_workload_security
 from goblin_king.resource_policies import ResourcePolicy
@@ -45,6 +55,7 @@ def build_kubernetes_job_manifest(
         timeout_seconds=timeout_seconds,
         settings=settings,
         redis_url=redis_url,
+        resource_policy=resource_policy,
     )
     pod_spec: dict[str, Any] = {
         "restartPolicy": "Never",
@@ -58,6 +69,15 @@ def build_kubernetes_job_manifest(
             {"name": "artifacts", "emptyDir": {}},
         ],
     }
+    if settings.artifact_retention is not None:
+        pod_spec["volumes"].append(
+            {
+                "name": "retained-artifacts",
+                "persistentVolumeClaim": {
+                    "claimName": settings.artifact_retention.claim_name,
+                },
+            }
+        )
     if settings.workload_image_pull_secret_names:
         pod_spec["imagePullSecrets"] = [
             {"name": secret_name}
@@ -153,12 +173,20 @@ def _result_forwarder_container(
     timeout_seconds: int | None,
     settings: KubernetesRuntimeSettings,
     redis_url: str,
+    resource_policy: ResourcePolicy | None,
 ) -> dict[str, Any]:
-    return {
+    max_files = DEFAULT_ARTIFACT_MAX_FILES
+    max_bytes = DEFAULT_ARTIFACT_MAX_BYTES
+    if resource_policy is not None:
+        if resource_policy.filesystem.artifact_max_files is not None:
+            max_files = resource_policy.filesystem.artifact_max_files
+        if resource_policy.filesystem.artifact_max_bytes is not None:
+            max_bytes = resource_policy.filesystem.artifact_max_bytes
+    container: dict[str, Any] = {
         "name": "result-forwarder",
         "image": settings.result_forwarder_image,
         "imagePullPolicy": settings.result_forwarder_image_pull_policy,
-        "command": ["python", "-c", RESULT_FORWARDER_SCRIPT],
+        "command": ["python", "-m", "goblin_king.kubernetes_result_forwarder"],
         "env": [
             {"name": "GOBLIN_RUN_ID", "value": context.run_id},
             {"name": "GOBLIN_REDIS_URL", "value": redis_url},
@@ -167,6 +195,36 @@ def _result_forwarder_container(
                 "name": "GOBLIN_RESULT_WAIT_SECONDS",
                 "value": str((timeout_seconds or 300) + 15),
             },
+            {"name": ARTIFACT_SOURCE_ROOT_ENV, "value": ARTIFACT_SOURCE_ROOT},
+            {
+                "name": ARTIFACT_PROJECT_ID_ENV,
+                "value": str(context.metadata.get("project_id") or ""),
+            },
+            {"name": ARTIFACT_MAX_FILES_ENV, "value": str(max_files)},
+            {"name": ARTIFACT_MAX_BYTES_ENV, "value": str(max_bytes)},
         ],
-        "volumeMounts": [{"name": "result", "mountPath": "/goblin-result"}],
+        "volumeMounts": [
+            {"name": "result", "mountPath": "/goblin-result"},
+            {"name": "artifacts", "mountPath": ARTIFACT_SOURCE_ROOT, "readOnly": True},
+        ],
     }
+    if settings.artifact_retention is not None:
+        container["env"].extend(
+            [
+                {
+                    "name": ARTIFACT_DESTINATION_ROOT_ENV,
+                    "value": settings.artifact_retention.destination_root,
+                },
+                {
+                    "name": ARTIFACT_URI_ROOT_ENV,
+                    "value": settings.artifact_retention.uri_root,
+                },
+            ]
+        )
+        container["volumeMounts"].append(
+            {
+                "name": "retained-artifacts",
+                "mountPath": settings.artifact_retention.volume_mount_path,
+            }
+        )
+    return container

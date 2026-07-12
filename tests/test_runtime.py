@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from goblin_king import kubernetes_runtime as kubernetes_runtime_module
 from goblin_king.contracts import GoblinContext, GoblinDefinition, GoblinResult
+from goblin_king.kubernetes_artifact_config import KubernetesArtifactRetention
 from goblin_king.kubernetes_pod_diagnostics import (
     DEFAULT_KUBERNETES_LOG_CAPTURE_BYTES,
     KubernetesRunObservation,
@@ -99,12 +100,81 @@ def test_kubernetes_job_includes_result_forwarder() -> None:
         container for container in containers if container["name"] == "result-forwarder"
     )
     assert forwarder["image"] == "goblin-king:test"
-    assert forwarder["command"][0:2] == ["python", "-c"]
+    assert forwarder["command"] == [
+        "python",
+        "-m",
+        "goblin_king.kubernetes_result_forwarder",
+    ]
     assert {"name": "GOBLIN_REDIS_URL", "value": "redis://redis:6379/0"} in forwarder["env"]
     assert {"name": "GOBLIN_RESULT_PATH", "value": "/goblin-result/result.json"} in forwarder[
         "env"
     ]
     assert {"name": "result", "mountPath": "/goblin-result"} in forwarder["volumeMounts"]
+    assert {
+        "name": "artifacts",
+        "mountPath": "/artifacts",
+        "readOnly": True,
+    } in forwarder["volumeMounts"]
+
+
+def test_kubernetes_job_retains_artifacts_on_operator_pvc() -> None:
+    """Mount durable storage only into the trusted forwarder with effective policy limits."""
+    workers = WorkerImageMap(
+        {"example.artifact": WorkerImageDefinition(context=".", image="artifact:local")},
+        root=".",
+    )
+    runtime = KubernetesRuntime(
+        workers=workers,
+        redis_url="redis://redis:6379/0",
+        artifact_retention=KubernetesArtifactRetention(
+            claim_name="release-data",
+            volume_subdirectory="artifacts",
+            uri_root="/data/artifacts",
+        ),
+    )
+    context = GoblinContext(
+        run_id="run-artifact",
+        artifact_root=".goblin-king/artifacts/run-artifact",
+        metadata={"job_id": "job-artifact", "project_id": "project-1"},
+    )
+    policy = ResourcePolicy.model_validate(
+        {"filesystem": {"artifact_max_files": 2, "artifact_max_bytes": 4096}}
+    )
+
+    manifest = runtime._job_manifest(
+        name="gk-example-artifact-run-artifact",
+        config_name="gk-example-artifact-run-artifact-input",
+        image="artifact:local",
+        context=context,
+        worker_id="k8s-worker-run-artifact",
+        timeout_seconds=30,
+        resource_policy=policy,
+    )
+
+    pod_spec = manifest["spec"]["template"]["spec"]
+    worker, forwarder = pod_spec["containers"]
+    assert "retained-artifacts" not in {
+        volume_mount["name"] for volume_mount in worker["volumeMounts"]
+    }
+    assert {
+        "name": "retained-artifacts",
+        "mountPath": "/goblin-artifact-volume",
+    } in forwarder["volumeMounts"]
+    assert {
+        "name": "retained-artifacts",
+        "persistentVolumeClaim": {"claimName": "release-data"},
+    } in pod_spec["volumes"]
+    assert {
+        "name": "GOBLIN_ARTIFACT_DESTINATION_ROOT",
+        "value": "/goblin-artifact-volume/artifacts",
+    } in forwarder["env"]
+    assert {
+        "name": "GOBLIN_KING_K8S_ARTIFACT_URI_ROOT",
+        "value": "/data/artifacts",
+    } in forwarder["env"]
+    assert {"name": "GOBLIN_ARTIFACT_PROJECT_ID", "value": "project-1"} in forwarder["env"]
+    assert {"name": "GOBLIN_ARTIFACT_MAX_FILES", "value": "2"} in forwarder["env"]
+    assert {"name": "GOBLIN_ARTIFACT_MAX_BYTES", "value": "4096"} in forwarder["env"]
 
 
 def test_kubernetes_observed_run_captures_bounded_logs_before_cleanup(monkeypatch) -> None:
