@@ -22,7 +22,16 @@ python -m pytest \
   tests/test_validation.py -q
 ```
 
-The focused suite observed 25 passing tests before the upstream rebase. It covers:
+The focused suite observed 25 passing tests before the upstream rebase. After rebasing
+onto upstream main at `6e1118e`, the final repository gates observed:
+
+- `python -m ruff check .`: passed;
+- `python -m pytest -q`: 349 passed in 167.50 seconds;
+- `helm lint charts/goblin-king`: one chart passed with only the existing optional-icon
+  recommendation;
+- `git diff --check`: passed with a clean worktree.
+
+The focused coverage includes:
 
 - the established runtime import and legacy constructor/pull-policy behavior;
 - separate worker and forwarder pull policies and immutable image references;
