@@ -1,9 +1,10 @@
 # Issue 147 Kubernetes Artifact Retention Proof
 
 This proof builds the current control-plane and artifact-worker images, installs the chart into a
-single-node kind cluster, submits the PNG/ZIP proof mode, waits for transient Job deletion, downloads
-both retained files, verifies SHA-256, invokes artifact cleanup, and proves downloads then return
-`404`.
+single-node kind cluster, authenticates generic Kubernetes validation, verifies its persisted
+scheduler identity and complete validation-directory cleanup, then submits the PNG/ZIP proof mode.
+It waits for transient Job deletion, downloads both retained files, verifies SHA-256, invokes
+artifact cleanup, and proves downloads then return `404`.
 
 ## Prerequisites
 
@@ -49,12 +50,16 @@ Run the automated acceptance check:
 python scripts/kubernetes_artifact_retention_proof.py \
   --api-url http://127.0.0.1:18000 \
   --token local-dev-token \
-  --namespace goblin-artifact-proof
+  --namespace goblin-artifact-proof \
+  --release goblin-artifact-proof
 ```
 
 A passing JSON receipt contains:
 
 - `"status": "passed"`;
+- the non-empty `"validation_identity"` persisted for `example.artifact`;
+- `"validation_artifact_cleanup": "proved"`, including no files or empty hashed directories below
+  the artifact root before normal scheduling;
 - durable Job and Run IDs;
 - `"job_cleanup": "proved"`;
 - SHA-256 values for `artifact-proof.png` and `artifact-proof.zip`;
@@ -68,7 +73,8 @@ kubectl get pods --namespace goblin-artifact-proof \
 ```
 
 The worker has the transient `artifacts` mount. The forwarder has that mount read-only plus the PVC
-artifact subpath. The worker does not have `retained-artifacts`.
+artifact subpath. The worker does not have `retained-artifacts`. Under `restricted-v1`, inspect the
+Pod `fsGroup` and confirm the retained root is setgid/group-writable for that same group.
 
 Remove the disposable environment:
 
@@ -81,27 +87,40 @@ kind delete cluster --name gk-artifact-proof
 
 Date: 2026-07-12
 
-Base after the generic Kubernetes validation rebase: `4942180ce97d8547efdc8eb620f038806a5c9104`
+Base after the generic Kubernetes validation rebase: `4942180ce97d8547efdc8eb620f038806a5c9104`.
 
-Observed before live cluster proof:
+Corrective commits reviewed here:
+
+- `8b45879`: retention-enabled runs wait for the forwarder-owned Redis result key;
+- `9db7a0b`: descriptor-safe copying, shared-volume modes, validation cleanup, retention-bound
+  identities, and validation-first acceptance proof.
+
+Observed after the corrective review and before live cluster proof:
 
 ```text
-400 passed, 2 skipped in 121.12s
-All checks passed!
+Focused corrective gate: 33 passed, 5 skipped.
+Independent combined retention/security gate: 95 passed, 5 skipped.
+Uncontended full suite: 405 passed, 5 skipped, 1 full-suite-order-only failure.
+Isolated scheduler timeout regression: 1 passed.
+Ruff: All checks passed!
 1 chart(s) linted, 0 chart(s) failed
-Legacy/restricted and persistence-enabled/disabled Helm renders completed.
-Focused retention, validation, workload-security, configuration, runtime, and documentation:
-70 passed, 2 skipped.
+Default, persistence-disabled, and restricted-retention Helm renders completed.
+Wheel build: goblin_king-0.1.0-py3-none-any.whl, SHA-256
+df10ae68f2da303a1d6c2ee6c32bedfdd42326920db17437136ec164ed9f5d99.
 ```
 
-The two skipped tests create direct and nested symbolic links; the Windows test account lacks
-link-creation permission. Traversal, external containment, count, size, media type, digest,
-unconfigured storage, atomic retention, idempotency, API download after source deletion, cleanup,
-manifest isolation, typed settings, legacy inline-forwarder compatibility, restricted retention
-mount composition, kind-specific security, observed-run diagnostics, shared runtime construction,
-and failed-Job retention tests ran. Helm rendering proved that persistence-enabled API/scheduler
-Pods receive the artifact PVC settings and persistence-disabled Pods omit the claim while retaining
-the URI-root setting.
+The five skipped tests require POSIX symbolic-link, no-follow descriptor, group-ID, or setgid-mode
+behavior unavailable to this Windows test process. Traversal, external containment, source-swap,
+count, size, media type, digest, unconfigured storage, atomic retention, idempotency, validation-run
+cleanup, API download after source deletion, cleanup, manifest isolation, typed settings, legacy
+inline-forwarder compatibility, retention identity staleness, restricted retention mount
+composition, kind-specific security, observed-run diagnostics, shared runtime construction, and
+failed-Job retention tests ran.
+
+The one full-suite failure was the pre-existing zero-timeout scheduler timing assertion: it expected
+`timed_out` but observed `completed` in full-suite order. The same test passed immediately in
+isolation. No artifact-retention code path was involved; this remains an upstream timing-test blocker
+rather than being masked by this change.
 
 Live kind execution was not performed in this implementation worktree. The publishing verifier must
 run the commands above and replace this limitation with the observed commit SHA, image identities,

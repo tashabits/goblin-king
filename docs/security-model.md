@@ -74,6 +74,12 @@ policy overflow, and declared digest/size mismatches. It stages a complete set o
 destination filesystem and atomically installs it. Failure publishes no artifact entries
 or artifact-prefixed metrics.
 
+On supported POSIX systems, source traversal and the final file open are descriptor-relative with
+no-follow flags; hashing and mutation checks use the same open descriptor. Other platforms perform
+a second component check and compare the opened-file identity before copying. Retained directories
+are group-shared setgid `02770` and files are `0660`; the API prepares the root for the restricted
+workload `fsGroup`, while a correctly kubelet-prepared root requires no privileged mutation.
+
 This is not malware scanning, content disarmament, or proof that a declared media type
 matches file contents. Downloads use attachment disposition. Run only a trusted
 result-forwarder image, keep the PVC out of worker containers, and continue applying
@@ -110,6 +116,11 @@ bounded Pod diagnostic helpers are shared by the runtime factory as well. With
 `restricted-v1`, the validation identity binds the effective security profile and
 per-kind ServiceAccount; legacy proof and proof for another ServiceAccount cannot pass
 the scheduler gate.
+
+An enabled retention boundary is also part of the scheduler identity under both legacy and
+restricted profiles. Validation-only retained directories are removed before proof is returned;
+failure to remove them fails validation instead of leaving unowned bytes. Normal Run retention is
+unchanged.
 
 ## Secrets
 

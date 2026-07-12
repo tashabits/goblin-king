@@ -335,6 +335,12 @@ ServiceAccount selection, namespace discovery, and bounded diagnostics. Under
 `restricted-v1`, proof identity includes that effective security contract, so legacy
 proof cannot authorize the restricted workload.
 
+With Kubernetes artifact retention enabled, proof identity also includes the normalized PVC claim,
+subdirectory, URI root, and forwarder mount path under both security profiles. Validation retains
+long enough to verify and report artifact metadata, then removes its validation-only bytes; ordinary
+scheduled Runs remain durable. Validate before submitting the first artifact job after installing or
+changing that storage mapping.
+
 Adopting projects can validate workers directly from project settings:
 
 ```bash
@@ -769,7 +775,8 @@ The default chart maps `persistence.artifactSubdirectory: artifacts` to
 PVC layout. The worker keeps an isolated `emptyDir`; only the trusted forwarder mounts
 the PVC artifact subpath. Under `restricted-v1`, the forwarder root remains read-only,
 the transient artifact source is mounted read-only, and only the result volume plus the
-narrow PVC subpath are writable. See
+narrow PVC subpath are writable. Retained directories are group-shared setgid `02770` and files are
+`0660`; keep the API volume group and restricted workload `fsGroup` aligned. See
 [Kubernetes Artifact Retention](docs/kubernetes-artifact-retention.md) for failure,
 security, upgrade, and reproducible PNG/ZIP proof details.
 

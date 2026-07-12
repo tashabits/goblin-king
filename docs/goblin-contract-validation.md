@@ -205,6 +205,13 @@ passing with a local/default forwarder or legacy Pod contract while normal sched
 uses another image, policy, Secret set, namespace, retention boundary, security contract,
 or diagnostic boundary. Legacy constructor calls and Docker validation remain unchanged.
 
+When artifact retention is enabled, the exact validation identity also includes the normalized PVC
+claim, volume subdirectory, API URI root, and forwarder mount path for both security profiles. This
+makes proof stale after a storage-boundary change. Validation returns the forwarder's verified
+artifact metadata, then deletes the validation-only hashed Run directory because no durable Run owns
+those bytes; cleanup failure is a failed validation. The old legacy identity stays unchanged only
+when retention is disabled.
+
 ## Project-Defined Goblins
 
 Project config goblins follow the same gate. A project can define a goblin through

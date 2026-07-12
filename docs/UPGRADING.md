@@ -128,6 +128,15 @@ artifact retention is disabled. Enabling PVC retention switches the sidecar to t
 forwarder module, so a separate forwarder image must contain the same Goblin King version as the
 control plane before the PVC settings are enabled.
 
+Revalidate workers after enabling retention or changing the claim, volume subdirectory, URI root,
+or forwarder mount path. Those normalized values are part of the Kubernetes scheduler identity for
+both legacy and restricted profiles. The no-retention legacy identity remains unchanged.
+
+The artifact root and retained directories must be group-accessible to the forwarder's `fsGroup`.
+The API prepares them as setgid `02770` with retained files `0660`. If the API runs non-root, arrange
+the same group and directory mode through the storage class, kubelet `fsGroup`, or an initializer
+before upgrade; an already-correct root is accepted without privileged ownership changes.
+
 The chart's default `ReadWriteOnce` PVC is appropriate for the documented single-node
 local cluster. Review access modes before a multi-node upgrade; use `ReadWriteMany` or an
 equivalent backend when API and worker Pods may run on different nodes.

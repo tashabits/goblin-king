@@ -155,10 +155,16 @@ stale. Durable validation records expose the effective fields under
 `effective_policy.kubernetes_workload_security` without changing the validation result
 or Run envelope.
 
+Whenever artifact retention is enabled, both legacy and restricted scheduler identities also hash
+the normalized PVC claim, subdirectory, URI root, and forwarder mount path. Changing that storage
+boundary makes prior proof stale. With retention disabled, the legacy identity remains exactly
+`kubernetes:<image>` for backward compatibility.
+
 ## Adoption Checklist
 
 1. Confirm the worker and forwarder images can run as the configured non-root IDs.
-2. Confirm they write only to mounted result/artifact paths.
+2. Confirm they write only to mounted result/artifact paths and that the artifact root is group-owned
+   by the configured `fsGroup` with directory mode `02770`.
 3. Set resource-policy `read_only_root: true` and keep CPU/memory within ceilings.
 4. Render Helm and inspect the runtime settings JSON.
 5. Validate each worker again because the restricted identity differs from legacy.
