@@ -85,6 +85,10 @@ goblin-king events stream-read --ack
 goblin-king heartbeats list
 ```
 
+The event `sequence` is the authoritative lifecycle order; `created_at` remains UTC
+correlation metadata. This distinction keeps fast-task evidence causal when a host
+clock adjusts. See [Causal Lifecycle Ordering](causal-lifecycle-ordering.md).
+
 ## Use The API And Admin UI
 
 Start the API:

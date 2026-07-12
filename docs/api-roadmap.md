@@ -18,7 +18,8 @@ target phase below.
 
 ## Covered In Phase 7
 
-- `GET /events`: durable event stream for jobs, runs, scheduler activity, and workers.
+- `GET /events`: durable event stream for jobs, runs, scheduler activity, and workers;
+  database-assigned `sequence` is the authoritative order and `after_id` cursor.
 - `WS /ws/runs`: live run notifications over WebSockets.
 - Redis pub/sub status streaming.
 - Scheduler and worker heartbeat APIs.
