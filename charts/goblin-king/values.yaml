@@ -1,6 +1,7 @@
 image:
   repository: goblin-king
   tag: local
+  digest: ""
   pullPolicy: IfNotPresent
   pullSecrets: []
 
@@ -100,6 +101,14 @@ scheduler:
   replicas: 1
   intervalSeconds: 5
   runtime: kubernetes
+  workerImagePullPolicy: ""
+  resultForwarder:
+    image:
+      repository: ""
+      tag: ""
+      digest: ""
+    pullPolicy: ""
+  workloadImagePullSecrets: []
   serviceAccount:
     create: true
     name: ""

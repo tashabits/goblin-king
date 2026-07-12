@@ -12,7 +12,9 @@ Goblin King `0.1.0` is the first project-ready internal package baseline.
 | Worker result contract | `goblin-king/v1alpha1` | Container workers return a `GoblinResult` envelope through Redis and fallback result JSON. |
 | Worker heartbeat contract | `goblin-king/v1alpha1` | Long-running workers may publish heartbeat envelopes to Redis heartbeat transport. |
 | Durable event ordering | `goblin-king/v1alpha1` | Events expose an additive integer `sequence`; consumers use it instead of wall time for causal order. |
-| API settings schema | `goblin-king/v1alpha1` | `goblin-king-api.json` may point to direct registry/image paths or project settings. |
+| API settings schema | `goblin-king/v1alpha1` | `goblin-king-api.json` may point to direct registry/image paths or project settings and may add typed `kubernetes_runtime` image settings. |
+| Kubernetes runtime constructor | `goblin-king/v1alpha1` | The established `goblin_king.runtime.KubernetesRuntime` import and legacy image/pull-policy arguments remain valid; new settings are additive. |
+| Helm control image values | `goblin-king/v1alpha1` | Repository/tag and map/string pull-secret forms remain supported; optional digest and forwarder values are additive, with digest precedence. |
 
 The machine-readable version of this matrix lives at
 `compatibility/goblin-king-compatibility.json`.

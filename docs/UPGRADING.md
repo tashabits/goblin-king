@@ -25,6 +25,21 @@ Record:
 8. Submit one short goblin and probe one long-running goblin.
 9. Inspect runs, events, heartbeats, artifacts, and audit logs.
 
+## Kubernetes Image Settings
+
+Existing tag-only chart values and Python constructor calls remain valid. New installs
+should set `image.digest` when an immutable control-plane identity is available. With no
+`scheduler.resultForwarder.image` override, the chart passes that exact rendered image
+to generated result-forwarder sidecars.
+
+If an older deployment depended on an out-of-band `goblin-king:local` retag inside its
+cluster, remove that workaround after setting the control or separate forwarder image.
+Private registries should keep credential data in Kubernetes Secrets and pass only
+Secret names through `image.pullSecrets` or `scheduler.workloadImagePullSecrets`.
+
+Before applying, render and confirm digest precedence, forwarder CLI arguments, pull
+policies, and Secret names. See [Kubernetes Runtime Images](kubernetes-runtime-images.md).
+
 ## Docker Data-Volume Placement
 
 Deployments that set `GOBLIN_KING_DOCKER_DATA_VOLUME` must also set an absolute

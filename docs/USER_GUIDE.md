@@ -320,6 +320,22 @@ service goblin. Admin ingress is on by default:
 helm template goblin-king charts/goblin-king
 ```
 
+Pin a registry deployment by digest so the scheduler control container and default
+result-forwarder sidecar use the same immutable image:
+
+```bash
+helm template goblin-king charts/goblin-king \
+  --set-string image.repository=registry.example/tashabits/goblin-king \
+  --set-string image.digest=sha256:<digest> \
+  --set image.pullSecrets[0].name=primary-registry
+```
+
+Use `scheduler.resultForwarder.image.*` only when the forwarder is published separately.
+Use `scheduler.workloadImagePullSecrets` for additional existing Secret names needed by
+generated worker Pods. Full value precedence, direct CLI options, API JSON, security
+boundaries, and pull-failure behavior are documented in
+[Kubernetes Runtime Images](kubernetes-runtime-images.md).
+
 Disable ingress when another deployment layer owns routing:
 
 ```bash

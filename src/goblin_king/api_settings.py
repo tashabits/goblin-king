@@ -9,6 +9,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, ValidationError
 
 from goblin_king.jsonio import read_json_file
+from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 
 
 class ApiSettingsError(ValueError):
@@ -78,6 +79,9 @@ class ApiSettings(BaseModel):
     oidc: OidcSettings = Field(default_factory=OidcSettings)
     jupyterhub: JupyterHubSettings = Field(default_factory=JupyterHubSettings)
     repository: RepositorySettings = Field(default_factory=RepositorySettings)
+    kubernetes_runtime: KubernetesRuntimeSettings = Field(
+        default_factory=KubernetesRuntimeSettings
+    )
 
     def model_post_init(self, __context: object) -> None:
         """Keep explicit legacy auth_token settings usable as bootstrap tokens."""

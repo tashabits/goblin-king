@@ -74,6 +74,13 @@ the Hub service token in a Docker/Kubernetes Secret or environment source and re
 it with `jupyterhub.service_token_env`; do not store it in `goblin-king-api.json`, Helm
 ConfigMaps, audit logs, probe results, or worker output.
 
+Generated Kubernetes worker Pods receive only operator-selected Secret names through
+`imagePullSecrets`. The typed runtime settings reject raw credential fields, arbitrary
+Pod fragments, and Secret names that are not Kubernetes DNS subdomain names. Registry
+username, password, token, and Docker config JSON remain inside Kubernetes Secrets or an
+external secret controller. Image-pull diagnostics are bounded before entering durable
+Run and event records so registry responses cannot create unbounded stored errors.
+
 ## Network
 
 Network access should be deliberate. Some goblins need APIs; many do not. Resource

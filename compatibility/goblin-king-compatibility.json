@@ -13,6 +13,7 @@
     "Worker image maps use a top-level workers object keyed by goblin kind.",
     "Durable events add a sequence while pre-sequence EventRecord construction remains valid.",
     "Job statuses, Run statuses, result envelopes, and existing constructor requirements are unchanged.",
+    "Kubernetes runtime image settings are additive; legacy constructor and Helm tag-only values remain valid.",
     "SQLite auto-create and auto-alter behavior is internal and not a compatibility promise."
   ]
 }

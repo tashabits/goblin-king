@@ -142,6 +142,7 @@ from goblin_king.fanout import (
     list_fanout_details,
     retry_job,
 )
+from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 from goblin_king.metadata import goblin_job_metadata
 from goblin_king.notebook_services import (
     NotebookServiceRuntimeError,
@@ -398,12 +399,14 @@ def _validate_notebook_with_kubernetes(
     timeout_seconds: int | None,
     redis_url: str,
     event_bus: Any,
+    kubernetes_runtime_settings: KubernetesRuntimeSettings | None = None,
 ) -> WorkerValidationResult:
     """Validate a notebook-defined function with an in-cluster Kubernetes Job."""
     runtime = KubernetesRuntime(
         workers=notebook_worker_map(record),
         redis_url=redis_url,
         event_bus=event_bus,
+        settings=kubernetes_runtime_settings,
     )
     context = new_run_context(validation_job_id(record.kind), record.kind)
     try:
@@ -1577,6 +1580,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                 timeout_seconds=timeout_seconds,
                 redis_url=state.settings.redis_url,
                 event_bus=state.event_bus,
+                kubernetes_runtime_settings=state.settings.kubernetes_runtime,
             )
         else:
             results = validate_workers(
@@ -2322,6 +2326,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                     timeout_seconds=timeout_seconds,
                     redis_url=state.settings.redis_url,
                     event_bus=state.event_bus,
+                    kubernetes_runtime_settings=state.settings.kubernetes_runtime,
                 )
             else:
                 results = validate_workers(
