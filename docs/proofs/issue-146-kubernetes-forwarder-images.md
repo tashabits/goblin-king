@@ -1,5 +1,9 @@
 # Issue 146: Kubernetes Forwarder Image Proof
 
+Tested implementation: `5157af5` (rebased onto upstream `6e1118e`)
+
+Proof date: 2026-07-12
+
 ## Scope
 
 This pass proves configuration propagation, compatibility, failure behavior, and Helm
@@ -64,19 +68,41 @@ The automated render assertion verifies the scheduler control image is
 `registry.example/forwarder@sha256:bbbb...`, both policies are preserved, and both
 Secret names reach the scheduler/API workload settings.
 
-## Live-Cluster Boundary
+## Live kind Proof
 
-This isolated implementation pass did not publish images or mutate a shared Kubernetes
-cluster. A live acceptance run still requires accessible immutable control/worker image
-digests and existing registry Secret names. The final integrator should install those
-values, submit one validated task, and capture:
+The publishing review ran the chart on 2026-07-12 in the disposable kind cluster
+`goblin-king-upstream-proof`, namespace `issue146-proof`. The exact branch images were
+built, loaded into the kind node, and registered there by their OCI manifest digests.
+The chart used the digest-qualified control-plane identity below with pull policy
+`Never`; no `goblin-king:local` compatibility tag was created:
 
-```bash
-kubectl get pod -l goblin-king.worker=true \
-  -o jsonpath='{range .items[*].status.containerStatuses[*]}{.name}{"\t"}{.image}{"\t"}{.imageID}{"\n"}{end}'
+- control plane and result forwarder:
+  `ghcr.io/tashabits/goblin-king@sha256:f75416368f2d1755ad096a8b106a55d913b4af881ef32be4b873dbe6339ac9eb`;
+- worker:
+  `ghcr.io/tashabits/goblin-king-example-echo@sha256:207ca3a6318ee111fdf992d5cbdcb88faf4a0776dd44970b5f94c00367856623`.
+
+Helm reported revision 1 as `deployed`. The API, scheduler, and Redis Deployments each
+reached one ready replica. The scheduler command contained the exact forwarder digest,
+separate `Never` worker/forwarder policies, and the configured
+`issue146-registry` Secret name.
+
+The first task completed successfully as run
+`12b479a9-0888-4ca5-8efd-374acc4846d5`. A Kubernetes watch captured the generated Pod
+before cleanup. Its two requested images and resolved image IDs were identical:
+
+```text
+worker           ghcr.io/tashabits/goblin-king-example-echo@sha256:207ca3a6318ee111fdf992d5cbdcb88faf4a0776dd44970b5f94c00367856623
+result-forwarder ghcr.io/tashabits/goblin-king@sha256:f75416368f2d1755ad096a8b106a55d913b4af881ef32be4b873dbe6339ac9eb
+imagePullSecrets issue146-registry
+status           completed / success
 ```
 
-Expected evidence is one worker and one `result-forwarder` resolved to the configured
-immutable identities without a local compatibility tag. If the current validation gate
-has no Kubernetes proof for that worker, create the proof first; that bootstrap concern
-is tracked separately from forwarder image configuration.
+The failure proof then supplied a nonexistent digest-qualified forwarder image. Run
+`40fd87ae-55b5-4990-8738-7daf2d60dd7f` failed in 3,195 ms with a bounded message naming
+the Job, Pod, `result-forwarder` container, and `ErrImagePull`. Three seconds later no
+generated worker Pod or input ConfigMap remained.
+
+Finally, recovery run `db78b250-2641-43b1-8dc2-602f79ddde52` used the valid digest
+again and completed successfully. The API and scheduler remained ready, and no transient
+Job or worker ConfigMap remained. This proves a pull failure is contained to its run and
+does not prevent the next task from completing.
