@@ -90,6 +90,26 @@ def test_kubernetes_workload_security_migration_is_documented() -> None:
     assert "resourcePolicies.defaults.filesystem.read_only_root=true" in security_flat
 
 
+def test_kubernetes_artifact_retention_is_documented_with_honest_proof_limits() -> None:
+    """Keep retention, security, upgrade, compatibility, and proof guidance discoverable."""
+    readme = Path("README.md").read_text(encoding="utf-8")
+    retention = Path("docs/kubernetes-artifact-retention.md").read_text(encoding="utf-8")
+    proof = Path("docs/proofs/issue-147-kubernetes-artifact-retention.md").read_text(
+        encoding="utf-8"
+    )
+    upgrade = Path("docs/UPGRADING.md").read_text(encoding="utf-8")
+    security = Path("docs/security-model.md").read_text(encoding="utf-8")
+
+    assert "docs/kubernetes-artifact-retention.md" in readme
+    assert "persistence.artifactSubdirectory" in retention
+    assert "all-or-nothing" in retention
+    assert "ReadWriteMany" in retention
+    assert "scripts/kubernetes_artifact_retention_proof.py" in proof
+    assert "Live kind execution was not performed" in proof
+    assert "Kubernetes Artifact Retention" in upgrade
+    assert "Kubernetes Artifact Boundary" in security
+
+
 def test_repository_operator_docs_cover_stack_enablement() -> None:
     """Verify optional Directory service docs cover local and cluster operators."""
     readme = Path("README.md").read_text(encoding="utf-8")

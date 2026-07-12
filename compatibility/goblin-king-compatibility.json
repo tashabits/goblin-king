@@ -12,6 +12,7 @@
     "Registry files use a top-level goblins array.",
     "Worker image maps use a top-level workers object keyed by goblin kind.",
     "Durable events add a sequence while pre-sequence EventRecord construction remains valid.",
+    "Kubernetes artifact retention keeps result and artifact JSON shapes stable and adds verified metrics.",
     "Job statuses, Run statuses, result envelopes, and existing constructor requirements are unchanged.",
     "Kubernetes runtime image settings are additive; legacy constructor and Helm tag-only values remain valid.",
     "Kubernetes workload security defaults to the legacy generated Pod shape; restricted-v1 is an explicit opt-in profile.",

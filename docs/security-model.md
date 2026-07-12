@@ -46,6 +46,8 @@ Goblin King enforces or records:
 - Job timeout status.
 - Scoped hard-kill of Goblin King-labeled runtime objects.
 - Artifact path safety.
+- Kubernetes artifact count and actual-byte limits, local-path containment, media-type
+  validation, optional SHA-256 verification, and atomic durable retention.
 - Mandatory worker contract validation before container execution by default.
 - Auth, RBAC, audit, and rate-limit decisions.
 - Durable event and heartbeat history.
@@ -53,10 +55,29 @@ Goblin King enforces or records:
 Per-goblin resource policy is documented in
 [`goblin-resource-policies.md`](goblin-resource-policies.md). It defines recommended
 defaults, ceilings, Docker mapping, Kubernetes mapping, and proof expectations. Current
-runtime enforcement covers timeouts, retries, safe artifact paths, scoped hard
-termination, audit, and events; broader CPU, memory, network, filesystem, log, and
-artifact byte ceilings should be enforced by Docker/Compose/Helm deployment policy until
-runtime-level validation is added.
+runtime enforcement covers timeouts, retries, safe artifact paths, Kubernetes artifact
+count/byte ceilings, scoped hard termination, audit, and events. Broader CPU, memory,
+network, filesystem, and log controls still depend on the selected runtime and
+deployment policy.
+
+## Kubernetes Artifact Boundary
+
+The task worker receives only a transient `/artifacts` `emptyDir`. The trusted result
+forwarder sees that directory read-only and receives a writable mount of only the
+configured artifact subpath from the PVC. The worker never receives the PVC or SQLite
+storage. Retained paths use hashed project and Run scopes plus opaque stored file names;
+download authorization still comes from the canonical Job/Run project records.
+
+The forwarder rejects traversal, remote authorities, non-file schemes, symbolic links,
+directories, duplicate or unsafe names, invalid media-type syntax, changed source files,
+policy overflow, and declared digest/size mismatches. It stages a complete set on the
+destination filesystem and atomically installs it. Failure publishes no artifact entries
+or artifact-prefixed metrics.
+
+This is not malware scanning, content disarmament, or proof that a declared media type
+matches file contents. Downloads use attachment disposition. Run only a trusted
+result-forwarder image, keep the PVC out of worker containers, and continue applying
+image provenance, validation, resource, network, and Pod-security controls.
 
 Worker image validation is documented in
 [Goblin Contract Validation](goblin-contract-validation.md). The Docker scheduler may

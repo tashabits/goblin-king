@@ -102,6 +102,31 @@ No Job status, Run status, constructor requirement, or result-envelope shape cha
 EventRecord construction and the historical `SQLiteStore.save_event()` return contract remain
 valid. Redis Stream consumers should deduplicate by `sequence`; pub/sub remains best-effort.
 
+## Kubernetes Artifact Retention
+
+The Helm chart now passes its data-PVC claim and artifact mapping to Kubernetes result
+forwarders. There is no SQLite migration and Docker behavior is unchanged. Existing
+artifact metadata whose bytes were already lost is not reconstructed.
+
+The default mapping is `persistence.artifactSubdirectory: artifacts` and
+`config.artifactRoot: /data/artifacts`. Deployments with a custom artifact root must set
+the PVC subdirectory to the corresponding path below the API's `/data` mount and ensure
+that directory exists before artifact Jobs start. Custom non-chart schedulers configure
+`GOBLIN_KING_K8S_ARTIFACT_PVC_CLAIM`,
+`GOBLIN_KING_K8S_ARTIFACT_VOLUME_SUBDIRECTORY`, and
+`GOBLIN_KING_K8S_ARTIFACT_URI_ROOT`.
+
+`KubernetesRuntime` has one optional, defaulted artifact-retention constructor argument;
+existing callers do not change. `GoblinResult` and `ArtifactRecord` shapes are unchanged.
+Successfully retained results add actual `artifact.<name>.bytes`,
+`artifact.<name>.sha256`, `artifact.retained.files`, and `artifact.retained.bytes`
+metrics. When a Kubernetes result declares artifacts but retention is not configured or
+cannot complete, the result is failed explicitly and artifact entries are omitted.
+
+The chart's default `ReadWriteOnce` PVC is appropriate for the documented single-node
+local cluster. Review access modes before a multi-node upgrade; use `ReadWriteMany` or an
+equivalent backend when API and worker Pods may run on different nodes.
+
 ## Compatibility Fixtures
 
 The `examples/compatibility/project-ready-v0_1/` fixture is the baseline for the

@@ -18,6 +18,7 @@ Goblin King `0.1.0` is the first project-ready internal package baseline.
 | Helm control image values | `goblin-king/v1alpha1` | Repository/tag and map/string pull-secret forms remain supported; optional digest and forwarder values are additive, with digest precedence. |
 | Kubernetes workload security | `legacy` / `restricted-v1` | `legacy` remains the default and preserves generated Pod shape. `restricted-v1` is opt-in and binds validation proof to its effective controls. |
 | Kubernetes worker ServiceAccount | `restricted-v1` | Configuration accepts only explicit kind-to-name bindings. Automatic token mounting stays disabled; a bounded projected token is mounted only in that worker. |
+| Kubernetes artifact retention | `goblin-king/v1alpha1` | Helm-backed task artifacts are retained before Job cleanup; worker result and artifact JSON shapes remain unchanged and actual size/digest metrics are additive. |
 
 The machine-readable version of this matrix lives at
 `compatibility/goblin-king-compatibility.json`.
@@ -33,3 +34,9 @@ new constructor arguments. Pre-sequence EventRecord payloads remain valid and re
 until persisted. `SQLiteStore.save_event()` retains its original no-value return; the ordered
 delivery path uses a new internal persistence method. The nullable Run finish field remains part of
 the Python model for existing callers, while SQLite normalizes terminal rows before API reads.
+
+Kubernetes artifact retention adds optional scheduler environment and an optional, defaulted
+`KubernetesRuntime` constructor value. Existing constructors, CLI defaults, Docker artifact paths,
+API routes, database rows, and result/artifact object shapes remain valid. A Kubernetes result that
+declares artifacts now fails honestly when durable retention is unavailable instead of persisting
+metadata for transient bytes.
