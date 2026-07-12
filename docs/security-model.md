@@ -81,6 +81,16 @@ username, password, token, and Docker config JSON remain inside Kubernetes Secre
 external secret controller. Image-pull diagnostics are bounded before entering durable
 Run and event records so registry responses cannot create unbounded stored errors.
 
+Generated Jobs retain a compatibility-safe `legacy` security profile by default.
+Operators may opt into the versioned `restricted-v1` profile, which disables automatic
+ServiceAccount tokens; applies non-root, no-escalation, read-only-root, dropped-
+capability, and RuntimeDefault seccomp controls to worker and result-forwarder; and gives
+both complete CPU/memory resources. An explicitly mapped kind may use one named
+ServiceAccount through a one-hour projected token mounted only in the worker. The
+forwarder never receives it. Configuration accepts names and typed values only, not raw
+Pod fragments or credentials. See
+[Kubernetes Workload Security](kubernetes-workload-security.md).
+
 ## Network
 
 Network access should be deliberate. Some goblins need APIs; many do not. Resource

@@ -336,6 +336,20 @@ generated worker Pods. Full value precedence, direct CLI options, API JSON, secu
 boundaries, and pull-failure behavior are documented in
 [Kubernetes Runtime Images](kubernetes-runtime-images.md).
 
+Existing adopters remain on the `legacy` workload-security profile. To migrate a chart
+after confirming the images run non-root and read-only, render both settings together:
+
+```bash
+helm template goblin-king charts/goblin-king \
+  --set-string scheduler.workloadSecurity.profile=restricted-v1 \
+  --set resourcePolicies.defaults.filesystem.read_only_root=true
+```
+
+Do not omit the resource-policy change: an explicit read-write root conflicts with the
+restricted profile and is intentionally rejected. See
+[Kubernetes Workload Security](kubernetes-workload-security.md) for UID/GID, forwarder
+resources, per-kind ServiceAccounts, validation identity, and the adoption checklist.
+
 Disable ingress when another deployment layer owns routing:
 
 ```bash

@@ -14,6 +14,7 @@
     "Durable events add a sequence while pre-sequence EventRecord construction remains valid.",
     "Job statuses, Run statuses, result envelopes, and existing constructor requirements are unchanged.",
     "Kubernetes runtime image settings are additive; legacy constructor and Helm tag-only values remain valid.",
+    "Kubernetes workload security defaults to the legacy generated Pod shape; restricted-v1 is an explicit opt-in profile.",
     "SQLite auto-create and auto-alter behavior is internal and not a compatibility promise."
   ]
 }
