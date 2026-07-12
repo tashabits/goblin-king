@@ -161,6 +161,10 @@ goblin-king workers validate \
   --kind example.hello \
   --timeout-seconds 120 \
   --require-success \
+  --result-forwarder-image registry.example/control@sha256:<digest> \
+  --worker-image-pull-policy IfNotPresent \
+  --result-forwarder-image-pull-policy IfNotPresent \
+  --workload-image-pull-secret primary-registry \
   --db /data/goblin-king.sqlite3 \
   --json
 ```
@@ -186,17 +190,16 @@ and the audit log stores only kind/pass/fail summaries rather than worker logs. 
 [fresh-chart proof](kubernetes-generic-worker-validation-proof.md) for the complete
 sequence.
 
-### Kubernetes Runtime Configuration Seam
+### Shared Kubernetes Runtime Configuration
 
-The validation helper accepts an injected `KubernetesRuntime`. This is the deliberate
-integration seam for issue #146. The current operation uses the existing runtime
-constructor defaults so this issue does not add a second settings model. When #146
-centralizes Kubernetes runtime configuration, API validation and scheduler execution
-must receive runtimes from the same factory and inherit the same namespace,
-result-forwarder image and policies, pull secrets, and diagnostic limits. A proof using
-a non-default control image is therefore deferred to that integration; the fresh-chart
-proof here deliberately uses `goblin-king:local` for both the control plane and result
-forwarder.
+Generic validation does not construct an independent validation-only runtime. The API
+passes its typed `kubernetes_runtime` settings into the same factory used by scheduler
+execution and notebook validation. The CLI builds that same typed settings object from
+the established forwarder-image, worker/forwarder pull-policy, and repeatable pull-secret
+options. The factory retains the runtime's shared namespace discovery and bounded Pod
+diagnostics. This prevents validation from passing with a local/default forwarder while
+normal scheduling uses another image, policy, Secret set, namespace, or diagnostic
+boundary. Legacy constructor calls and Docker validation remain unchanged.
 
 ## Project-Defined Goblins
 

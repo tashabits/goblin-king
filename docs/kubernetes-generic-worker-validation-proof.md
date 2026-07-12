@@ -207,11 +207,16 @@ rm -f /tmp/goblin-kubernetes-validation.json
 - Identity mismatch: make API and scheduler use the same active worker image map;
   digest-pin production references and revalidate after image changes.
 
-## Current Configuration Proof Limit
+## Shared Runtime Configuration Proof
 
-This proof intentionally uses the default namespace discovery, control image, pull
-policy, and bounded-log setting. Issue #146 owns centralized result-forwarder runtime
-configuration. When it lands, rerun this proof with a non-default namespace and
-forwarder image/policy, and verify generic validation inherits the same runtime factory,
-pull secrets, and diagnostics settings as normal scheduler execution. Do not add an
-independent validation-only configuration path.
+The minimal commands above intentionally use the chart defaults. For deployment proof,
+render or install with a digest-pinned control/forwarder image, distinct worker and
+forwarder pull policies, and at least one symbolic workload pull Secret. Confirm the API
+ConfigMap `kubernetes_runtime` object and scheduler arguments describe those exact
+values, then invoke generic validation. The generated validation Pod must contain the
+same forwarder identity, policies, and `imagePullSecrets` as normal scheduler Pods.
+
+Deterministic tests also prove that API generic/notebook/repository validation,
+scheduler static/dynamic workers, and direct CLI execution all use the shared typed
+runtime factory. Pod log reads retain the same 64 KiB per-container and five-second
+request bounds. No independent validation-only configuration path remains.

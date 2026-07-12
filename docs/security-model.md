@@ -82,6 +82,11 @@ vulnerability status, safe business behavior, or tenant isolation. Prefer digest
 worker references and retain the normal image review, signing/scanning, resource,
 network, and admission controls.
 
+Generic validation receives its forwarder image, worker/forwarder pull policies, and
+symbolic pull-secret names only from the same typed operator settings used by the
+scheduler. Its request cannot weaken or replace those settings. Namespace discovery and
+bounded Pod diagnostic helpers are shared by the runtime factory as well.
+
 ## Secrets
 
 Pass secrets only through the deployment mechanism chosen by the project, such as Docker

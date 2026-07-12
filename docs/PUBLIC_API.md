@@ -99,6 +99,11 @@ Omit `kinds` to validate all active registry definitions. `timeout_seconds` must
 between 1 and 3600. The caller cannot supply an image, command, mount, secret, service
 account, or raw Job manifest.
 
+The endpoint reads the typed `kubernetes_runtime` member from API settings and uses the
+same runtime factory as scheduler and notebook execution. Forwarder identity, worker and
+forwarder pull policies, workload pull-secret names, namespace discovery, and bounded
+diagnostics therefore cannot be selected independently by this request.
+
 The response contains `validations`, one `WorkerValidationResult` per selected kind.
 Existing result fields remain unchanged. The additive `artifacts` field returns
 validated result-envelope metadata, and `logs` returns bounded Kubernetes pod logs by

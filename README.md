@@ -307,6 +307,9 @@ python -m goblin_king.cli workers validate \
   --kind example.hello \
   --timeout-seconds 120 \
   --require-success \
+  --result-forwarder-image goblin-king:local \
+  --worker-image-pull-policy IfNotPresent \
+  --result-forwarder-image-pull-policy IfNotPresent \
   --db /data/goblin-king.sqlite3 \
   --json
 ```
@@ -323,7 +326,10 @@ curl -X POST http://127.0.0.1:8000/admin/workers/validate-kubernetes \
 
 The operation accepts only configured registry kinds; callers cannot supply an image,
 command, mount, credential, or Kubernetes manifest. Docker validation remains the CLI
-default, and `--build`/`--run-root` remain Docker-only options.
+default, and `--build`/`--run-root` remain Docker-only options. Kubernetes validation,
+scheduled execution, notebook validation, and direct submission all construct their
+runtime from the same typed settings factory, including forwarder image, pull policies,
+pull-secret names, namespace discovery, and bounded diagnostics.
 
 Adopting projects can validate workers directly from project settings:
 

@@ -67,6 +67,10 @@ or worker contract change is required.
 - Existing `KubernetesRuntime` construction and `run(...) -> GoblinResult` behavior are
   unchanged; the additive observed-run path is used by validation to capture diagnostics
   before transient Job cleanup.
+- Generic API validation, notebook validation, scheduler execution, and direct
+  Kubernetes CLI execution use one typed runtime factory. Existing API settings and CLI
+  defaults remain valid; non-default forwarder/pull settings now apply to generic proof
+  as well as normal execution.
 - Existing SQLite and Redis layouts are unchanged.
 
 After installing the updated API and scheduler images, invoke

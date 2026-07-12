@@ -82,11 +82,20 @@ goblin-king jobs submit example.echo \
   --input examples/input.json \
   --result-forwarder-image registry.example/control@sha256:<digest> \
   --workload-image-pull-secret primary-registry
+
+goblin-king workers validate \
+  --runtime kubernetes \
+  --input examples/input.json \
+  --kind example.echo \
+  --result-forwarder-image registry.example/control@sha256:<digest> \
+  --worker-image-pull-policy IfNotPresent \
+  --result-forwarder-image-pull-policy IfNotPresent \
+  --workload-image-pull-secret primary-registry
 ```
 
 Repeat `--workload-image-pull-secret` to attach more than one existing Secret.
 
-The API uses the equivalent additive JSON member for in-cluster notebook and repository
+The API uses the equivalent additive JSON member for generic, notebook, and repository
 validation Jobs:
 
 ```json
@@ -99,6 +108,10 @@ validation Jobs:
   }
 }
 ```
+
+All control-plane paths use one typed runtime factory. Generic validation cannot replace
+the configured forwarder or pull settings through its HTTP request, and scheduler/API
+construction retains the same namespace discovery and bounded diagnostic helpers.
 
 Older JSON settings files and older constructor calls remain valid. The Python
 constructor still accepts `image_pull_policy` and `result_forwarder_image`; when no
