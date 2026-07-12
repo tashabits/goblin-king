@@ -400,6 +400,26 @@ The Kubernetes proof flow should include a completed `example.hello` run returni
 `Hello World` and two `example.long-hello` probes returning `Hello World from long
 running service` with different timestamps.
 
+Before the first generic registry job, create scheduler proof from inside the cluster:
+
+```bash
+kubectl port-forward service/goblin-king-api 8000:8000
+
+curl -X POST http://127.0.0.1:8000/admin/workers/validate-kubernetes \
+  -H "Authorization: Bearer local-dev-token" \
+  -H "Content-Type: application/json" \
+  -d '{"kinds":["example.hello"],"input":{"message":"cluster proof"},"require_success":true,"timeout_seconds":120}'
+```
+
+The response includes the exact `kubernetes:<configured-image>` gate identity, result
+status, exit code when Kubernetes reports one, bounded per-container logs, and artifact
+metadata. The API persists the pass/fail record in the chart database, so the scheduler
+can accept the first normal job without a manual database seed or Docker validation.
+Only admins can invoke this operation. Prefer digest-pinned worker references for
+immutable deployment proof and treat returned logs as potentially sensitive worker
+output. Follow the [exact generic worker proof](kubernetes-generic-worker-validation-proof.md)
+for install, validation, scheduling, and cleanup checks.
+
 ## Release And Upgrade
 
 For project-ready adoption, use:

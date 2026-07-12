@@ -59,9 +59,28 @@ artifact byte ceilings should be enforced by Docker/Compose/Helm deployment poli
 runtime-level validation is added.
 
 Worker image validation is documented in
-[Goblin Contract Validation](goblin-contract-validation.md). The scheduler may create
-proof just-in-time, but it does not execute a container-backed goblin unless validation
-passes for the resolved image identity, contract version, and validator version.
+[Goblin Contract Validation](goblin-contract-validation.md). The Docker scheduler may
+create proof just-in-time. Kubernetes generic workers use the explicit validation
+operation. Neither runtime executes a normal container-backed goblin unless validation
+passes for the scheduler identity, contract version, and validator version.
+
+Generic Kubernetes validation is an admin-only execution operation, not a general Job
+submission escape hatch. `POST /admin/workers/validate-kubernetes` accepts only kinds
+already present in the active registry and worker image map. Its request permits input,
+a deadline from 1 to 3600 seconds, and a require-success decision; it does not permit a
+caller-selected image, command, mount, credential, service account, namespace, or raw
+manifest. The API service account still needs only its namespace-scoped Job, ConfigMap,
+pod-read, and pod-log permissions from the chart.
+
+Validation Jobs use the normal worker contract mounts, an active deadline, no retries,
+and best-effort cleanup. Worker and result-forwarder logs are captured with a fixed byte
+limit before cleanup and returned to the authenticated admin; they are not copied into
+the audit record. Logs and artifact names can still contain worker-authored sensitive
+data, so do not place secrets in worker output. A passing validation proves contract
+shape for the exact scheduler identity. It does not establish image provenance,
+vulnerability status, safe business behavior, or tenant isolation. Prefer digest-pinned
+worker references and retain the normal image review, signing/scanning, resource,
+network, and admission controls.
 
 ## Secrets
 

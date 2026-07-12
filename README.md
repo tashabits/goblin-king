@@ -278,7 +278,9 @@ containers, secrets, network paths, and users are trusted.
 Proof becomes stale when the resolved image identity changes or when the recorded proof
 no longer matches the current contract, validator, goblin kind, or runtime expectations.
 Use [Goblin Contract Validation](docs/goblin-contract-validation.md) for the detailed
-validation behavior and scheduler gate.
+validation behavior and scheduler gate. Kubernetes operators should also keep the
+[generic worker validation proof](docs/kubernetes-generic-worker-validation-proof.md)
+with their deployment evidence.
 
 Build and run worker validation with temporary contract mounts:
 
@@ -290,6 +292,38 @@ python -m goblin_king.cli workers validate \
   --build \
   --require-success
 ```
+
+For a configured generic worker in Kubernetes, use the same command with the explicit
+runtime. It creates a deadline-bounded Job, captures bounded worker/forwarder logs and
+artifact metadata, and stores proof under the exact identity the Kubernetes scheduler
+checks. Run it where the CLI can reach the cluster and the scheduler's SQLite database:
+
+```bash
+python -m goblin_king.cli workers validate \
+  --runtime kubernetes \
+  --registry demo-goblins.json \
+  --images demo-images.json \
+  --input examples/input.json \
+  --kind example.hello \
+  --timeout-seconds 120 \
+  --require-success \
+  --db /data/goblin-king.sqlite3 \
+  --json
+```
+
+Inside a Helm deployment, the recommended operation is the admin-authenticated API so
+the proof is written directly to the chart's shared state:
+
+```bash
+curl -X POST http://127.0.0.1:8000/admin/workers/validate-kubernetes \
+  -H "Authorization: Bearer local-dev-token" \
+  -H "Content-Type: application/json" \
+  -d '{"kinds":["example.hello"],"input":{"message":"proof"},"require_success":true,"timeout_seconds":120}'
+```
+
+The operation accepts only configured registry kinds; callers cannot supply an image,
+command, mount, credential, or Kubernetes manifest. Docker validation remains the CLI
+default, and `--build`/`--run-root` remain Docker-only options.
 
 Adopting projects can validate workers directly from project settings:
 
