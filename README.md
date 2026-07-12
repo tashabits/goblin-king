@@ -636,6 +636,36 @@ docker build -t goblin-king-example-long-hello:local workers/example.long-hello
 make helm-template
 ```
 
+For registry deployments, pin the control image by digest. The chart then uses that
+exact image for result-forwarder sidecars unless a separate forwarder is configured:
+
+```yaml
+image:
+  repository: registry.example/tashabits/goblin-king
+  tag: "0.1.0"
+  digest: sha256:<control-plane-digest>
+  pullSecrets:
+    - name: primary-registry
+
+scheduler:
+  resultForwarder:
+    image:
+      repository: ""
+      tag: ""
+      digest: ""
+    pullPolicy: ""
+  workloadImagePullSecrets:
+    - backup-registry
+```
+
+Digest values take precedence over tags. Global pull-secret names are inherited by
+generated worker Pods and combined with scheduler-only workload Secret names. Settings
+contain Secret names only, never registry credential values. A known worker or
+forwarder image-pull error becomes a bounded failed Run, its transient Job and ConfigMap
+are cleaned up, and the scheduler continues with later work. See
+[Kubernetes Runtime Images](docs/kubernetes-runtime-images.md) for CLI/API settings,
+separate forwarder images, compatibility behavior, and proof commands.
+
 The Helm chart exposes the admin/API service through an ingress by default using the
 `nginx` ingress class. Disable it for deployments that already provide ingress routing:
 
