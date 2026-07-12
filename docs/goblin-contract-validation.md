@@ -74,7 +74,9 @@ Docker proof uses the locally inspected immutable image ID. Kubernetes proof use
 exact scheduler gate identity `kubernetes:<configured-image-reference>`. A digest-pinned
 reference therefore yields an immutable configured identity and is preferred. A mutable
 tag cannot reveal tag movement to the preflight gate; revalidate after changing or
-reloading a tagged image.
+reloading a tagged image. Keeping tag-only identity behavior is an explicit compatibility
+limitation of this change; the validation path does not silently reinterpret existing
+worker references or claim a tag is immutable.
 
 ## Failure Mapping
 
@@ -183,6 +185,18 @@ worker mappings return failed validation entries. Every returned entry is persis
 and the audit log stores only kind/pass/fail summaries rather than worker logs. See the
 [fresh-chart proof](kubernetes-generic-worker-validation-proof.md) for the complete
 sequence.
+
+### Kubernetes Runtime Configuration Seam
+
+The validation helper accepts an injected `KubernetesRuntime`. This is the deliberate
+integration seam for issue #146. The current operation uses the existing runtime
+constructor defaults so this issue does not add a second settings model. When #146
+centralizes Kubernetes runtime configuration, API validation and scheduler execution
+must receive runtimes from the same factory and inherit the same namespace,
+result-forwarder image and policies, pull secrets, and diagnostic limits. A proof using
+a non-default control image is therefore deferred to that integration; the fresh-chart
+proof here deliberately uses `goblin-king:local` for both the control plane and result
+forwarder.
 
 ## Project-Defined Goblins
 

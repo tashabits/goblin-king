@@ -27,6 +27,7 @@ from goblin_king.contracts import (
 )
 from goblin_king.store import SQLiteStore
 from goblin_king.validation import WorkerValidationResult
+from goblin_king.workers import WorkerImageMap
 from tests.api_helpers import auth_headers, build_api_client
 
 
@@ -157,6 +158,32 @@ def test_admin_kubernetes_worker_validation_persists_scheduler_proof(
         record.action == "worker.kubernetes_validated"
         for record in store.list_audit_logs(limit=20)
     )
+
+
+def test_admin_kubernetes_validation_reports_missing_worker_mapping(tmp_path: Path) -> None:
+    """Verify an absent configured mapping fails without contacting the cluster."""
+    client, store, _ = build_client(tmp_path)
+    client.app.state.goblin_king.workers = WorkerImageMap.from_definitions({})
+
+    response = client.post(
+        "/admin/workers/validate-kubernetes",
+        headers=auth_headers(),
+        json={
+            "kinds": ["example.echo"],
+            "input": {},
+            "require_success": True,
+            "timeout_seconds": 10,
+        },
+    )
+
+    assert response.status_code == 200
+    validation = response.json()["validations"][0]
+    assert validation["ok"] is False
+    assert "missing Docker worker image mapping for 'example.echo'" in validation["error"]
+    assert validation["logs"] == {}
+    persisted = store.latest_worker_validation_for_kind("example.echo")
+    assert persisted is not None
+    assert persisted.status == "failed"
 
 
 def test_goblins_endpoint_uses_project_settings(tmp_path: Path) -> None:

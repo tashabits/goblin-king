@@ -92,6 +92,53 @@ def test_workers_validate_accepts_project_settings() -> None:
     assert "unknown goblin kind: example.missing" in result.stdout
 
 
+def test_workers_validate_keeps_docker_as_default_and_human_output(monkeypatch) -> None:
+    """Verify the additive runtime option does not change existing Docker CLI behavior."""
+    from goblin_king.validation import WorkerValidationResult
+
+    captured: dict[str, object] = {}
+
+    def fake_docker_validate(**kwargs):
+        captured.update(kwargs)
+        return [
+            WorkerValidationResult(
+                kind="example.echo",
+                ok=True,
+                result_status="success",
+                checks=["result-envelope"],
+            )
+        ]
+
+    def fail_kubernetes_validate(**_kwargs):
+        raise AssertionError("Docker must remain the default validation runtime")
+
+    monkeypatch.setattr("goblin_king.cli.validate_workers", fake_docker_validate)
+    monkeypatch.setattr(
+        "goblin_king.cli.validate_workers_with_kubernetes",
+        fail_kubernetes_validate,
+    )
+    result = runner.invoke(
+        app,
+        [
+            "workers",
+            "validate",
+            "--registry",
+            "examples/goblins.json",
+            "--images",
+            "goblin-images.json",
+            "--input",
+            "examples/input.json",
+            "--kind",
+            "example.echo",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout == "example.echo\tok\tsuccess\tresult-envelope\n"
+    assert captured["build"] is False
+    assert captured["run_root"] is None
+
+
 def test_workers_validate_kubernetes_returns_and_persists_exact_proof(
     tmp_path: Path,
     monkeypatch,

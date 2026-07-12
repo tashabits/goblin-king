@@ -17,6 +17,10 @@ worker `goblin-king-example-hello:local`, bootstrap token `local-dev-token`, and
 `IfNotPresent`/`Never` local-image behavior. When a deployment uses a registry, replace
 the build/load steps with digest-pinned published images.
 
+Tag-only worker references retain their historical scheduler identity and are not
+immutable. This proof uses local tags to match the chart fixture, while production
+evidence should use a worker map whose image is pinned as `repository@sha256:...`.
+
 ## 1. Build And Preload Only The Required Images
 
 ```bash
@@ -202,3 +206,12 @@ rm -f /tmp/goblin-kubernetes-validation.json
   contract proof.
 - Identity mismatch: make API and scheduler use the same active worker image map;
   digest-pin production references and revalidate after image changes.
+
+## Current Configuration Proof Limit
+
+This proof intentionally uses the default namespace discovery, control image, pull
+policy, and bounded-log setting. Issue #146 owns centralized result-forwarder runtime
+configuration. When it lands, rerun this proof with a non-default namespace and
+forwarder image/policy, and verify generic validation inherits the same runtime factory,
+pull secrets, and diagnostics settings as normal scheduler execution. Do not add an
+independent validation-only configuration path.

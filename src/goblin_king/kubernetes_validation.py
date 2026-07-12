@@ -30,6 +30,8 @@ def validate_workers_with_kubernetes(
 ) -> list[WorkerValidationResult]:
     """Run selected generic workers as bounded Jobs and return contract proof details."""
     definitions, results = _selected_definitions(registry, kinds)
+    # The injectable runtime is the configuration seam for issue #146. Once Kubernetes
+    # runtime settings are centralized, API and scheduler callers must share that factory.
     active_runtime = runtime or KubernetesRuntime(
         workers=workers,
         redis_url=redis_url,
