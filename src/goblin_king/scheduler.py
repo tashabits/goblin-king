@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from threading import Event
 from typing import Literal
 from uuid import uuid4
@@ -30,6 +31,7 @@ from goblin_king.notebooks import (
 from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.resource_policies import ResourcePolicySet, policy_from_job_metadata
 from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRuntime, new_run_context
+from goblin_king.scheduler_failures import record_unexpected_job_failure
 from goblin_king.store import SQLiteStore
 from goblin_king.validation import (
     VALIDATOR_VERSION,
@@ -63,6 +65,7 @@ class Scheduler:
         redis_url: str = "redis://localhost:6379/0",
         event_bus: EventBus | None = None,
         resource_policies: ResourcePolicySet | None = None,
+        docker_run_root: str | Path | None = None,
     ) -> None:
         self.registry = registry
         self.store = store
@@ -77,6 +80,7 @@ class Scheduler:
             raise ValueError(f"workers image map is required when runtime_mode={runtime_mode!r}")
         self.event_bus = event_bus or EventBus(store=store, redis_url=redis_url)
         self.resource_policies = resource_policies
+        self.docker_run_root = docker_run_root
         self.runtime = self._build_runtime()
 
     def reload_discovery(
@@ -103,6 +107,7 @@ class Scheduler:
             return DockerRuntime(
                 workers=self.workers,
                 redis_url=self.redis_url,
+                run_root=self.docker_run_root,
                 event_bus=self.event_bus,
             )
         if self.runtime_mode == "kubernetes":
@@ -122,6 +127,7 @@ class Scheduler:
             return DockerRuntime(
                 workers=workers,
                 redis_url=self.redis_url,
+                run_root=self.docker_run_root,
                 event_bus=self.event_bus,
             )
         if self.runtime_mode == "kubernetes":
@@ -357,18 +363,25 @@ class Scheduler:
                 }
             )
         if isinstance(runtime, DockerRuntime | KubernetesRuntime):
-            validation_error = self._validate_before_container_run(
-                job,
-                definition.kind,
-                registry=runtime_registry,
-                workers=runtime_workers,
-                runtime=runtime,
-                input_payload=runtime_input,
-                notebook_source_hash=(
-                    notebook_record.source_hash if notebook_record is not None else None
-                ),
-                resource_policy=resource_policy.compact() if resource_policy else {},
-            )
+            try:
+                validation_error = self._validate_before_container_run(
+                    job,
+                    definition.kind,
+                    registry=runtime_registry,
+                    workers=runtime_workers,
+                    runtime=runtime,
+                    input_payload=runtime_input,
+                    notebook_source_hash=(
+                        notebook_record.source_hash if notebook_record is not None else None
+                    ),
+                    resource_policy=resource_policy.compact() if resource_policy else {},
+                )
+            except Exception as error:  # validation is a job boundary, not a scheduler boundary
+                validation_error = (
+                    "Goblin image validation could not start; the job was failed and its lease "
+                    "was released. "
+                    f"{type(error).__name__}: {error}"
+                )
             if validation_error is not None:
                 result = GoblinResult.failed(error=validation_error)
                 finished_at = utc_now()
@@ -632,7 +645,19 @@ class Scheduler:
         self.materialize_due_schedules(current)
         runs: list[RunRecord] = []
         for job in self.claim_due_jobs(current):
-            runs.append(self.run_claimed_job(job, current))
+            try:
+                runs.append(self.run_claimed_job(job, current))
+            except Exception as error:  # one malformed attempt must not end the scheduler loop
+                runs.append(
+                    record_unexpected_job_failure(
+                        store=self.store,
+                        event_bus=self.event_bus,
+                        scheduler_id=self.worker_id,
+                        claimed_job=job,
+                        started_at=current,
+                        error=error,
+                    )
+                )
         return runs
 
     def run_loop(

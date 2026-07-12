@@ -1773,7 +1773,7 @@ class SQLiteStore:
             claimable_status = or_(
                 jobs_table.c.status.in_(["queued", "retrying"]),
                 (
-                    (jobs_table.c.status == "leased")
+                    jobs_table.c.status.in_(["leased", "running"])
                     & (jobs_table.c.leased_until.is_not(None))
                     & (jobs_table.c.leased_until <= now)
                 ),

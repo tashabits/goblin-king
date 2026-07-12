@@ -113,6 +113,7 @@ def test_validate_workers_uses_shared_run_root_for_docker_volume(monkeypatch) ->
         return WorkerValidationResult(kind=kwargs["kind"], ok=True)
 
     monkeypatch.setenv("GOBLIN_KING_DOCKER_DATA_VOLUME", "goblin-king-data")
+    monkeypatch.setenv("GOBLIN_KING_RUN_ROOT", "/data/goblin-runs")
     monkeypatch.setattr("goblin_king.validation.DockerRuntime", FakeDockerRuntime)
     monkeypatch.setattr("goblin_king.validation._validate_one", fake_validate_one)
     registry = GoblinRegistry.from_definitions(
@@ -141,7 +142,7 @@ def test_validate_workers_uses_shared_run_root_for_docker_volume(monkeypatch) ->
     )
 
     assert results[0].ok is True
-    assert captured["run_root"] == Path(".goblin-king") / "runs"
+    assert captured["run_root"] == Path("/data/goblin-runs")
 
 
 def test_validate_one_uses_short_label_safe_job_id_for_long_kinds(

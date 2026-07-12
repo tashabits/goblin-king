@@ -676,6 +676,38 @@ def test_scheduler_run_once_uses_project_settings(tmp_path: Path) -> None:
     assert payload[0]["status"] == "completed"
 
 
+def test_scheduler_run_once_forwards_explicit_run_root(tmp_path: Path, monkeypatch) -> None:
+    """Expose writable Docker placement directly through the scheduler CLI."""
+    captured = {}
+
+    class FakeScheduler:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+        def run_once(self):
+            return []
+
+    monkeypatch.setattr("goblin_king.cli.Scheduler", FakeScheduler)
+    run_root = tmp_path / "data" / "runs"
+
+    result = runner.invoke(
+        app,
+        [
+            "scheduler",
+            "run-once",
+            "--registry",
+            "examples/goblins.json",
+            "--images",
+            "goblin-images.json",
+            "--run-root",
+            str(run_root),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["docker_run_root"] == run_root
+
+
 def test_jobs_submit_persists_completed_run(tmp_path: Path) -> None:
     """Verify a successful CLI submit prints and persists a completed run."""
     db_path = tmp_path / "goblin.sqlite3"

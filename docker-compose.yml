@@ -15,6 +15,7 @@ services:
       - redis
     environment:
       GOBLIN_KING_DOCKER_DATA_VOLUME: ${COMPOSE_PROJECT_NAME:-goblin-king}_goblin-king-data
+      GOBLIN_KING_RUN_ROOT: /app/.goblin-king/runs
       GOBLIN_KING_DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-goblin-king}_default
     volumes:
       - .:/app
@@ -43,6 +44,7 @@ services:
       - redis
     environment:
       GOBLIN_KING_DOCKER_DATA_VOLUME: ${COMPOSE_PROJECT_NAME:-goblin-king}_goblin-king-data
+      GOBLIN_KING_RUN_ROOT: /app/.goblin-king/runs
       GOBLIN_KING_DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-goblin-king}_default
     volumes:
       - .:/app
@@ -75,6 +77,7 @@ services:
     environment:
       GOBLIN_KING_API_TOKEN: local-dev-token
       GOBLIN_KING_DOCKER_DATA_VOLUME: ${COMPOSE_PROJECT_NAME:-goblin-king}_goblin-king-data
+      GOBLIN_KING_RUN_ROOT: /app/.goblin-king/runs
       GOBLIN_KING_DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-goblin-king}_default
       GOBLIN_KING_NOTEBOOK_SERVICE_RUNTIME: docker
       GOBLIN_KING_REPOSITORY_ENABLED: ${GOBLIN_REPOSITORY_ENABLED:-false}
@@ -124,6 +127,7 @@ services:
       GOBLIN_KING_API_TOKEN: local-dev-token
       GOBLIN_KING_BOOTSTRAP_ADMIN_TOKEN: local-dev-token
       GOBLIN_KING_DOCKER_DATA_VOLUME: ${COMPOSE_PROJECT_NAME:-goblin-king}_goblin-king-data
+      GOBLIN_KING_RUN_ROOT: /app/.goblin-king/runs
       GOBLIN_KING_DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-goblin-king}_default
       GOBLIN_KING_NOTEBOOK_SERVICE_RUNTIME: docker
       GOBLIN_KING_REPOSITORY_ENABLED: "true"

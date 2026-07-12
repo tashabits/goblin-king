@@ -125,6 +125,13 @@ smoke_app = typer.Typer(help="Run local end-to-end smoke proofs.")
 workers_app = typer.Typer(help="Build Docker worker images.")
 resource_policies_app = typer.Typer(help="Inspect runtime resource policy mappings.")
 directory_ui_app = typer.Typer(help="Run the Goblin Directory browser service.")
+DockerRunRootOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--run-root",
+        help="Writable host path shared with the Docker worker data volume.",
+    ),
+]
 app.add_typer(api_app, name="api")
 app.add_typer(auth_app, name="auth")
 app.add_typer(goblins_app, name="goblins")
@@ -584,6 +591,7 @@ def submit_job(
         str,
         typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
     ] = DEFAULT_REDIS_URL,
+    run_root: DockerRunRootOption = None,
     resource_policies: Annotated[
         Path | None,
         typer.Option("--resource-policies", help="Optional resource policy JSON path."),
@@ -636,6 +644,7 @@ def submit_job(
         result = DockerRuntime(
             workers=worker_map,
             redis_url=redis_url,
+            run_root=run_root,
         ).run(
             definition,
             entrypoint,
@@ -1024,6 +1033,7 @@ def scheduler_run_once(
         str,
         typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
     ] = DEFAULT_REDIS_URL,
+    run_root: DockerRunRootOption = None,
     resource_policies: Annotated[
         Path | None,
         typer.Option("--resource-policies", help="Optional resource policy JSON path."),
@@ -1037,6 +1047,7 @@ def scheduler_run_once(
         runtime_mode=runtime,
         workers=workers,
         redis_url=redis_url,
+        docker_run_root=run_root,
         resource_policies=_load_resource_policies(resource_policies, project=project),
     )
     runs = scheduler.run_once()
@@ -1070,6 +1081,7 @@ def scheduler_run(
         str,
         typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
     ] = DEFAULT_REDIS_URL,
+    run_root: DockerRunRootOption = None,
     resource_policies: Annotated[
         Path | None,
         typer.Option("--resource-policies", help="Optional resource policy JSON path."),
@@ -1083,6 +1095,7 @@ def scheduler_run(
         runtime_mode=runtime,
         workers=workers,
         redis_url=redis_url,
+        docker_run_root=run_root,
         resource_policies=_load_resource_policies(resource_policies, project=project),
     )
     try:
@@ -1303,6 +1316,7 @@ def validate_worker_contracts(
         str,
         typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
     ] = DEFAULT_REDIS_URL,
+    run_root: DockerRunRootOption = None,
     json_output: Annotated[
         bool,
         typer.Option("--json", help="Print machine-readable validation results."),
@@ -1328,6 +1342,7 @@ def validate_worker_contracts(
         require_success=require_success,
         timeout_seconds=timeout_seconds,
         redis_url=redis_url,
+        run_root=run_root,
     )
     store = SQLiteStore(db)
     for result in results:
@@ -1367,6 +1382,7 @@ def validate_worker_image(
         str,
         typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
     ] = DEFAULT_REDIS_URL,
+    run_root: DockerRunRootOption = None,
     json_output: Annotated[
         bool,
         typer.Option("--json", help="Print machine-readable validation results."),
@@ -1402,6 +1418,7 @@ def validate_worker_image(
         prebuilt_image=not build,
         timeout_seconds=timeout_seconds,
         redis_url=redis_url,
+        run_root=run_root,
     )
     store = SQLiteStore(db)
     for result in results:

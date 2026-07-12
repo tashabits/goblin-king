@@ -16,6 +16,12 @@ from redis import Redis
 from redis.exceptions import RedisError
 
 from goblin_king.contracts import GoblinContext, GoblinDefinition, GoblinResult
+from goblin_king.docker_runtime_paths import (
+    DockerRuntimePathError,
+    relative_to_docker_data_root,
+    resolve_docker_artifact_root,
+    resolve_docker_run_root,
+)
 from goblin_king.events import (
     DEFAULT_HEARTBEAT_CHANNEL,
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
@@ -99,14 +105,14 @@ class DockerRuntime:
         *,
         workers: WorkerImageMap,
         redis_url: str = "redis://localhost:6379/0",
-        run_root: str | Path = Path(".goblin-king") / "runs",
+        run_root: str | Path | None = None,
         docker_executable: str = "docker",
         event_bus: EventBus | None = None,
         heartbeat_interval_seconds: int = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     ) -> None:
         self.workers = workers
         self.redis_url = redis_url
-        self.run_root = Path(run_root)
+        self.run_root = resolve_docker_run_root(run_root)
         self.docker_executable = docker_executable
         self.event_bus = event_bus
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
@@ -158,20 +164,37 @@ class DockerRuntime:
         except WorkerConfigError as error:
             return GoblinResult.failed(error=str(error))
 
-        run_dir = self._prepare_run_dir(context, input_payload)
-        result_path = run_dir / "result.json"
+        try:
+            context = context.model_copy(
+                update={
+                    "artifact_root": str(
+                        resolve_docker_artifact_root(self.run_root, context.artifact_root)
+                    )
+                }
+            )
+            run_dir = self._prepare_run_dir(context, input_payload)
+            result_path = run_dir / "result.json"
+        except (DockerRuntimePathError, OSError) as error:
+            return GoblinResult.failed(
+                error=f"{definition.kind} Docker runtime setup failed: {error}"
+            )
         worker_id = f"worker-{context.run_id}"
+        try:
+            command = self._docker_run_command(
+                image=worker.image,
+                run_dir=run_dir,
+                context=context,
+                worker_id=worker_id,
+                timeout_seconds=timeout_seconds,
+                resource_policy=resource_policy,
+                worker_env=_worker_env(definition),
+                secret_refs=_worker_secret_refs(definition),
+            )
+        except DockerRuntimePathError as error:
+            return GoblinResult.failed(
+                error=f"{definition.kind} Docker runtime setup failed: {error}"
+            )
         self._emit_worker_event("worker.started", context, worker_id, {"kind": definition.kind})
-        command = self._docker_run_command(
-            image=worker.image,
-            run_dir=run_dir,
-            context=context,
-            worker_id=worker_id,
-            timeout_seconds=timeout_seconds,
-            resource_policy=resource_policy,
-            worker_env=_worker_env(definition),
-            secret_refs=_worker_secret_refs(definition),
-        )
         try:
             completed = subprocess.run(
                 command,
@@ -181,6 +204,16 @@ class DockerRuntime:
                 encoding="utf-8",
                 errors="replace",
                 timeout=timeout_seconds,
+            )
+        except OSError as error:
+            self._emit_worker_event(
+                "worker.failed",
+                context,
+                worker_id,
+                {"kind": definition.kind, "phase": "launch", "error": str(error)},
+            )
+            return GoblinResult.failed(
+                error=f"{definition.kind} Docker runtime launch failed: {error}"
             )
         except subprocess.TimeoutExpired as error:
             self._record_worker_heartbeats(context)
@@ -252,9 +285,7 @@ class DockerRuntime:
     def _prepare_run_dir(self, context: GoblinContext, input_payload: dict[str, Any]) -> Path:
         """Write worker input/context files and create artifact/result directories."""
         run_dir = (self.run_root / context.run_id).resolve()
-        artifact_root = Path(context.artifact_root)
-        if not artifact_root.is_absolute():
-            artifact_root = (Path.cwd() / artifact_root).resolve()
+        artifact_root = resolve_docker_artifact_root(self.run_root, context.artifact_root)
         run_dir.mkdir(parents=True, exist_ok=True)
         artifact_root.mkdir(parents=True, exist_ok=True)
         (run_dir / "input.json").write_text(json.dumps(input_payload), encoding="utf-8")
@@ -274,9 +305,7 @@ class DockerRuntime:
         secret_refs: list[str] | None = None,
     ) -> list[str]:
         """Compose a deterministic docker run command for a worker container."""
-        artifact_root = Path(context.artifact_root)
-        if not artifact_root.is_absolute():
-            artifact_root = (Path.cwd() / artifact_root).resolve()
+        artifact_root = resolve_docker_artifact_root(self.run_root, context.artifact_root)
         input_path = "/goblin/input.json"
         context_path = "/goblin/context.json"
         result_path = "/goblin/result.json"
@@ -334,9 +363,12 @@ class DockerRuntime:
             )
             command.extend(docker_policy_args(resource_policy))
         if data_volume:
-            data_root = self.run_root.resolve().parent
-            run_rel = run_dir.relative_to(data_root).as_posix()
-            artifact_rel = artifact_root.relative_to(data_root).as_posix()
+            run_rel = relative_to_docker_data_root(run_dir, self.run_root, label="run directory")
+            artifact_rel = relative_to_docker_data_root(
+                artifact_root,
+                self.run_root,
+                label="artifact directory",
+            )
             input_path = f"{data_mount}/{run_rel}/input.json"
             context_path = f"{data_mount}/{run_rel}/context.json"
             result_path = f"{data_mount}/{run_rel}/result.json"

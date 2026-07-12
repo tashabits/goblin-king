@@ -14,6 +14,7 @@ from goblin_king.contracts import (
 )
 from goblin_king.registry import GoblinRegistry
 from goblin_king.resource_policies import ResourcePolicySet
+from goblin_king.runtime import DockerRuntime
 from goblin_king.scheduler import Scheduler
 from goblin_king.store import SQLiteStore
 from goblin_king.validation import WorkerValidationResult
@@ -168,6 +169,127 @@ def test_validation_gate_blocks_failed_jit_validation(tmp_path: Path, monkeypatc
     assert "Validate first, then schedule." in error
     assert "worker did not write result.json" in error
     assert "goblin-king workers validate --kind example.validation" in error
+
+
+def test_validation_exception_fails_jobs_without_ending_the_scheduler(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Turn validation setup exceptions into terminal Runs and continue the pass."""
+    now = datetime(2026, 7, 12, 12, 0, tzinfo=UTC)
+    scheduler, store = build_docker_scheduler(tmp_path)
+    monkeypatch.setattr(scheduler.event_bus, "_publish", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(scheduler.event_bus, "_append_stream", lambda *_args, **_kwargs: None)
+    for job_id in ("job-first", "job-second"):
+        store.save_job(
+            JobRecord(
+                id=job_id,
+                kind="example.validation",
+                input={},
+                created_at=now,
+                due_at=now,
+            )
+        )
+
+    def fail_validation(*_args, **_kwargs):
+        raise OSError(30, "Read-only file system")
+
+    monkeypatch.setattr(scheduler, "_validate_before_container_run", fail_validation)
+
+    runs = scheduler.run_once(now)
+    jobs = {job.id: job for job in store.list_jobs()}
+
+    assert {run.job_id for run in runs} == {"job-first", "job-second"}
+    assert all(run.status == "failed" for run in runs)
+    assert all("lease was released" in (run.error or "") for run in runs)
+    assert all(job.status == "failed" for job in jobs.values())
+    assert all(job.lease_owner is None and job.leased_until is None for job in jobs.values())
+    assert len(store.list_events(event_type="validation.scheduling_rejected")) == 2
+
+
+def test_scheduler_passes_configured_root_to_docker_runtimes(tmp_path: Path) -> None:
+    """Use one writable root for active, dynamic, and validation Docker runtimes."""
+    scheduler, _ = build_docker_scheduler(tmp_path)
+    configured = tmp_path / "writable-data" / "runs"
+    scheduler.docker_run_root = configured
+    scheduler.runtime = scheduler._build_runtime()
+
+    assert isinstance(scheduler.runtime, DockerRuntime)
+    assert scheduler.runtime.run_root == configured
+
+
+def test_replacement_scheduler_executes_an_expired_running_job(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Recover a job stranded after its prior scheduler marked it running."""
+    now = utc_now()
+    scheduler, store = build_scheduler(tmp_path)
+    monkeypatch.setattr(scheduler.event_bus, "_publish", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(scheduler.event_bus, "_append_stream", lambda *_args, **_kwargs: None)
+    store.save_job(
+        JobRecord(
+            id="job-stranded",
+            kind="example.echo",
+            input={"message": "recovered"},
+            created_at=now - timedelta(minutes=2),
+            due_at=now - timedelta(minutes=2),
+            status="running",
+            attempt_count=1,
+            lease_owner="stopped-scheduler",
+            leased_until=now - timedelta(seconds=1),
+        )
+    )
+
+    runs = scheduler.run_once(now)
+    recovered = store.get_job("job-stranded")
+
+    assert len(runs) == 1
+    assert runs[0].status == "completed"
+    assert runs[0].attempt == 2
+    assert recovered is not None
+    assert recovered.status == "completed"
+    assert recovered.attempt_count == 2
+    assert recovered.lease_owner is None
+    assert recovered.leased_until is None
+
+
+def test_unexpected_runtime_exception_fails_attempt_and_continues_scheduler(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Keep unrelated claimed work moving after an execution adapter raises."""
+    now = utc_now()
+    scheduler, store = build_scheduler(tmp_path)
+    monkeypatch.setattr(scheduler.event_bus, "_publish", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(scheduler.event_bus, "_append_stream", lambda *_args, **_kwargs: None)
+    for job_id in ("job-first", "job-second"):
+        store.save_job(
+            JobRecord(
+                id=job_id,
+                kind="example.echo",
+                input={"message": job_id},
+                created_at=now,
+                due_at=now,
+            )
+        )
+
+    def fail_runtime(*_args, **_kwargs):
+        raise RuntimeError("adapter exploded")
+
+    monkeypatch.setattr(scheduler.runtime, "run", fail_runtime)
+
+    runs = scheduler.run_once(now)
+    jobs = store.list_jobs()
+
+    assert {run.job_id for run in runs} == {"job-first", "job-second"}
+    assert all(run.status == "failed" for run in runs)
+    assert all("adapter exploded" in (run.error or "") for run in runs)
+    assert all(job.status == "failed" for job in jobs)
+    assert all(job.lease_owner is None and job.leased_until is None for job in jobs)
+    failure_events = store.list_events(event_type="job.failed")
+    assert len(failure_events) == 2
+    assert all(event.payload["scheduler_exception"] is True for event in failure_events)
 
 
 def test_validation_gate_reports_stale_digest_when_revalidation_fails(
