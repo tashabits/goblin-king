@@ -1500,7 +1500,18 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             kubernetes_runtime_settings=state.settings.kubernetes_runtime,
         )
         for result in results:
-            state.store.save_worker_validation(validation_record(result))
+            state.store.save_worker_validation(
+                validation_record(
+                    result,
+                    effective_policy={
+                        "kubernetes_workload_security": (
+                            state.settings.kubernetes_runtime.effective_workload_security(
+                                result.kind
+                            )
+                        )
+                    },
+                )
+            )
         audit(
             state.store,
             action="worker.kubernetes_validated",

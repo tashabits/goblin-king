@@ -147,15 +147,33 @@ def test_workers_validate_kubernetes_returns_and_persists_exact_proof(
     from goblin_king.validation import WorkerValidationResult
 
     captured: dict[str, object] = {}
+    runtime_settings_path = tmp_path / "kubernetes-runtime.json"
+    runtime_settings_path.write_text(
+        json.dumps(
+            {
+                "workload_security_profile": "restricted-v1",
+                "restricted_workload": {
+                    "worker_service_account_names": {
+                        "example.echo": "goblin-echo-reader"
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
 
     def fake_validate(**kwargs):
         captured.update(kwargs)
+        settings = kwargs["kubernetes_runtime_settings"]
         return [
             WorkerValidationResult(
                 kind="example.echo",
                 ok=True,
                 image="goblin-king-example-echo:local",
-                image_digest="kubernetes:goblin-king-example-echo:local",
+                image_digest=settings.validation_image_identity(
+                    "goblin-king-example-echo:local",
+                    "example.echo",
+                ),
                 validated_at=utc_now(),
                 result_status="success",
                 logs={"worker": "validation log"},
@@ -193,6 +211,8 @@ def test_workers_validate_kubernetes_returns_and_persists_exact_proof(
             "Always",
             "--workload-image-pull-secret",
             "registry-main",
+            "--kubernetes-runtime-settings",
+            str(runtime_settings_path),
             "--db",
             str(db_path),
             "--json",
@@ -207,9 +227,21 @@ def test_workers_validate_kubernetes_returns_and_persists_exact_proof(
     assert runtime_settings.worker_image_pull_policy == "Never"
     assert runtime_settings.result_forwarder_image_pull_policy == "Always"
     assert runtime_settings.workload_image_pull_secret_names == ("registry-main",)
+    assert runtime_settings.workload_security_profile == "restricted-v1"
+    assert runtime_settings.restricted_workload.worker_service_account_names == {
+        "example.echo": "goblin-echo-reader"
+    }
     stored = SQLiteStore(db_path).latest_worker_validation_for_kind("example.echo")
     assert stored is not None
-    assert stored.image_digest == "kubernetes:goblin-king-example-echo:local"
+    assert stored.image_digest == runtime_settings.validation_image_identity(
+        "goblin-king-example-echo:local",
+        "example.echo",
+    )
+    assert stored.effective_policy == {
+        "kubernetes_workload_security": (
+            runtime_settings.effective_workload_security("example.echo")
+        )
+    }
 
 
 def test_workers_validate_kubernetes_rejects_docker_build_option(monkeypatch) -> None:

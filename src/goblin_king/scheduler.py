@@ -40,7 +40,6 @@ from goblin_king.validation import (
     VALIDATOR_VERSION,
     format_validation_gate_error,
     inspect_image_identity,
-    kubernetes_image_identity,
     validate_workers,
     validation_record,
 )

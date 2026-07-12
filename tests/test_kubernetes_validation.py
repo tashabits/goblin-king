@@ -4,6 +4,7 @@ from pathlib import Path
 
 from goblin_king.contracts import ArtifactRecord, GoblinDefinition, GoblinResult
 from goblin_king.kubernetes_pod_diagnostics import KubernetesRunObservation
+from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 from goblin_king.kubernetes_validation import validate_workers_with_kubernetes
 from goblin_king.registry import GoblinRegistry
 from goblin_king.validation import kubernetes_image_identity
@@ -129,6 +130,61 @@ def test_kubernetes_validation_rejects_invalid_envelope_even_without_success_gat
     assert result.ok is False
     assert result.error == "worker produced invalid result JSON"
     assert result.logs == {"worker": "bad output"}
+
+
+def test_restricted_validation_uses_per_kind_scheduler_identity(monkeypatch) -> None:
+    """Verify generic proof binds the restricted profile and per-kind ServiceAccount."""
+    registry, workers = _registry_and_workers()
+    captured: dict[str, object] = {}
+    settings = KubernetesRuntimeSettings.model_validate(
+        {
+            "workload_security_profile": "restricted-v1",
+            "restricted_workload": {
+                "worker_service_account_names": {
+                    "example.generic": "goblin-generic-reader"
+                }
+            },
+        }
+    )
+
+    class FakeRuntime:
+        def run_observed(self, *_args, **_kwargs):
+            return KubernetesRunObservation(
+                result=GoblinResult.ok(data={"ok": True}),
+                job_created=True,
+                result_received=True,
+                result_envelope_valid=True,
+                exit_code=0,
+            )
+
+    def fake_build_kubernetes_runtime(**kwargs):
+        captured.update(kwargs)
+        return FakeRuntime()
+
+    monkeypatch.setattr(
+        "goblin_king.kubernetes_validation.build_kubernetes_runtime",
+        fake_build_kubernetes_runtime,
+    )
+    result = validate_workers_with_kubernetes(
+        registry=registry,
+        workers=workers,
+        input_payload={},
+        kinds=["example.generic"],
+        kubernetes_runtime_settings=settings,
+    )[0]
+
+    expected = settings.validation_image_identity(
+        "registry.example/generic@sha256:abc",
+        "example.generic",
+    )
+    assert captured["settings"] is settings
+    assert result.image_digest == expected
+    assert result.image_digest != kubernetes_image_identity(
+        "registry.example/generic@sha256:abc"
+    )
+    assert settings.effective_workload_security("example.generic")[
+        "service_account_name"
+    ] == "goblin-generic-reader"
 
 
 def test_kubernetes_validation_does_not_claim_an_uncreated_job(monkeypatch) -> None:

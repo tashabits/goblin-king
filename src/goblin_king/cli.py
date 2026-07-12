@@ -100,6 +100,7 @@ from goblin_king.kubernetes_runtime_factory import build_kubernetes_runtime
 from goblin_king.kubernetes_runtime_settings import (
     DEFAULT_KUBERNETES_IMAGE_PULL_POLICY,
     DEFAULT_RESULT_FORWARDER_IMAGE,
+    KubernetesRuntimeSettings,
 )
 from goblin_king.kubernetes_validation import validate_workers_with_kubernetes
 from goblin_king.metadata import goblin_job_metadata
@@ -1393,6 +1394,7 @@ def validate_worker_contracts(
         DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
     ),
     workload_image_pull_secrets: WorkloadImagePullSecretsOption = None,
+    kubernetes_runtime_settings_path: KubernetesRuntimeSettingsPathOption = None,
     run_root: DockerRunRootOption = None,
     json_output: Annotated[
         bool,
@@ -1411,6 +1413,7 @@ def validate_worker_contracts(
         loaded_registry = _load_registry(registry)
         loaded_workers = _load_workers(images)
     input_payload = _load_input(input_path)
+    effective_kubernetes_settings: KubernetesRuntimeSettings | None = None
     if runtime == "kubernetes":
         if build:
             typer.echo("--build is available only with --runtime docker", err=True)
@@ -1418,6 +1421,13 @@ def validate_worker_contracts(
         if run_root is not None:
             typer.echo("--run-root is available only with --runtime docker", err=True)
             raise typer.Exit(1)
+        effective_kubernetes_settings = kubernetes_runtime_settings(
+            result_forwarder_image=result_forwarder_image,
+            worker_image_pull_policy=worker_image_pull_policy,
+            result_forwarder_image_pull_policy=result_forwarder_image_pull_policy,
+            workload_image_pull_secrets=workload_image_pull_secrets,
+            settings_path=kubernetes_runtime_settings_path,
+        )
         results = validate_workers_with_kubernetes(
             registry=loaded_registry,
             workers=loaded_workers,
@@ -1426,12 +1436,7 @@ def validate_worker_contracts(
             require_success=require_success,
             timeout_seconds=timeout_seconds or 120,
             redis_url=redis_url,
-            kubernetes_runtime_settings=kubernetes_runtime_settings(
-                result_forwarder_image=result_forwarder_image,
-                worker_image_pull_policy=worker_image_pull_policy,
-                result_forwarder_image_pull_policy=result_forwarder_image_pull_policy,
-                workload_image_pull_secrets=workload_image_pull_secrets,
-            ),
+            kubernetes_runtime_settings=effective_kubernetes_settings,
         )
     else:
         results = validate_workers(
@@ -1447,7 +1452,18 @@ def validate_worker_contracts(
         )
     store = SQLiteStore(db)
     for result in results:
-        store.save_worker_validation(validation_record(result))
+        effective_policy = (
+            {
+                "kubernetes_workload_security": (
+                    effective_kubernetes_settings.effective_workload_security(result.kind)
+                )
+            }
+            if effective_kubernetes_settings is not None
+            else None
+        )
+        store.save_worker_validation(
+            validation_record(result, effective_policy=effective_policy)
+        )
     _print_validation_results(results, json_output=json_output)
 
 

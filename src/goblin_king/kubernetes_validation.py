@@ -13,7 +13,6 @@ from goblin_king.registry import GoblinRegistry
 from goblin_king.runtime import new_run_context
 from goblin_king.validation import (
     WorkerValidationResult,
-    kubernetes_image_identity,
     validation_job_id,
 )
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
@@ -33,16 +32,18 @@ def validate_workers_with_kubernetes(
 ) -> list[WorkerValidationResult]:
     """Run selected generic workers as bounded Jobs and return contract proof details."""
     definitions, results = _selected_definitions(registry, kinds)
+    runtime_settings = kubernetes_runtime_settings or KubernetesRuntimeSettings()
     active_runtime = build_kubernetes_runtime(
         workers=workers,
         redis_url=redis_url,
         event_bus=event_bus,
-        settings=kubernetes_runtime_settings or KubernetesRuntimeSettings(),
+        settings=runtime_settings,
     )
     for definition in definitions:
         results.append(
             _validate_one_with_kubernetes(
                 runtime=active_runtime,
+                runtime_settings=runtime_settings,
                 workers=workers,
                 definition=definition,
                 input_payload=input_payload,
@@ -78,6 +79,7 @@ def _selected_definitions(
 def _validate_one_with_kubernetes(
     *,
     runtime: KubernetesRuntime,
+    runtime_settings: KubernetesRuntimeSettings,
     workers: WorkerImageMap,
     definition: GoblinDefinition,
     input_payload: dict[str, Any],
@@ -96,7 +98,10 @@ def _validate_one_with_kubernetes(
             error=str(error),
         )
 
-    image_identity = kubernetes_image_identity(worker.image)
+    image_identity = runtime_settings.validation_image_identity(
+        worker.image,
+        definition.kind,
+    )
     context = new_run_context(validation_job_id(definition.kind), definition.kind)
     try:
         observation = runtime.run_observed(
