@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from goblin_king.causal_time import causally_after
 from goblin_king.contracts import GoblinResult, JobRecord, RunRecord, utc_now
 from goblin_king.events import EventBus
 from goblin_king.resource_policies import policy_from_job_metadata
@@ -32,7 +33,7 @@ def record_unexpected_job_failure(
     prior_runs = store.list_job_runs(current.id)
     if prior_runs:
         latest = max(prior_runs, key=lambda run: (run.attempt, run.finished_at))
-        if current.status in TERMINAL_JOB_STATUSES:
+        if current.status in TERMINAL_JOB_STATUSES and latest.attempt >= current.attempt_count:
             return latest
         if current.status != "leased" and latest.attempt >= current.attempt_count:
             store.finish_job(
@@ -53,6 +54,16 @@ def record_unexpected_job_failure(
     )
     result = GoblinResult.failed(error=message)
     resource_policy = policy_from_job_metadata(current.metadata)
+    attempt_started_at = causally_after(
+        current.created_at,
+        store.latest_event_created_at(job_id=current.id, event_type="job.running"),
+        candidate=started_at,
+    )
+    finished_at = causally_after(
+        attempt_started_at,
+        store.latest_event_created_at(job_id=current.id),
+        candidate=utc_now(),
+    )
     run = RunRecord(
         id=context.run_id,
         job_id=current.id,
@@ -60,8 +71,8 @@ def record_unexpected_job_failure(
         project_id=current.project_id,
         attempt=attempt,
         status="failed",
-        started_at=started_at,
-        finished_at=max(utc_now(), started_at),
+        started_at=attempt_started_at,
+        finished_at=finished_at,
         result=result,
         error=message,
         timeout_seconds=current.timeout_seconds,
@@ -69,22 +80,29 @@ def record_unexpected_job_failure(
         leased_until=current.leased_until,
         resource_policy=resource_policy.compact() if resource_policy else None,
     )
-    store.save_run(run)
-    store.finish_job(current.id, status="failed", last_error=message)
-    event_bus.emit(
-        "job.failed",
-        source="scheduler",
-        project_id=current.project_id,
-        job_id=current.id,
-        run_id=run.id,
-        schedule_id=current.schedule_id,
-        fanout_id=current.fanout_id,
-        scheduler_id=scheduler_id,
-        payload={
-            "kind": current.kind,
-            "attempt": attempt,
-            "error": message,
-            "scheduler_exception": True,
-        },
+    finalization = store.finalize_job_attempt(
+        run,
+        status="failed",
+        last_error=message,
+        expected_lease_owner=scheduler_id,
     )
+    run = finalization.run
+    if finalization.outcome == "finalized":
+        event_bus.emit(
+            "job.failed",
+            source="scheduler",
+            project_id=current.project_id,
+            job_id=current.id,
+            run_id=run.id,
+            schedule_id=current.schedule_id,
+            fanout_id=current.fanout_id,
+            scheduler_id=scheduler_id,
+            payload={
+                "kind": current.kind,
+                "attempt": attempt,
+                "error": message,
+                "scheduler_exception": True,
+            },
+            after=run.finished_at,
+        )
     return run

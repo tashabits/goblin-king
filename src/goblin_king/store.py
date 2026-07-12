@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, delete, func, or_, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
 
+from goblin_king.causal_time import causally_after
 from goblin_king.contracts import (
     ApiTokenRecord,
     ArtifactRecord,
@@ -59,10 +60,16 @@ from goblin_king.store_rows import (
     _row_to_user,
     _row_to_worker_validation,
 )
+from goblin_king.store_run_lifecycle import (
+    AttemptFinalization,
+    finalize_attempt,
+    persist_run,
+)
 from goblin_king.store_schema import (
     api_tokens_table,
     artifacts_table,
     audit_logs_table,
+    causal_sequences_table,
     deployment_records_table,
     events_table,
     fanouts_table,
@@ -87,6 +94,7 @@ from goblin_king.store_schema import (
 )
 
 DEFAULT_DB_PATH = Path(".goblin-king") / "goblin-king.sqlite3"
+EVENT_SEQUENCE = events_table.c.sequence
 REPOSITORY_STATUS_TRANSITIONS = {
     "draft": {"validated", "rejected", "retired"},
     "validated": {"pending_review", "rejected", "retired"},
@@ -162,24 +170,55 @@ class SQLiteStore:
             )
 
     def save_event(self, event: EventRecord) -> None:
-        """Insert one durable event record."""
-        with self.engine.begin() as connection:
-            connection.execute(
-                events_table.insert().values(
-                    id=event.id,
-                    created_at=event.created_at,
-                    event_type=event.event_type,
-                    source=event.source,
-                    project_id=event.project_id,
-                    job_id=event.job_id,
-                    run_id=event.run_id,
-                    fanout_id=event.fanout_id,
-                    schedule_id=event.schedule_id,
-                    worker_id=event.worker_id,
-                    scheduler_id=event.scheduler_id,
-                    payload_json=json.dumps(event.payload),
+        """Insert one durable event while preserving the original public return contract."""
+        self.persist_event(event)
+
+    def persist_event(self, event: EventRecord) -> EventRecord:
+        """Insert one causally ordered event and return its durable sequence/timestamp."""
+        with self.engine.connect() as connection:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+            try:
+                previous = connection.execute(
+                    select(events_table.c.created_at)
+                    .order_by(EVENT_SEQUENCE.desc())
+                    .limit(1)
+                ).scalar_one_or_none()
+                created_at = causally_after(
+                    _coerce_datetime(previous) if previous is not None else None,
+                    candidate=event.created_at,
                 )
-            )
+                connection.execute(
+                    update(causal_sequences_table)
+                    .where(causal_sequences_table.c.scope == "events")
+                    .values(value=causal_sequences_table.c.value + 1)
+                )
+                sequence = connection.execute(
+                    select(causal_sequences_table.c.value).where(
+                        causal_sequences_table.c.scope == "events"
+                    )
+                ).scalar_one()
+                connection.execute(
+                    events_table.insert().values(
+                        id=event.id,
+                        sequence=sequence,
+                        created_at=created_at,
+                        event_type=event.event_type,
+                        source=event.source,
+                        project_id=event.project_id,
+                        job_id=event.job_id,
+                        run_id=event.run_id,
+                        fanout_id=event.fanout_id,
+                        schedule_id=event.schedule_id,
+                        worker_id=event.worker_id,
+                        scheduler_id=event.scheduler_id,
+                        payload_json=json.dumps(event.payload),
+                    )
+                )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+        return event.model_copy(update={"sequence": sequence, "created_at": created_at})
 
     def save_worker_validation(self, validation: WorkerValidationRecord) -> None:
         """Insert one worker contract validation record."""
@@ -893,17 +932,17 @@ class SQLiteStore:
         """Return durable events with simple bounded filtering."""
         bounded_limit = max(1, min(limit, 500))
         with self.engine.connect() as connection:
-            query = select(events_table).order_by(events_table.c.created_at, events_table.c.id)
+            query = select(events_table).order_by(EVENT_SEQUENCE)
             if event_type is not None:
                 query = query.where(events_table.c.event_type == event_type)
             if project_id is not None:
                 query = query.where(events_table.c.project_id == project_id)
             if after_id is not None:
                 cursor = connection.execute(
-                    select(events_table.c.created_at).where(events_table.c.id == after_id)
+                    select(EVENT_SEQUENCE).where(events_table.c.id == after_id)
                 ).scalar_one_or_none()
                 if cursor is not None:
-                    query = query.where(events_table.c.created_at > cursor)
+                    query = query.where(EVENT_SEQUENCE > cursor)
             for column_name, value in {
                 "job_id": job_id,
                 "run_id": run_id,
@@ -920,6 +959,22 @@ class SQLiteStore:
                 .all()
             )
         return [_row_to_event(dict(row)) for row in rows]
+
+    def latest_event_created_at(
+        self,
+        *,
+        job_id: str | None = None,
+        event_type: str | None = None,
+    ) -> datetime | None:
+        """Return the newest durable event timestamp by causal insertion sequence."""
+        with self.engine.connect() as connection:
+            query = select(events_table.c.created_at).order_by(EVENT_SEQUENCE.desc()).limit(1)
+            if job_id is not None:
+                query = query.where(events_table.c.job_id == job_id)
+            if event_type is not None:
+                query = query.where(events_table.c.event_type == event_type)
+            value = connection.execute(query).scalar_one_or_none()
+        return _coerce_datetime(value) if value is not None else None
 
     def count_events(self, *, project_id: str | None = None) -> int:
         """Return a simple event count for pagination metadata."""
@@ -1590,46 +1645,26 @@ class SQLiteStore:
 
     def save_run(self, run: RunRecord) -> None:
         """Insert or replace a run and refresh its artifact and handoff metadata rows."""
-        result_json = run.result.model_dump_json() if run.result is not None else None
-        with self.engine.begin() as connection:
-            connection.execute(
-                runs_table.insert().values(
-                    id=run.id,
-                    job_id=run.job_id,
-                    kind=run.kind,
-                    project_id=run.project_id,
-                    attempt=run.attempt,
-                    status=run.status,
-                    started_at=run.started_at,
-                    finished_at=run.finished_at,
-                    result_json=result_json,
-                    error=run.error,
-                    timeout_seconds=run.timeout_seconds,
-                    max_retries=run.max_retries,
-                    leased_until=run.leased_until,
-                    resource_policy_json=(
-                        json.dumps(run.resource_policy) if run.resource_policy else None
-                    ),
-                )
-            )
-            if run.result is not None:
-                for artifact in run.result.artifacts:
-                    connection.execute(
-                        artifacts_table.insert().values(
-                            run_id=run.id,
-                            name=artifact.name,
-                            uri=artifact.uri,
-                            media_type=artifact.media_type,
-                        )
-                    )
-                for handoff in run.result.handoff:
-                    connection.execute(
-                        handoffs_table.insert().values(
-                            run_id=run.id,
-                            kind=handoff.kind,
-                            payload_json=json.dumps(handoff.payload),
-                        )
-                    )
+        persist_run(self.engine, run)
+
+    def finalize_job_attempt(
+        self,
+        run: RunRecord,
+        *,
+        status: str,
+        last_error: str | None = None,
+        due_at: datetime | None = None,
+        expected_lease_owner: str,
+    ) -> AttemptFinalization:
+        """Persist a Run and update its job only while the attempt still owns the lease."""
+        return finalize_attempt(
+            self.engine,
+            run,
+            job_status=status,
+            last_error=last_error,
+            due_at=due_at,
+            expected_lease_owner=expected_lease_owner,
+        )
 
     def save_schedule(self, schedule: ScheduleRecord) -> None:
         """Insert one recurring schedule definition."""
@@ -1815,6 +1850,26 @@ class SQLiteStore:
                 .values(status="running", attempt_count=attempt_count)
             )
 
+    def try_mark_job_running(
+        self,
+        job_id: str,
+        *,
+        attempt_count: int,
+        expected_lease_owner: str,
+    ) -> bool:
+        """Mark a job running only while the expected scheduler owns its active lease."""
+        with self.engine.begin() as connection:
+            result = connection.execute(
+                update(jobs_table)
+                .where(
+                    jobs_table.c.id == job_id,
+                    jobs_table.c.status == "leased",
+                    jobs_table.c.lease_owner == expected_lease_owner,
+                )
+                .values(status="running", attempt_count=attempt_count)
+            )
+        return result.rowcount == 1
+
     def count_active_jobs(self, kind: str, *, exclude_job_id: str | None = None) -> int:
         """Count leased/running jobs for one goblin kind."""
         with self.engine.connect() as connection:
@@ -1867,15 +1922,20 @@ class SQLiteStore:
 
     def cancel_job(self, job_id: str) -> JobRecord | None:
         """Cancel a non-terminal job and return its updated record."""
-        job = self.get_job(job_id)
-        if job is None:
-            return None
-        if job.status in {"completed", "failed", "timed_out", "cancelled"}:
-            return job
+        job, _changed = self.try_cancel_job(job_id)
+        return job
+
+    def try_cancel_job(self, job_id: str) -> tuple[JobRecord | None, bool]:
+        """Atomically request cancellation and report whether this caller won the transition."""
         with self.engine.begin() as connection:
-            connection.execute(
+            result = connection.execute(
                 update(jobs_table)
                 .where(jobs_table.c.id == job_id)
+                .where(
+                    jobs_table.c.status.not_in(
+                        ["completed", "failed", "timed_out", "cancelled"]
+                    )
+                )
                 .values(
                     status="cancelled",
                     lease_owner=None,
@@ -1883,7 +1943,10 @@ class SQLiteStore:
                     last_error="cancelled by API",
                 )
             )
-        return self.get_job(job_id)
+            row = connection.execute(
+                select(jobs_table).where(jobs_table.c.id == job_id)
+            ).mappings().one_or_none()
+        return (_row_to_job(dict(row)) if row is not None else None, result.rowcount == 1)
 
     def get_run(self, run_id: str) -> RunRecord | None:
         """Load one run record with its persisted result envelope when present."""

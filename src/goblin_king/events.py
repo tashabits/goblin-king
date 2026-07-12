@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
 from redis import Redis
 from redis.exceptions import RedisError, ResponseError
+from sqlalchemy.exc import SQLAlchemyError
 
+from goblin_king.causal_time import causally_after
 from goblin_king.contracts import EventRecord, HeartbeatRecord, utc_now
+from goblin_king.event_delivery import OrderedEventStreamDelivery
 from goblin_king.store import SQLiteStore
 
 DEFAULT_EVENT_CHANNEL = "goblin-king:events"
@@ -18,6 +22,7 @@ DEFAULT_EVENT_STREAM = "goblin-king:events:stream"
 DEFAULT_EVENT_STREAM_GROUP = "goblin-king-event-readers"
 DEFAULT_EVENT_STREAM_MAXLEN = 10_000
 DEFAULT_HEARTBEAT_INTERVAL_SECONDS = 5
+_REDIS_OPERATION_TIMEOUT_SECONDS = 1.0
 
 
 class EventBus:
@@ -53,11 +58,12 @@ class EventBus:
         schedule_id: str | None = None,
         worker_id: str | None = None,
         scheduler_id: str | None = None,
+        after: datetime | None = None,
     ) -> EventRecord:
         """Persist and publish one event envelope."""
         event = EventRecord(
             id=str(uuid4()),
-            created_at=utc_now(),
+            created_at=causally_after(after) if after is not None else utc_now(),
             event_type=event_type,
             source=source,
             project_id=project_id,
@@ -69,9 +75,10 @@ class EventBus:
             scheduler_id=scheduler_id,
             payload=payload or {},
         )
-        self.store.save_event(event)
-        self._publish(self.event_channel, event.model_dump(mode="json"))
-        self._append_stream(event.model_dump(mode="json"))
+        event = self.store.persist_event(event)
+        event_payload = event.model_dump(mode="json")
+        self._append_stream(event_payload)
+        self._publish(self.event_channel, event_payload)
         return event
 
     def heartbeat(
@@ -118,20 +125,21 @@ class EventBus:
     def _publish(self, channel: str, payload: dict[str, Any]) -> None:
         """Publish JSON onto Redis when available; durability already lives in SQLite."""
         try:
-            Redis.from_url(self.redis_url).publish(channel, json.dumps(payload))
+            _redis_client(self.redis_url).publish(channel, json.dumps(payload))
         except RedisError:
             return
 
     def _append_stream(self, payload: dict[str, Any]) -> None:
         """Append an event envelope to Redis Streams when available."""
         try:
-            Redis.from_url(self.redis_url).xadd(
-                self.event_stream,
-                {"event": json.dumps(payload)},
+            OrderedEventStreamDelivery(
+                engine=self.store.engine,
+                redis=_redis_client(self.redis_url),
+                redis_url=self.redis_url,
+                stream=self.event_stream,
                 maxlen=self.event_stream_maxlen,
-                approximate=True,
-            )
-        except RedisError:
+            ).deliver_through(int(payload["sequence"]))
+        except (RedisError, SQLAlchemyError, TypeError, ValueError):
             return
 
 
@@ -142,7 +150,7 @@ def stream_status(
 ) -> dict[str, Any]:
     """Return Redis Stream health details without mutating stream state."""
     try:
-        client = Redis.from_url(redis_url)
+        client = _redis_client(redis_url)
         info = client.xinfo_stream(stream)
         groups = client.xinfo_groups(stream)
         decoded_groups = [_decode_redis_mapping(group) for group in groups]
@@ -186,7 +194,7 @@ def ensure_stream_group(
 ) -> None:
     """Create the default consumer group if it does not already exist."""
     try:
-        Redis.from_url(redis_url).xgroup_create(stream, group, id="0", mkstream=True)
+        _redis_client(redis_url).xgroup_create(stream, group, id="0", mkstream=True)
     except ResponseError as error:
         if "BUSYGROUP" not in str(error):
             raise
@@ -203,7 +211,7 @@ def read_stream_group(
 ) -> list[dict[str, Any]]:
     """Read event envelopes through a Redis Stream consumer group."""
     ensure_stream_group(redis_url, stream=stream, group=group)
-    client = Redis.from_url(redis_url)
+    client = _redis_client(redis_url)
     messages = client.xreadgroup(group, consumer, {stream: ">"}, count=count)
     events: list[dict[str, Any]] = []
     ids_to_ack: list[str] = []
@@ -234,6 +242,18 @@ def _decode_redis_value(value: Any) -> Any:
     if isinstance(value, bytes):
         return value.decode("utf-8")
     return value
+
+
+def _redis_client(redis_url: str) -> Redis:
+    """Create a Redis client whose connect and command waits are finite."""
+    try:
+        return Redis.from_url(
+            redis_url,
+            socket_connect_timeout=_REDIS_OPERATION_TIMEOUT_SECONDS,
+            socket_timeout=_REDIS_OPERATION_TIMEOUT_SECONDS,
+        )
+    except TypeError:  # simple test doubles may expose the historical one-argument factory
+        return Redis.from_url(redis_url)
 
 
 def worker_heartbeat_key(run_id: str) -> str:

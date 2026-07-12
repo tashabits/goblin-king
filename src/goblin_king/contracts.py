@@ -3,10 +3,19 @@
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
+
+from goblin_king.causal_time import ensure_utc, monotonic_utc_now
 
 GOBLIN_KIND_PATTERN = re.compile(r"^[a-z0-9][a-z0-9]*(?:[.-][a-z0-9][a-z0-9]*)*$")
 JobStatus = Literal[
@@ -40,8 +49,8 @@ RepositoryEntryStatus = Literal[
 
 
 def utc_now() -> datetime:
-    """Return a timezone-aware UTC timestamp for persisted records and result metadata."""
-    return datetime.now(UTC)
+    """Return a timezone-aware process-monotonic UTC timestamp."""
+    return monotonic_utc_now()
 
 
 class ArtifactRecord(BaseModel):
@@ -185,6 +194,7 @@ class EventRecord(BaseModel):
     """Capture one durable event for API, scheduler, runtime, or worker activity."""
 
     id: str
+    sequence: int = Field(default=0, ge=0)
     created_at: datetime
     event_type: str = Field(min_length=1)
     source: EventSource
@@ -416,6 +426,15 @@ class RunRecord(BaseModel):
     max_retries: int = 0
     leased_until: datetime | None = None
     resource_policy: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_timestamp_order(self) -> RunRecord:
+        """Reject newly constructed Runs whose terminal timestamp precedes their start."""
+        if self.finished_at is not None and ensure_utc(self.finished_at) < ensure_utc(
+            self.started_at
+        ):
+            raise ValueError("finished_at must be greater than or equal to started_at")
+        return self
 
     @computed_field
     @property

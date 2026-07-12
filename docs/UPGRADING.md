@@ -34,6 +34,18 @@ working-directory placement used by earlier builds. Update Compose environment b
 starting the upgraded scheduler; see
 [Writable Docker Runtime Data](writable-docker-runtime-data.md).
 
+## Event And Run Ordering
+
+The event API now adds a positive `sequence` field. Typed clients should add the field
+and order or page by the sequence contract rather than `created_at`. On first open, an
+existing database backfills sequences from original insertion order and repairs
+historical terminal Runs whose finish precedes their start. See
+[Causal Lifecycle Ordering](causal-lifecycle-ordering.md).
+
+No Job status, Run status, constructor requirement, or result-envelope shape changes. Existing
+EventRecord construction and the historical `SQLiteStore.save_event()` return contract remain
+valid. Redis Stream consumers should deduplicate by `sequence`; pub/sub remains best-effort.
+
 ## Compatibility Fixtures
 
 The `examples/compatibility/project-ready-v0_1/` fixture is the baseline for the

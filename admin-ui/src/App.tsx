@@ -628,7 +628,15 @@ export function App() {
         </section>
 
         <section id="events" className="panel two-column">
-          <Table title="Durable Events" rows={events.map((event) => [event.event_type, event.source, event.created_at])} />
+          <Table
+            title="Durable Events"
+            rows={events.map((event) => [
+              `#${event.sequence}`,
+              event.event_type,
+              event.source,
+              event.created_at,
+            ])}
+          />
           <Table title="Live Event Rail" rows={liveEvents.map((event) => [event.event_type, event.source, JSON.stringify(event.payload)])} />
           <Table
             title="Redis Stream Delivery"

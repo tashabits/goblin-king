@@ -928,6 +928,14 @@ transport health over `GET /events/stream/status`, scheduler and worker liveness
 source of truth; Redis pub/sub is the live rail and Redis Streams provide replayable
 delivery for operators and integrations.
 
+Durable events carry a database-assigned `sequence`, which is authoritative when wall
+clocks repeat, slew, or move backward. Run timestamps are causally clamped and timeout
+decisions use monotonic elapsed time. Redis Streams preserve that durable order; pub/sub remains a
+best-effort notification rail whose payloads carry the same sequence. Existing Job/Run statuses,
+result envelopes, and Python constructor requirements remain unchanged. See
+[Causal Lifecycle Ordering](docs/causal-lifecycle-ordering.md) for ordering, cursor,
+migration, and tie behavior.
+
 Goblin King can record generic image-promotion and deployment proof without tying the
 project to one cloud registry or deployment platform. Records capture the image, target
 tag, build/push commands, Helm render command, discovery reload result, audit logs, and
@@ -1040,6 +1048,8 @@ Goblin King provides:
   command for image builds, result envelopes, and artifacts.
 - [Goblin Resource Policies](docs/goblin-resource-policies.md): Per-goblin resource
   expectations, defaults, ceilings, and Docker/Kubernetes mapping.
+- [Causal Lifecycle Ordering](docs/causal-lifecycle-ordering.md): Durable event
+  sequences, monotonic Run timestamps, and rollback-safe timeout behavior.
 - [Writable Docker Runtime Data](docs/writable-docker-runtime-data.md): Hardened
   read-only scheduler placement, shared run/artifact roots, and lease recovery.
 - [Release Checklist](docs/RELEASE_CHECKLIST.md): Internal wheel, Docker image, local

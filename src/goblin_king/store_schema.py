@@ -16,6 +16,21 @@ from sqlalchemy import (
 
 metadata = MetaData()
 
+causal_sequences_table = Table(
+    "causal_sequences",
+    metadata,
+    Column("scope", String, primary_key=True),
+    Column("value", Integer, nullable=False),
+)
+
+event_stream_deliveries_table = Table(
+    "event_stream_deliveries",
+    metadata,
+    Column("target", String, primary_key=True),
+    Column("delivered_sequence", Integer, nullable=False, default=0),
+    Column("stream_id_offset", Integer, nullable=True),
+)
+
 jobs_table = Table(
     "jobs",
     metadata,
@@ -112,6 +127,7 @@ events_table = Table(
     "events",
     metadata,
     Column("id", String, primary_key=True),
+    Column("sequence", Integer, nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("event_type", String, nullable=False),
     Column("source", String, nullable=False),

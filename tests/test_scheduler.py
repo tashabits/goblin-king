@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Event, Thread
 
 from goblin_king.contracts import (
     GoblinDefinition,
+    GoblinResult,
     JobRecord,
+    RunRecord,
     ScheduleRecord,
     WorkerValidationRecord,
     utc_now,
@@ -92,6 +95,133 @@ def test_run_once_materializes_due_schedule_and_executes_echo(tmp_path: Path) ->
     assert "job.running" in event_types
     assert "job.completed" in event_types
     assert store.get_heartbeat("test-worker") is not None
+
+
+def test_immediate_attempts_remain_causal_when_wall_clock_rolls_back(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Order fast success/failure Runs and events independently of wall-clock rollback."""
+    now = utc_now()
+    scheduler, store = build_scheduler(tmp_path)
+    monkeypatch.setattr(scheduler.event_bus, "_publish", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(scheduler.event_bus, "_append_stream", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("goblin_king.events.utc_now", lambda: now - timedelta(seconds=5))
+    monkeypatch.setattr("goblin_king.scheduler.utc_now", lambda: now - timedelta(seconds=5))
+    for job_id, should_fail in (("job-success", False), ("job-failure", True)):
+        store.save_job(
+            JobRecord(
+                id=job_id,
+                kind="example.echo",
+                input={"should_fail": should_fail},
+                created_at=now,
+                due_at=now,
+            )
+        )
+
+    def immediate_attempt(_definition, _entrypoint, input_payload, context, **_kwargs):
+        job_id = context.metadata["job_id"]
+        scheduler.event_bus.emit(
+            "worker.started",
+            source="runtime",
+            job_id=job_id,
+            run_id=context.run_id,
+        )
+        failed = bool(input_payload["should_fail"])
+        scheduler.event_bus.emit(
+            "worker.failed" if failed else "worker.completed",
+            source="runtime",
+            job_id=job_id,
+            run_id=context.run_id,
+        )
+        return GoblinResult.failed(error="expected") if failed else GoblinResult.ok()
+
+    monkeypatch.setattr(scheduler.runtime, "run", immediate_attempt)
+
+    runs = {run.job_id: run for run in scheduler.run_once(now)}
+
+    assert runs["job-success"].status == "completed"
+    assert runs["job-failure"].status == "failed"
+    for job_id, run in runs.items():
+        events = store.list_events(job_id=job_id)
+        assert [event.sequence for event in events] == sorted(
+            event.sequence for event in events
+        )
+        assert all(
+            left.created_at < right.created_at
+            for left, right in zip(events, events[1:], strict=False)
+        )
+        assert run.finished_at is not None
+        assert run.started_at <= run.finished_at
+        running = next(event for event in events if event.event_type == "job.running")
+        worker_started = next(event for event in events if event.event_type == "worker.started")
+        terminal = events[-1]
+        assert running.created_at < run.started_at <= worker_started.created_at
+        assert run.finished_at < terminal.created_at
+
+
+def test_active_cancellation_cannot_be_overwritten_by_worker_completion(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Keep the public cancelled job state when an already-running worker returns later."""
+    now = utc_now()
+    scheduler, store = build_scheduler(tmp_path)
+    store.save_job(
+        JobRecord(
+            id="job-cancel-race",
+            kind="example.echo",
+            input={},
+            created_at=now,
+            due_at=now,
+        )
+    )
+    claimed = scheduler.claim_due_jobs(now)[0]
+    entered = Event()
+    release = Event()
+
+    def blocked_attempt(*_args, **_kwargs) -> GoblinResult:
+        entered.set()
+        assert release.wait(5)
+        return GoblinResult.ok()
+
+    monkeypatch.setattr(scheduler.runtime, "run", blocked_attempt)
+    observed: dict[str, object] = {}
+
+    def execute() -> None:
+        observed["run"] = scheduler.run_claimed_job(claimed, now)
+
+    thread = Thread(target=execute)
+    thread.start()
+    assert entered.wait(5)
+    cancelled, changed = store.try_cancel_job(claimed.id)
+    assert cancelled is not None
+    assert changed is True
+    cancelled_event = scheduler.event_bus.emit(
+        "job.cancelled",
+        source="api",
+        job_id=claimed.id,
+        after=cancelled.created_at,
+    )
+
+    release.set()
+    thread.join(5)
+    assert not thread.is_alive()
+
+    run = observed["run"]
+    assert isinstance(run, RunRecord)
+    persisted_job = store.get_job(claimed.id)
+    assert persisted_job is not None
+    assert persisted_job.status == "cancelled"
+    assert persisted_job.lease_owner is None
+    assert run.status == "completed"
+    assert run.finished_at is not None
+    assert run.started_at <= run.finished_at
+    assert store.get_run(run.id) == run
+    events = store.list_events(job_id=claimed.id)
+    assert cancelled_event in events
+    assert "job.completed" not in {event.event_type for event in events}
+    assert [event.sequence for event in events] == sorted(event.sequence for event in events)
 
 
 def test_validation_gate_reuses_passing_proof(tmp_path: Path, monkeypatch) -> None:
@@ -292,6 +422,70 @@ def test_unexpected_runtime_exception_fails_attempt_and_continues_scheduler(
     assert all(event.payload["scheduler_exception"] is True for event in failure_events)
 
 
+def test_cancellation_during_retry_exception_preserves_job_and_attempt_evidence(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Keep cancellation terminal while retaining a later retry attempt that raises."""
+    now = utc_now()
+    scheduler, store = build_scheduler(tmp_path)
+    store.save_job(
+        JobRecord(
+            id="job-cancelled-retry",
+            kind="example.echo",
+            input={},
+            created_at=now,
+            due_at=now,
+            max_retries=1,
+        )
+    )
+    entered = Event()
+    release = Event()
+    attempts = {"count": 0}
+
+    def runtime(*_args, **_kwargs) -> GoblinResult:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            return GoblinResult.failed(error="retry me")
+        entered.set()
+        assert release.wait(5)
+        raise RuntimeError("cancelled adapter stopped")
+
+    monkeypatch.setattr(scheduler.runtime, "run", runtime)
+    first = scheduler.run_once(now)
+    observed: dict[str, object] = {}
+
+    def execute_retry() -> None:
+        observed["runs"] = scheduler.run_once(now)
+
+    thread = Thread(target=execute_retry)
+    thread.start()
+    assert entered.wait(5)
+    cancelled, changed = store.try_cancel_job("job-cancelled-retry")
+    assert cancelled is not None
+    assert changed is True
+    scheduler.event_bus.emit(
+        "job.cancelled",
+        source="api",
+        job_id=cancelled.id,
+        after=cancelled.created_at,
+    )
+    release.set()
+    thread.join(5)
+    assert not thread.is_alive()
+
+    retry_runs = observed["runs"]
+    assert isinstance(retry_runs, list)
+    assert len(first) == 1
+    assert len(retry_runs) == 1
+    assert [run.attempt for run in store.list_job_runs(cancelled.id)] == [1, 2]
+    assert retry_runs[0].status == "failed"
+    final_job = store.get_job(cancelled.id)
+    assert final_job is not None
+    assert final_job.status == "cancelled"
+    assert len(store.list_events(event_type="job.failed", job_id=cancelled.id)) == 0
+
+
 def test_validation_gate_reports_stale_digest_when_revalidation_fails(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -405,6 +599,12 @@ def test_failing_goblin_retries_then_fails(tmp_path: Path) -> None:
     assert second[0].status == "failed"
     assert second_job.status == "failed"
     assert second_job.attempt_count == 2
+    assert all(
+        run.finished_at is not None and run.started_at <= run.finished_at
+        for run in first + second
+    )
+    events = store.list_events(job_id=second_job.id)
+    assert [event.sequence for event in events] == sorted(event.sequence for event in events)
 
 
 def test_timeout_configuration_marks_overdue_run(tmp_path: Path) -> None:
@@ -427,6 +627,8 @@ def test_timeout_configuration_marks_overdue_run(tmp_path: Path) -> None:
     job = store.list_jobs()[0]
 
     assert runs[0].status == "timed_out"
+    assert runs[0].finished_at is not None
+    assert runs[0].started_at <= runs[0].finished_at
     assert job.status == "timed_out"
 
 
