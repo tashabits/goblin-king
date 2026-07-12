@@ -270,6 +270,21 @@ class KubernetesRuntime:
                 )
             if getattr(job.status, "failed", 0):
                 logs = self._worker_logs(core, name)
+                forwarded = self._load_result_observed(run_id)
+                if forwarded.result_received:
+                    if forwarded.result.status == "failed":
+                        return forwarded
+                    return KubernetesRunObservation(
+                        result=GoblinResult.failed(
+                            error=f"{name} failed after publishing a result: {logs}",
+                            data=forwarded.result.data,
+                            artifacts=forwarded.result.artifacts,
+                            metrics=forwarded.result.metrics,
+                            handoff=forwarded.result.handoff,
+                        ),
+                        result_received=True,
+                        result_envelope_valid=forwarded.result_envelope_valid,
+                    )
                 return KubernetesRunObservation(
                     result=GoblinResult.failed(error=f"{name} failed: {logs}")
                 )

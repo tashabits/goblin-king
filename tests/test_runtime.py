@@ -660,3 +660,46 @@ def test_kubernetes_job_includes_resource_policy_fields() -> None:
             '"memory":{"limit":"512Mi","request":"64Mi"}}'
         ),
     } in worker["env"]
+
+
+def test_failed_kubernetes_job_preserves_only_forwarded_retained_artifacts(
+    monkeypatch,
+) -> None:
+    """Keep durable diagnostic artifacts when a worker exits nonzero after its result."""
+
+    class FailedBatch:
+        def read_namespaced_job(self, **_kwargs):
+            return type("Job", (), {"status": type("Status", (), {"failed": 1})()})()
+
+    workers = WorkerImageMap(
+        {"example.artifact": WorkerImageDefinition(context=".", image="artifact:local")},
+        root=".",
+    )
+    runtime = KubernetesRuntime(workers=workers, poll_interval_seconds=0)
+    forwarded = GoblinResult.ok(
+        data={"worker_result": "written"},
+        artifacts=[
+            {
+                "name": "diagnostic.zip",
+                "uri": "file:///data/artifacts/retained.zip",
+                "media_type": "application/zip",
+            }
+        ],
+        metrics={"artifact.diagnostic.zip.sha256": "a" * 64},
+    )
+    monkeypatch.setattr(runtime, "_load_result", lambda _run_id: forwarded)
+    monkeypatch.setattr(runtime, "_worker_logs", lambda _core, _name: "exit code 2")
+
+    result = runtime._wait_for_result(
+        batch=FailedBatch(),
+        core=object(),
+        name="failed-artifact-job",
+        run_id="run-failed-artifact",
+        timeout_seconds=1,
+    )
+
+    assert result.status == "failed"
+    assert result.error == "failed-artifact-job failed after publishing a result: exit code 2"
+    assert result.data == forwarded.data
+    assert result.artifacts == forwarded.artifacts
+    assert result.metrics == forwarded.metrics

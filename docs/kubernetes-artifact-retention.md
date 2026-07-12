@@ -65,7 +65,9 @@ For every declared artifact, the forwarder:
 Retention is all-or-nothing for one result. A path, limit, media-type, digest, storage, or concurrent
 mutation failure removes all artifact entries and artifact-prefixed metrics from the published
 result. A previously failed worker result remains failed after successful retention, so diagnostic
-artifacts can survive without hiding the original error.
+artifacts can survive without hiding the original error. If the worker writes and forwards a result
+but its container still exits nonzero, the runtime reports a failed Job while preserving only the
+artifact metadata already proven durable by the forwarder.
 
 The immutable Run destination makes a safe forwarder retry idempotent when the bytes match. A retry
 that finds different bytes fails rather than replacing prior evidence.
