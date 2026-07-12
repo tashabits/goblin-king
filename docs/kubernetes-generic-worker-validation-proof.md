@@ -5,6 +5,48 @@ worker-validation rows. It creates proof through the authenticated API, confirms
 exact scheduler identity, then submits the first normal job. Docker validation and
 manual database seeding are not used.
 
+## Publishing Verification
+
+Date: 2026-07-12
+
+Tested implementation: `77f4857` on merged upstream #148 base `d286bd2`
+
+The publishing review used the existing disposable kind cluster
+`goblin-king-upstream-proof` and a fresh `issue145-proof` namespace. Before validation,
+`workers validation-status` returned no rows. Helm revision 1 reached `deployed`; its
+API and scheduler shared one bound PVC and both reached one ready replica.
+
+The exact node-loaded OCI identities were:
+
+- control plane and result forwarder:
+  `ghcr.io/tashabits/goblin-king@sha256:fce065e9e2a1b7254a04e10adfa48e535fdf1cc6431750eca7c4be97512bef8d`;
+- generic worker:
+  `ghcr.io/tashabits/goblin-king-example-hello@sha256:af283b1540c5a90138c2cb44003385e916c1fd81dcce8f3ce1a6a19bf053e3da`.
+
+The chart also enabled `restricted-v1`, separate `Never` pull policies, and the symbolic
+`issue145-registry` pull Secret. The authenticated admin endpoint validated
+`example.hello` successfully at `2026-07-12T22:47:37.105326Z`. Its durable identity was:
+
+```text
+kubernetes:ghcr.io/tashabits/goblin-king-example-hello@sha256:af283b1540c5a90138c2cb44003385e916c1fd81dcce8f3ce1a6a19bf053e3da:workload-security:dc84e23fbb3f2e9bf569e7605add598fb31ec4cedc0f08c4c03845ac5f376e21
+```
+
+The validation response contained `ok: true`, a valid success envelope, zero exit code,
+metrics, artifact metadata, and decoded worker/forwarder logs. A live Pod watch proved
+both requested images resolved to those same digests, the pull Secret propagated,
+automatic ServiceAccount tokens were disabled, and only the input/result/artifact
+volumes were present. The persisted `/goblins` record exposed the identical identity and
+the complete effective restricted security policy.
+
+With no other validation operation or database write, the normal API accepted job
+`b2ad3700-873c-4599-a336-922fed3c86f1`. Scheduler run
+`aeccfa1d-6d37-4dd8-b0ee-f184750a6f17` completed successfully with
+`Hello First Job` and canonical result `Hello World`. After both validation and normal
+execution, no generated Job or input ConfigMap remained; API and scheduler stayed ready.
+
+This proves the exact public first-proof workflow on a fresh state database without
+Docker access, manual seeding, a local compatibility tag, or a weakened scheduler gate.
+
 ## Prerequisites
 
 - Python 3.12 or newer with this checkout installed.
