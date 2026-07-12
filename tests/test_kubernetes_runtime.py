@@ -36,6 +36,29 @@ def test_runtime_module_keeps_kubernetes_runtime_import_compatible() -> None:
     assert KubernetesRuntime is ExtractedKubernetesRuntime
 
 
+def test_legacy_pull_policy_still_applies_to_both_containers() -> None:
+    runtime = KubernetesRuntime(
+        workers=_runtime().workers,
+        image_pull_policy="Always",
+    )
+
+    manifest = runtime._job_manifest(
+        name="gk-example-echo-run-images",
+        config_name="gk-example-echo-run-images-input",
+        image="echo:local",
+        context=_context(),
+        worker_id="k8s-worker-run-images",
+        timeout_seconds=30,
+    )
+
+    assert runtime.image_pull_policy == "Always"
+    assert runtime.result_forwarder_image_pull_policy == "Always"
+    assert [
+        container["imagePullPolicy"]
+        for container in manifest["spec"]["template"]["spec"]["containers"]
+    ] == ["Always", "Always"]
+
+
 def test_settings_deduplicate_symbolic_pull_secret_names() -> None:
     settings = KubernetesRuntimeSettings(
         workload_image_pull_secret_names=["registry-main", "registry-main", "registry-backup"]
@@ -57,6 +80,19 @@ def test_settings_reject_empty_image_or_pull_secret_names(value: object) -> None
 
     with pytest.raises(ValueError):
         KubernetesRuntimeSettings.model_validate(field)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"workload_image_pull_secret_names": ["user:password"]},
+        {"registry_password": "secret"},
+        {"pod_spec": {"hostNetwork": True}},
+    ],
+)
+def test_settings_reject_credentials_and_raw_pod_fields(payload: dict) -> None:
+    with pytest.raises(ValueError):
+        KubernetesRuntimeSettings.model_validate(payload)
 
 
 def test_manifest_uses_separate_image_policies_and_workload_pull_secrets() -> None:

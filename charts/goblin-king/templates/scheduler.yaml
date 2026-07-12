@@ -65,7 +65,7 @@ spec:
       {{- include "goblin-king.podSecurityContext" . | nindent 6 }}
       containers:
         - name: scheduler
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: {{ include "goblin-king.controlPlaneImage" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- include "goblin-king.containerSecurityContext" . | nindent 10 }}
           {{- with .Values.scheduler.resources }}
@@ -86,6 +86,18 @@ spec:
             - run
             - --runtime
             - {{ .Values.scheduler.runtime }}
+            {{- if eq .Values.scheduler.runtime "kubernetes" }}
+            - --result-forwarder-image
+            - {{ include "goblin-king.resultForwarderImage" . | quote }}
+            - --worker-image-pull-policy
+            - {{ include "goblin-king.workerImagePullPolicy" . | quote }}
+            - --result-forwarder-image-pull-policy
+            - {{ include "goblin-king.resultForwarderImagePullPolicy" . | quote }}
+            {{- range (include "goblin-king.workloadImagePullSecretNames" . | fromJsonArray) }}
+            - --workload-image-pull-secret
+            - {{ . | quote }}
+            {{- end }}
+            {{- end }}
             {{- if .Values.config.projectSettingsPath }}
             - --project
             - {{ .Values.config.projectSettingsPath }}

@@ -23,6 +23,59 @@ imagePullSecrets:
 {{- end }}
 {{- end -}}
 
+{{- define "goblin-king.controlPlaneImage" -}}
+{{- if .Values.image.digest -}}
+{{- printf "%s@%s" .Values.image.repository .Values.image.digest -}}
+{{- else -}}
+{{- printf "%s:%s" .Values.image.repository .Values.image.tag -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "goblin-king.resultForwarderImage" -}}
+{{- $image := .Values.scheduler.resultForwarder.image -}}
+{{- if or $image.repository $image.tag $image.digest -}}
+{{- $repository := default .Values.image.repository $image.repository -}}
+{{- if $image.digest -}}
+{{- printf "%s@%s" $repository $image.digest -}}
+{{- else -}}
+{{- printf "%s:%s" $repository (default .Values.image.tag $image.tag) -}}
+{{- end -}}
+{{- else -}}
+{{- include "goblin-king.controlPlaneImage" . -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "goblin-king.workerImagePullPolicy" -}}
+{{- default .Values.image.pullPolicy .Values.scheduler.workerImagePullPolicy -}}
+{{- end -}}
+
+{{- define "goblin-king.resultForwarderImagePullPolicy" -}}
+{{- default .Values.image.pullPolicy .Values.scheduler.resultForwarder.pullPolicy -}}
+{{- end -}}
+
+{{- define "goblin-king.workloadImagePullSecretNames" -}}
+{{- $names := list -}}
+{{- range .Values.image.pullSecrets -}}
+{{- $name := "" -}}
+{{- if kindIs "string" . -}}
+{{- $name = . -}}
+{{- else if and (kindIs "map" .) (hasKey . "name") -}}
+{{- $name = get . "name" -}}
+{{- end -}}
+{{- if $name -}}{{- $names = append $names $name -}}{{- end -}}
+{{- end -}}
+{{- range .Values.scheduler.workloadImagePullSecrets -}}
+{{- $name := "" -}}
+{{- if kindIs "string" . -}}
+{{- $name = . -}}
+{{- else if and (kindIs "map" .) (hasKey . "name") -}}
+{{- $name = get . "name" -}}
+{{- end -}}
+{{- if $name -}}{{- $names = append $names $name -}}{{- end -}}
+{{- end -}}
+{{- $names | uniq | toJson -}}
+{{- end -}}
+
 {{- define "goblin-king.podSecurityContext" -}}
 {{- with .Values.podSecurityContext }}
 securityContext:

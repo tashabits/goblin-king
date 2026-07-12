@@ -22,6 +22,7 @@ from goblin_king.contracts import (
     utc_now,
 )
 from goblin_king.events import EventBus
+from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 from goblin_king.metadata import goblin_job_metadata
 from goblin_king.notebooks import (
     notebook_definition,
@@ -73,6 +74,7 @@ class Scheduler:
         event_bus: EventBus | None = None,
         resource_policies: ResourcePolicySet | None = None,
         docker_run_root: str | Path | None = None,
+        kubernetes_runtime_settings: KubernetesRuntimeSettings | None = None,
     ) -> None:
         self.registry = registry
         self.store = store
@@ -88,6 +90,9 @@ class Scheduler:
         self.event_bus = event_bus or EventBus(store=store, redis_url=redis_url)
         self.resource_policies = resource_policies
         self.docker_run_root = docker_run_root
+        self.kubernetes_runtime_settings = (
+            kubernetes_runtime_settings or KubernetesRuntimeSettings()
+        )
         self.runtime = self._build_runtime()
 
     def reload_discovery(
@@ -122,6 +127,7 @@ class Scheduler:
                 workers=self.workers,
                 redis_url=self.redis_url,
                 event_bus=self.event_bus,
+                settings=self.kubernetes_runtime_settings,
             )
         return InProcessRuntime()
 
@@ -142,6 +148,7 @@ class Scheduler:
                 workers=workers,
                 redis_url=self.redis_url,
                 event_bus=self.event_bus,
+                settings=self.kubernetes_runtime_settings,
             )
         return self.runtime
 

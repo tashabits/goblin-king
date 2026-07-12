@@ -20,6 +20,12 @@ data:
         "enabled": {{ .Values.repository.enabled }},
         "url": {{ if $repositoryUrl }}{{ $repositoryUrl | quote }}{{ else }}null{{ end }}
       },
+      "kubernetes_runtime": {
+        "result_forwarder_image": {{ include "goblin-king.resultForwarderImage" . | quote }},
+        "worker_image_pull_policy": {{ include "goblin-king.workerImagePullPolicy" . | quote }},
+        "result_forwarder_image_pull_policy": {{ include "goblin-king.resultForwarderImagePullPolicy" . | quote }},
+        "workload_image_pull_secret_names": {{ include "goblin-king.workloadImagePullSecretNames" . }}
+      },
       "oidc": {
         "enabled": {{ .Values.config.oidc.enabled }},
         "issuer": {{ if .Values.config.oidc.issuer }}{{ .Values.config.oidc.issuer | quote }}{{ else }}null{{ end }},

@@ -28,7 +28,7 @@ spec:
       {{- include "goblin-king.podSecurityContext" . | nindent 6 }}
       containers:
         - name: directory-api
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: {{ include "goblin-king.controlPlaneImage" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- include "goblin-king.containerSecurityContext" . | nindent 10 }}
           ports:

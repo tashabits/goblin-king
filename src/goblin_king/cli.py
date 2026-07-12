@@ -88,6 +88,17 @@ from goblin_king.fanout import (
     retry_job,
 )
 from goblin_king.jsonio import pretty_json
+from goblin_king.kubernetes_cli import (
+    ResultForwarderImageOption,
+    ResultForwarderImagePullPolicyOption,
+    WorkerImagePullPolicyOption,
+    WorkloadImagePullSecretsOption,
+    kubernetes_runtime_settings,
+)
+from goblin_king.kubernetes_runtime_settings import (
+    DEFAULT_KUBERNETES_IMAGE_PULL_POLICY,
+    DEFAULT_RESULT_FORWARDER_IMAGE,
+)
 from goblin_king.metadata import goblin_job_metadata
 from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.resource_policies import ResourcePolicyError, ResourcePolicySet
@@ -597,6 +608,14 @@ def submit_job(
         Path | None,
         typer.Option("--resource-policies", help="Optional resource policy JSON path."),
     ] = DEFAULT_RESOURCE_POLICIES_PATH,
+    result_forwarder_image: ResultForwarderImageOption = DEFAULT_RESULT_FORWARDER_IMAGE,
+    worker_image_pull_policy: WorkerImagePullPolicyOption = (
+        DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
+    ),
+    result_forwarder_image_pull_policy: ResultForwarderImagePullPolicyOption = (
+        DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
+    ),
+    workload_image_pull_secrets: WorkloadImagePullSecretsOption = None,
 ) -> None:
     """Submit and immediately execute one job through the selected runtime."""
     loaded, worker_map = _load_scheduler_discovery(registry, images, project, runtime)
@@ -658,6 +677,12 @@ def submit_job(
         result = KubernetesRuntime(
             workers=worker_map,
             redis_url=redis_url,
+            settings=kubernetes_runtime_settings(
+                result_forwarder_image=result_forwarder_image,
+                worker_image_pull_policy=worker_image_pull_policy,
+                result_forwarder_image_pull_policy=result_forwarder_image_pull_policy,
+                workload_image_pull_secrets=workload_image_pull_secrets,
+            ),
         ).run(
             definition,
             entrypoint,
@@ -1039,6 +1064,14 @@ def scheduler_run_once(
         Path | None,
         typer.Option("--resource-policies", help="Optional resource policy JSON path."),
     ] = DEFAULT_RESOURCE_POLICIES_PATH,
+    result_forwarder_image: ResultForwarderImageOption = DEFAULT_RESULT_FORWARDER_IMAGE,
+    worker_image_pull_policy: WorkerImagePullPolicyOption = (
+        DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
+    ),
+    result_forwarder_image_pull_policy: ResultForwarderImagePullPolicyOption = (
+        DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
+    ),
+    workload_image_pull_secrets: WorkloadImagePullSecretsOption = None,
 ) -> None:
     """Run one deterministic scheduler pass and print any created runs."""
     registry, workers = _load_scheduler_discovery(registry, images, project, runtime)
@@ -1049,6 +1082,12 @@ def scheduler_run_once(
         workers=workers,
         redis_url=redis_url,
         docker_run_root=run_root,
+        kubernetes_runtime_settings=kubernetes_runtime_settings(
+            result_forwarder_image=result_forwarder_image,
+            worker_image_pull_policy=worker_image_pull_policy,
+            result_forwarder_image_pull_policy=result_forwarder_image_pull_policy,
+            workload_image_pull_secrets=workload_image_pull_secrets,
+        ),
         resource_policies=_load_resource_policies(resource_policies, project=project),
     )
     runs = scheduler.run_once()
@@ -1087,6 +1126,14 @@ def scheduler_run(
         Path | None,
         typer.Option("--resource-policies", help="Optional resource policy JSON path."),
     ] = DEFAULT_RESOURCE_POLICIES_PATH,
+    result_forwarder_image: ResultForwarderImageOption = DEFAULT_RESULT_FORWARDER_IMAGE,
+    worker_image_pull_policy: WorkerImagePullPolicyOption = (
+        DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
+    ),
+    result_forwarder_image_pull_policy: ResultForwarderImagePullPolicyOption = (
+        DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
+    ),
+    workload_image_pull_secrets: WorkloadImagePullSecretsOption = None,
 ) -> None:
     """Run scheduler passes until interrupted."""
     registry, workers = _load_scheduler_discovery(registry, images, project, runtime)
@@ -1097,6 +1144,12 @@ def scheduler_run(
         workers=workers,
         redis_url=redis_url,
         docker_run_root=run_root,
+        kubernetes_runtime_settings=kubernetes_runtime_settings(
+            result_forwarder_image=result_forwarder_image,
+            worker_image_pull_policy=worker_image_pull_policy,
+            result_forwarder_image_pull_policy=result_forwarder_image_pull_policy,
+            workload_image_pull_secrets=workload_image_pull_secrets,
+        ),
         resource_policies=_load_resource_policies(resource_policies, project=project),
     )
     try:

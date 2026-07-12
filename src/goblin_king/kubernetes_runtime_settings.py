@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from typing import Literal
 
@@ -10,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 KubernetesImagePullPolicy = Literal["Always", "IfNotPresent", "Never"]
 DEFAULT_KUBERNETES_IMAGE_PULL_POLICY: KubernetesImagePullPolicy = "IfNotPresent"
 DEFAULT_RESULT_FORWARDER_IMAGE = "goblin-king:local"
+_KUBERNETES_OBJECT_NAME = re.compile(r"^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$")
 
 
 class KubernetesRuntimeSettings(BaseModel):
@@ -49,6 +51,10 @@ class KubernetesRuntimeSettings(BaseModel):
             if not isinstance(item, str) or not item.strip():
                 raise ValueError("workload image pull Secret names must be non-empty strings")
             normalized = item.strip()
+            if len(normalized) > 253 or _KUBERNETES_OBJECT_NAME.fullmatch(normalized) is None:
+                raise ValueError(
+                    "workload image pull Secret names must be Kubernetes DNS subdomain names"
+                )
             if normalized not in names:
                 names.append(normalized)
         return tuple(names)

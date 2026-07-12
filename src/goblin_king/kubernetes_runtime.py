@@ -12,17 +12,13 @@ from redis.exceptions import RedisError
 
 from goblin_king.contracts import GoblinContext, GoblinDefinition, GoblinResult
 from goblin_king.events import (
-    DEFAULT_HEARTBEAT_CHANNEL,
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     EventBus,
     worker_heartbeat_key,
 )
-from goblin_king.kubernetes_placement import (
-    apply_kubernetes_placement,
-    placement_metadata,
-)
+from goblin_king.kubernetes_job_manifest import build_kubernetes_job_manifest
+from goblin_king.kubernetes_placement import placement_metadata
 from goblin_king.kubernetes_pod_diagnostics import find_image_pull_failure
-from goblin_king.kubernetes_result_forwarder import RESULT_FORWARDER_SCRIPT
 from goblin_king.kubernetes_runtime_settings import (
     DEFAULT_KUBERNETES_IMAGE_PULL_POLICY,
     DEFAULT_RESULT_FORWARDER_IMAGE,
@@ -33,10 +29,7 @@ from goblin_king.runtime_helpers import (
     current_kubernetes_namespace,
     kubernetes_clients,
     kubernetes_name,
-    kubernetes_policy_fields,
-    resource_policy_env,
 )
-from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
 
 
@@ -167,121 +160,19 @@ class KubernetesRuntime:
         placement: dict[str, dict[str, str]] | None = None,
     ) -> dict[str, Any]:
         """Build the Kubernetes Job manifest that mirrors the Docker worker contract."""
-        worker_container: dict[str, Any] = {
-            "name": "worker",
-            "image": image,
-            "imagePullPolicy": self.settings.worker_image_pull_policy,
-            "env": [
-                {
-                    "name": "GOBLIN_CONTRACT_VERSION",
-                    "value": GOBLIN_CONTAINER_CONTRACT_VERSION,
-                },
-                {"name": "GOBLIN_RUN_ID", "value": context.run_id},
-                {
-                    "name": "GOBLIN_JOB_ID",
-                    "value": str(context.metadata.get("job_id", "")),
-                },
-                {"name": "GOBLIN_WORKER_ID", "value": worker_id},
-                {"name": "GOBLIN_INPUT_PATH", "value": "/goblin-config/input.json"},
-                {"name": "GOBLIN_CONTEXT_PATH", "value": "/goblin-config/context.json"},
-                {"name": "GOBLIN_RESULT_PATH", "value": "/goblin-result/result.json"},
-                {"name": "GOBLIN_ARTIFACT_ROOT", "value": "/artifacts"},
-                {"name": "GOBLIN_REDIS_URL", "value": self.redis_url},
-                {"name": "GOBLIN_HEARTBEAT_REDIS_URL", "value": self.redis_url},
-                {"name": "GOBLIN_HEARTBEAT_CHANNEL", "value": DEFAULT_HEARTBEAT_CHANNEL},
-                {"name": "GOBLIN_HEARTBEAT_KEY", "value": worker_heartbeat_key(context.run_id)},
-                {
-                    "name": "GOBLIN_HEARTBEAT_INTERVAL_SECONDS",
-                    "value": str(self.heartbeat_interval_seconds),
-                },
-            ],
-            "volumeMounts": [
-                {"name": "input", "mountPath": "/goblin-config", "readOnly": True},
-                {"name": "result", "mountPath": "/goblin-result"},
-                {"name": "artifacts", "mountPath": "/artifacts"},
-            ],
-        }
-        if resource_policy is not None:
-            worker_container["env"].append(
-                {
-                    "name": "GOBLIN_EFFECTIVE_RESOURCE_POLICY_JSON",
-                    "value": resource_policy_env(resource_policy),
-                }
-            )
-            worker_container.update(kubernetes_policy_fields(resource_policy))
-        pod_spec: dict[str, Any] = {
-            "restartPolicy": "Never",
-            "containers": [
-                worker_container,
-                self._result_forwarder_container(
-                    context=context,
-                    timeout_seconds=timeout_seconds,
-                ),
-            ],
-            "volumes": [
-                {"name": "input", "configMap": {"name": config_name}},
-                {"name": "result", "emptyDir": {}},
-                {"name": "artifacts", "emptyDir": {}},
-            ],
-        }
-        if self.settings.workload_image_pull_secret_names:
-            pod_spec["imagePullSecrets"] = [
-                {"name": name}
-                for name in self.settings.workload_image_pull_secret_names
-            ]
-        spec: dict[str, Any] = {
-            "backoffLimit": 0,
-            "template": {
-                "metadata": {
-                    "labels": {
-                        "goblin-king.worker": "true",
-                        "goblin-king.run-id": context.run_id,
-                        "goblin-king.job-id": str(context.metadata.get("job_id", "")),
-                    }
-                },
-                "spec": pod_spec,
-            },
-        }
-        placement = placement or placement_metadata(None, context)
-        if placement is not None:
-            apply_kubernetes_placement(pod_spec, placement)
-        if timeout_seconds is not None:
-            spec["activeDeadlineSeconds"] = timeout_seconds
-        return {
-            "apiVersion": "batch/v1",
-            "kind": "Job",
-            "metadata": {
-                "name": name,
-                "labels": {
-                    "goblin-king.worker": "true",
-                    "goblin-king.run-id": context.run_id,
-                    "goblin-king.job-id": str(context.metadata.get("job_id", "")),
-                },
-            },
-            "spec": spec,
-        }
-
-    def _result_forwarder_container(
-        self,
-        *,
-        context: GoblinContext,
-        timeout_seconds: int | None,
-    ) -> dict[str, Any]:
-        """Publish the worker result file to Redis for language-neutral Kubernetes jobs."""
-        wait_seconds = str((timeout_seconds or 300) + 15)
-        return {
-            "name": "result-forwarder",
-            "image": self.settings.result_forwarder_image,
-            "imagePullPolicy": self.settings.result_forwarder_image_pull_policy,
-            "command": ["python", "-c", RESULT_FORWARDER_SCRIPT],
-            "env": [
-                {"name": "GOBLIN_RUN_ID", "value": context.run_id},
-                {"name": "GOBLIN_REDIS_URL", "value": self.redis_url},
-                {"name": "GOBLIN_RESULT_PATH", "value": "/goblin-result/result.json"},
-                {"name": "GOBLIN_RESULT_WAIT_SECONDS", "value": wait_seconds},
-            ],
-            "volumeMounts": [{"name": "result", "mountPath": "/goblin-result"}],
-        }
+        return build_kubernetes_job_manifest(
+            name=name,
+            config_name=config_name,
+            image=image,
+            context=context,
+            worker_id=worker_id,
+            timeout_seconds=timeout_seconds,
+            settings=self.settings,
+            redis_url=self.redis_url,
+            heartbeat_interval_seconds=self.heartbeat_interval_seconds,
+            resource_policy=resource_policy,
+            placement=placement,
+        )
 
     def _wait_for_result(
         self,
