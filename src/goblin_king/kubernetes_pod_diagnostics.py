@@ -193,10 +193,26 @@ def read_bounded_kubernetes_pod_log(
         try:
             value = core.read_namespaced_pod_log(
                 **kwargs,
+                _preload_content=False,
                 _request_timeout=_DIAGNOSTIC_REQUEST_TIMEOUT_SECONDS,
             )
         except TypeError:
-            value = core.read_namespaced_pod_log(**kwargs)
+            try:
+                value = core.read_namespaced_pod_log(
+                    **kwargs,
+                    _request_timeout=_DIAGNOSTIC_REQUEST_TIMEOUT_SECONDS,
+                )
+            except TypeError:
+                value = core.read_namespaced_pod_log(**kwargs)
+        response = value
+        response_data = getattr(response, "data", None)
+        if response_data is not None:
+            value = response_data
+            release = getattr(response, "release_conn", None)
+            if callable(release):
+                release()
+        if isinstance(value, bytes):
+            return value.decode("utf-8", errors="replace")
         return str(value)
     except Exception as error:  # diagnostic best effort
         return _bounded_text(
