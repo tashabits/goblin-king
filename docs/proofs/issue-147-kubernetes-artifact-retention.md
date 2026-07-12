@@ -86,14 +86,20 @@ Base after rebase: `6e1118e5db22d8b8dbda17031106f39689f71408`
 Observed before live cluster proof:
 
 ```text
-118 passed, 1 skipped in 29.95s
+345 passed, 1 skipped in 88.76s
 All checks passed!
-Helm template rendered both API and scheduler PVC-retention environment values.
+1 chart(s) linted, 0 chart(s) failed
+helm_retention_variants=passed
+retention_modules_present=True
+Admin UI: 9 passed; production build completed.
 ```
 
 The skipped test is the symbolic-link case when the Windows test account lacks link-creation
 permission. Traversal, containment, count, size, media type, digest, unconfigured storage, atomic
 retention, idempotency, API download after source deletion, cleanup, and manifest isolation tests ran.
+The package wheel contains all three retention/forwarder modules. Helm rendering proved that
+persistence-enabled API/scheduler Pods receive the artifact PVC settings and persistence-disabled
+Pods omit the claim while retaining the URI-root setting.
 
 Live kind execution was not performed in this implementation worktree. The publishing verifier must
 run the commands above and replace this limitation with the observed commit SHA, image identities,
