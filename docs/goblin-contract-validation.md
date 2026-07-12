@@ -5,8 +5,10 @@ container-backed goblin is runnable only when its current resolved image identit
 passing proof for the declared [Goblin Container Contract](goblin-container-contract.md)
 version and validator version.
 
-Use `goblin-king workers validate` to run worker images with temporary contract mounts
-and verify that each worker writes a valid result envelope. The short rule is:
+Use `goblin-king workers validate` to run worker images with contract mounts and verify
+that each worker writes a valid result envelope. Docker remains the default runtime.
+Use `--runtime kubernetes` or the admin-authenticated Kubernetes validation API for a
+generic registry worker that must establish proof inside a cluster. The short rule is:
 validate first, then schedule.
 
 ## Why Validation Is Mandatory
@@ -43,6 +45,15 @@ Validation checks:
 - result envelope validates as `GoblinResult`,
 - `artifact://...` metadata points to files under the mounted artifact root.
 
+The final artifact-file check above is available to Docker validation because the
+validator can inspect the shared run directory. Kubernetes validation executes the same
+configured worker through a Job with `backoffLimit: 0` and an active deadline. It
+requires a valid result envelope, returns its artifact metadata, captures bounded worker
+and result-forwarder logs plus the worker exit code when available, and deletes the
+transient Job and input ConfigMap on completion. Artifact bytes remain inside the
+runtime volume boundary; returned metadata is not proof that external artifact storage
+retained those bytes.
+
 By default, a valid failed result envelope is still contract-valid. Use
 `--require-success` when failed result envelopes should fail validation.
 
@@ -52,21 +63,27 @@ Validation proof is tied to goblin kind, resolved image identity or digest, cont
 version, validator version, validation timestamp, status, failure reasons, and the
 effective runtime policy summary when one is available.
 
-The scheduler checks proof immediately before Docker or Kubernetes execution. If no
-current passing proof exists, the scheduler may perform just-in-time validation, persist
-the result, and continue only when validation passes. If proof cannot be created, the
-job is rejected before container execution and the failed run, event, and audit record
-include repair guidance.
+The scheduler checks proof immediately before Docker or Kubernetes execution. Docker
+may perform just-in-time validation. Kubernetes rejects a generic worker with no current
+proof and points the operator to the explicit Kubernetes validation operation; that
+operation runs the contract Job and persists pass/fail proof before normal scheduling.
+This prevents a fresh Helm installation from depending on a Docker daemon, a database
+seed, or a first unvalidated workload.
 
-Re-run validation whenever you rebuild, retag, or pull an image. A changed image digest
-invalidates previous proof for scheduling. A tag such as `my-worker:local` is only a
-name; the proof is for the resolved image identity behind that name.
+Docker proof uses the locally inspected immutable image ID. Kubernetes proof uses the
+exact scheduler gate identity `kubernetes:<configured-image-reference>`. A digest-pinned
+reference therefore yields an immutable configured identity and is preferred. A mutable
+tag cannot reveal tag movement to the preflight gate; revalidate after changing or
+reloading a tagged image. Keeping tag-only identity behavior is an explicit compatibility
+limitation of this change; the validation path does not silently reinterpret existing
+worker references or claim a tag is immutable.
 
 ## Failure Mapping
 
 | Condition | Scheduler behavior | Operator fix |
 | --- | --- | --- |
-| No validation proof exists | Run just-in-time validation before execution. Execute only if it passes. | Run `goblin-king workers validate` with the same kind and input before scheduling routine work. |
+| No Docker validation proof exists | Run just-in-time Docker validation before execution. Execute only if it passes. | Run `goblin-king workers validate` with the same kind and input before scheduling routine work. |
+| No Kubernetes validation proof exists | Reject before normal worker execution and name the Kubernetes repair command. | Call the admin Kubernetes validation API, or run `workers validate --runtime kubernetes` against the cluster and scheduler database. |
 | Current image cannot resolve to a digest | Reject execution and persist failed validation proof. | Build, pull, or correct the worker image reference, then revalidate. |
 | Existing proof is for an old digest | Revalidate the current digest. Reject execution if revalidation fails. | Re-run validation after rebuilding or pulling the image. |
 | Validation proof is failed | Revalidate on the current attempt. Reject execution if it still fails. | Fix the worker contract failure shown in the validation record, then revalidate. |
@@ -129,6 +146,63 @@ python -m goblin_king.cli workers validate \
 
 The King accepts honest failure envelopes. He only gets annoyed when a worker
 vanishes without paperwork.
+
+## Kubernetes CLI And API
+
+The CLI is useful for deployment jobs or operators whose kubeconfig can reach the
+cluster and whose `--db` points at the scheduler's state:
+
+```bash
+goblin-king workers validate \
+  --runtime kubernetes \
+  --registry demo-goblins.json \
+  --images demo-images.json \
+  --input examples/input.json \
+  --kind example.hello \
+  --timeout-seconds 120 \
+  --require-success \
+  --result-forwarder-image registry.example/control@sha256:<digest> \
+  --worker-image-pull-policy IfNotPresent \
+  --result-forwarder-image-pull-policy IfNotPresent \
+  --workload-image-pull-secret primary-registry \
+  --db /data/goblin-king.sqlite3 \
+  --json
+```
+
+`--build` and `--run-root` are rejected with this runtime because Kubernetes consumes a
+preloaded or registry-accessible image. The JSON result includes `image_digest` (the
+schema-compatible scheduler identity field), `result_status`, `exit_code`, `artifacts`,
+`checks`, and `logs`.
+
+For a Helm installation, prefer the admin operation so proof is stored in the mounted
+chart database:
+
+```bash
+curl -X POST http://127.0.0.1:8000/admin/workers/validate-kubernetes \
+  -H "Authorization: Bearer local-dev-token" \
+  -H "Content-Type: application/json" \
+  -d '{"kinds":["example.hello"],"input":{"message":"proof"},"require_success":true,"timeout_seconds":120}'
+```
+
+Omit `kinds` to validate every active registry definition. Unknown kinds and missing
+worker mappings return failed validation entries. Every returned entry is persisted,
+and the audit log stores only kind/pass/fail summaries rather than worker logs. See the
+[fresh-chart proof](kubernetes-generic-worker-validation-proof.md) for the complete
+sequence.
+
+### Shared Kubernetes Runtime Configuration
+
+Generic validation does not construct an independent validation-only runtime. The API
+passes its typed `kubernetes_runtime` settings into the same factory used by scheduler
+execution and notebook validation. The CLI builds that same typed settings object from
+the established forwarder-image, worker/forwarder pull-policy, and repeatable pull-secret
+options. The factory retains the runtime's shared namespace discovery and bounded Pod
+diagnostics. A runtime settings file may also select `restricted-v1`; its effective
+profile and per-kind ServiceAccount decision become part of the same validation identity
+used by the scheduler. This prevents validation from passing with a local/default
+forwarder or legacy Pod contract while normal scheduling uses another image, policy,
+Secret set, namespace, security contract, or diagnostic boundary. Legacy constructor
+calls and Docker validation remain unchanged.
 
 ## Project-Defined Goblins
 

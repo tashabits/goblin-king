@@ -92,6 +92,189 @@ def test_workers_validate_accepts_project_settings() -> None:
     assert "unknown goblin kind: example.missing" in result.stdout
 
 
+def test_workers_validate_keeps_docker_as_default_and_human_output(monkeypatch) -> None:
+    """Verify the additive runtime option does not change existing Docker CLI behavior."""
+    from goblin_king.validation import WorkerValidationResult
+
+    captured: dict[str, object] = {}
+
+    def fake_docker_validate(**kwargs):
+        captured.update(kwargs)
+        return [
+            WorkerValidationResult(
+                kind="example.echo",
+                ok=True,
+                result_status="success",
+                checks=["result-envelope"],
+            )
+        ]
+
+    def fail_kubernetes_validate(**_kwargs):
+        raise AssertionError("Docker must remain the default validation runtime")
+
+    monkeypatch.setattr("goblin_king.cli.validate_workers", fake_docker_validate)
+    monkeypatch.setattr(
+        "goblin_king.cli.validate_workers_with_kubernetes",
+        fail_kubernetes_validate,
+    )
+    result = runner.invoke(
+        app,
+        [
+            "workers",
+            "validate",
+            "--registry",
+            "examples/goblins.json",
+            "--images",
+            "goblin-images.json",
+            "--input",
+            "examples/input.json",
+            "--kind",
+            "example.echo",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout == "example.echo\tok\tsuccess\tresult-envelope\n"
+    assert captured["build"] is False
+    assert captured["run_root"] is None
+
+
+def test_workers_validate_kubernetes_returns_and_persists_exact_proof(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Verify the existing validation command exposes the Kubernetes proof path."""
+    from goblin_king.validation import WorkerValidationResult
+
+    captured: dict[str, object] = {}
+    runtime_settings_path = tmp_path / "kubernetes-runtime.json"
+    runtime_settings_path.write_text(
+        json.dumps(
+            {
+                "workload_security_profile": "restricted-v1",
+                "restricted_workload": {
+                    "worker_service_account_names": {
+                        "example.echo": "goblin-echo-reader"
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_validate(**kwargs):
+        captured.update(kwargs)
+        settings = kwargs["kubernetes_runtime_settings"]
+        return [
+            WorkerValidationResult(
+                kind="example.echo",
+                ok=True,
+                image="goblin-king-example-echo:local",
+                image_digest=settings.validation_image_identity(
+                    "goblin-king-example-echo:local",
+                    "example.echo",
+                ),
+                validated_at=utc_now(),
+                result_status="success",
+                logs={"worker": "validation log"},
+            )
+        ]
+
+    monkeypatch.setattr(
+        "goblin_king.cli.validate_workers_with_kubernetes",
+        fake_validate,
+    )
+    db_path = tmp_path / "goblin.sqlite3"
+
+    result = runner.invoke(
+        app,
+        [
+            "workers",
+            "validate",
+            "--runtime",
+            "kubernetes",
+            "--registry",
+            "examples/goblins.json",
+            "--images",
+            "goblin-images.json",
+            "--input",
+            "examples/input.json",
+            "--kind",
+            "example.echo",
+            "--timeout-seconds",
+            "37",
+            "--result-forwarder-image",
+            "registry.example/control@sha256:abc",
+            "--worker-image-pull-policy",
+            "Never",
+            "--result-forwarder-image-pull-policy",
+            "Always",
+            "--workload-image-pull-secret",
+            "registry-main",
+            "--kubernetes-runtime-settings",
+            str(runtime_settings_path),
+            "--db",
+            str(db_path),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)[0]["logs"] == {"worker": "validation log"}
+    assert captured["timeout_seconds"] == 37
+    runtime_settings = captured["kubernetes_runtime_settings"]
+    assert runtime_settings.result_forwarder_image == "registry.example/control@sha256:abc"
+    assert runtime_settings.worker_image_pull_policy == "Never"
+    assert runtime_settings.result_forwarder_image_pull_policy == "Always"
+    assert runtime_settings.workload_image_pull_secret_names == ("registry-main",)
+    assert runtime_settings.workload_security_profile == "restricted-v1"
+    assert runtime_settings.restricted_workload.worker_service_account_names == {
+        "example.echo": "goblin-echo-reader"
+    }
+    stored = SQLiteStore(db_path).latest_worker_validation_for_kind("example.echo")
+    assert stored is not None
+    assert stored.image_digest == runtime_settings.validation_image_identity(
+        "goblin-king-example-echo:local",
+        "example.echo",
+    )
+    assert stored.effective_policy == {
+        "kubernetes_workload_security": (
+            runtime_settings.effective_workload_security("example.echo")
+        )
+    }
+
+
+def test_workers_validate_kubernetes_rejects_docker_build_option(monkeypatch) -> None:
+    """Verify runtime-specific options fail before any Kubernetes Job is submitted."""
+
+    def fail_if_called(**_kwargs):
+        raise AssertionError("Kubernetes validation must not start")
+
+    monkeypatch.setattr(
+        "goblin_king.cli.validate_workers_with_kubernetes",
+        fail_if_called,
+    )
+    result = runner.invoke(
+        app,
+        [
+            "workers",
+            "validate",
+            "--runtime",
+            "kubernetes",
+            "--registry",
+            "examples/goblins.json",
+            "--images",
+            "goblin-images.json",
+            "--input",
+            "examples/input.json",
+            "--build",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "--build is available only with --runtime docker" in result.stderr
+
+
 def test_workers_validate_image_reports_missing_image(monkeypatch) -> None:
     """Verify direct image validation reports unavailable prebuilt images clearly."""
 

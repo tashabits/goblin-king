@@ -72,11 +72,50 @@ The CLI is a supported integration surface for host projects:
 - `goblin-king project goblins list`
 - `goblin-king project init-package`
 - `goblin-king workers build`
+- `goblin-king workers validate` (`--runtime docker` by default; `kubernetes` is
+  explicit)
 - `goblin-king api run`
 - `goblin-king scheduler run`
 
 Prefer these commands over importing runtime internals when the project only needs to
 validate, deploy, run, or prove goblins.
+
+## Generic Kubernetes Worker Validation API
+
+`POST /admin/workers/validate-kubernetes` is the supported in-cluster proof operation
+for generic workers already present in the active registry and worker image map. It
+requires an admin bearer token. The request is additive to existing APIs:
+
+```json
+{
+  "kinds": ["example.hello"],
+  "input": {"message": "proof"},
+  "require_success": true,
+  "timeout_seconds": 120
+}
+```
+
+Omit `kinds` to validate all active registry definitions. `timeout_seconds` must be
+between 1 and 3600. The caller cannot supply an image, command, mount, secret, service
+account, or raw Job manifest.
+
+The endpoint reads the typed `kubernetes_runtime` member from API settings and uses the
+same runtime factory as scheduler and notebook execution. Forwarder identity, worker and
+forwarder pull policies, workload pull-secret names, namespace discovery, and bounded
+diagnostics therefore cannot be selected independently by this request. The configured
+workload-security profile and per-kind ServiceAccount decision are included in restricted
+validation identity, so a legacy proof does not authorize a `restricted-v1` execution.
+
+The response contains `validations`, one `WorkerValidationResult` per selected kind.
+Existing result fields remain unchanged. The additive `artifacts` field returns
+validated result-envelope metadata, and `logs` returns bounded Kubernetes pod logs by
+container name. Each result is persisted as a `WorkerValidationRecord`; a passing record
+uses the exact identity the Kubernetes scheduler checks.
+
+The operation is synchronous and may remain open until the requested Job deadline plus
+runtime completion overhead. Repeating it creates a new immutable proof record; it does
+not mutate prior records. See
+[Generic Kubernetes Worker Validation Proof](kubernetes-generic-worker-validation-proof.md).
 
 ## Internal Modules
 

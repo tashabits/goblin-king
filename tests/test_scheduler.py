@@ -15,12 +15,13 @@ from goblin_king.contracts import (
     WorkerValidationRecord,
     utc_now,
 )
+from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 from goblin_king.registry import GoblinRegistry
 from goblin_king.resource_policies import ResourcePolicySet
 from goblin_king.runtime import DockerRuntime
 from goblin_king.scheduler import Scheduler
 from goblin_king.store import SQLiteStore
-from goblin_king.validation import WorkerValidationResult
+from goblin_king.validation import WorkerValidationResult, kubernetes_image_identity
 from goblin_king.workers import WorkerImageDefinition, WorkerImageMap
 
 
@@ -63,6 +64,42 @@ def build_docker_scheduler(tmp_path: Path) -> tuple[Scheduler, SQLiteStore]:
         worker_id="test-worker",
         runtime_mode="docker",
         workers=workers,
+    )
+    return scheduler, store
+
+
+def build_kubernetes_scheduler(
+    tmp_path: Path,
+    *,
+    settings: KubernetesRuntimeSettings | None = None,
+) -> tuple[Scheduler, SQLiteStore]:
+    """Create a Kubernetes-mode scheduler for validation identity gate tests."""
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    registry = GoblinRegistry.from_definitions(
+        [
+            GoblinDefinition(
+                kind="example.validation",
+                display_name="Example Validation",
+                module="container.only",
+            )
+        ]
+    )
+    workers = WorkerImageMap.from_definitions(
+        {
+            "example.validation": WorkerImageDefinition(
+                context=tmp_path,
+                image="registry.example/validation@sha256:abc",
+            )
+        },
+        root=tmp_path,
+    )
+    scheduler = Scheduler(
+        registry=registry,
+        store=store,
+        worker_id="test-worker",
+        runtime_mode="kubernetes",
+        workers=workers,
+        kubernetes_runtime_settings=settings,
     )
     return scheduler, store
 
@@ -261,6 +298,129 @@ def test_validation_gate_reuses_passing_proof(tmp_path: Path, monkeypatch) -> No
     )
 
     assert error is None
+
+
+def test_kubernetes_validation_gate_accepts_public_operation_identity(tmp_path: Path) -> None:
+    """Verify preflight proof uses the exact identity recorded by Kubernetes validation."""
+    scheduler, store = build_kubernetes_scheduler(tmp_path)
+    identity = kubernetes_image_identity("registry.example/validation@sha256:abc")
+    store.save_worker_validation(
+        WorkerValidationRecord(
+            id="kubernetes-validation-current",
+            kind="example.validation",
+            image="registry.example/validation@sha256:abc",
+            image_digest=identity,
+            contract_version="goblin-king/v1alpha1",
+            validator_version="goblin-king-validator/v1",
+            validated_at=utc_now(),
+            status="passed",
+        )
+    )
+
+    error = scheduler._validate_before_container_run(
+        JobRecord(
+            id="job-kubernetes",
+            kind="example.validation",
+            input={},
+            created_at=utc_now(),
+        ),
+        "example.validation",
+        resource_policy={},
+    )
+
+    assert error is None
+
+
+def test_restricted_gate_rejects_legacy_proof_and_uses_per_kind_identity(
+    tmp_path: Path,
+) -> None:
+    """Verify legacy proof cannot authorize a restricted per-kind workload contract."""
+    settings = KubernetesRuntimeSettings.model_validate(
+        {
+            "workload_security_profile": "restricted-v1",
+            "restricted_workload": {
+                "worker_service_account_names": {
+                    "example.validation": "goblin-validation-reader"
+                }
+            },
+        }
+    )
+    scheduler, store = build_kubernetes_scheduler(tmp_path, settings=settings)
+    image = "registry.example/validation@sha256:abc"
+    legacy_identity = kubernetes_image_identity(image)
+    restricted_identity = settings.validation_image_identity(
+        image,
+        "example.validation",
+    )
+    store.save_worker_validation(
+        WorkerValidationRecord(
+            id="legacy-kubernetes-validation",
+            kind="example.validation",
+            image=image,
+            image_digest=legacy_identity,
+            contract_version="goblin-king/v1alpha1",
+            validator_version="goblin-king-validator/v1",
+            validated_at=utc_now(),
+            status="passed",
+        )
+    )
+    job = JobRecord(
+        id="job-kubernetes-restricted",
+        kind="example.validation",
+        input={},
+        created_at=utc_now(),
+    )
+
+    assert scheduler._validate_before_container_run(
+        job,
+        "example.validation",
+        resource_policy={},
+    ) is not None
+
+    store.save_worker_validation(
+        WorkerValidationRecord(
+            id="restricted-kubernetes-validation",
+            kind="example.validation",
+            image=image,
+            image_digest=restricted_identity,
+            contract_version="goblin-king/v1alpha1",
+            validator_version="goblin-king-validator/v1",
+            validated_at=utc_now(),
+            status="passed",
+            effective_policy={
+                "kubernetes_workload_security": (
+                    settings.effective_workload_security("example.validation")
+                )
+            },
+        )
+    )
+
+    assert scheduler._validate_before_container_run(
+        job,
+        "example.validation",
+        resource_policy={},
+    ) is None
+    assert restricted_identity != legacy_identity
+
+
+def test_kubernetes_validation_gate_names_attainable_repair_command(tmp_path: Path) -> None:
+    """Verify missing proof points operators to the Kubernetes validation path."""
+    scheduler, _ = build_kubernetes_scheduler(tmp_path)
+
+    error = scheduler._validate_before_container_run(
+        JobRecord(
+            id="job-kubernetes",
+            kind="example.validation",
+            input={},
+            created_at=utc_now(),
+        ),
+        "example.validation",
+        resource_policy={},
+    )
+
+    assert error is not None
+    assert "--runtime kubernetes" in error
+    assert "--build" not in error
 
 
 def test_validation_gate_blocks_failed_jit_validation(tmp_path: Path, monkeypatch) -> None:

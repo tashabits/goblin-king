@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 from goblin_king.api_settings import ApiSettings
 from goblin_king.cli import app
 from goblin_king.contracts import GoblinResult
+from goblin_king.kubernetes_runtime_factory import build_kubernetes_runtime
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 from goblin_king.registry import GoblinRegistry
 from goblin_king.scheduler import Scheduler
@@ -20,17 +21,48 @@ runner = CliRunner()
 CONTROL_DIGEST = "sha256:" + "a" * 64
 
 
+def test_shared_runtime_factory_preserves_typed_settings_and_namespace(monkeypatch) -> None:
+    """Verify control-plane callers share settings, namespace, and diagnostic runtime."""
+    monkeypatch.setattr(
+        "goblin_king.kubernetes_runtime.current_kubernetes_namespace",
+        lambda: "shared-workers",
+    )
+    settings = KubernetesRuntimeSettings(
+        result_forwarder_image=f"registry.example/control@{CONTROL_DIGEST}",
+        worker_image_pull_policy="Never",
+        result_forwarder_image_pull_policy="Always",
+        workload_image_pull_secret_names=["registry-main"],
+    )
+
+    runtime = build_kubernetes_runtime(
+        workers=WorkerImageMap.from_path("goblin-images.json"),
+        redis_url="redis://redis:6379/0",
+        event_bus=None,
+        settings=settings,
+    )
+
+    assert runtime.settings is settings
+    assert runtime.namespace == "shared-workers"
+    assert runtime.result_forwarder_image.endswith(CONTROL_DIGEST)
+    assert runtime.image_pull_policy == "Never"
+    assert runtime.result_forwarder_image_pull_policy == "Always"
+    assert runtime.workload_image_pull_secret_names == ("registry-main",)
+
+
 def test_scheduler_reuses_typed_settings_for_static_and_dynamic_workers(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     captured: list[KubernetesRuntimeSettings] = []
 
-    class FakeKubernetesRuntime:
-        def __init__(self, **kwargs) -> None:
-            captured.append(kwargs["settings"])
+    def fake_build_kubernetes_runtime(**kwargs):
+        captured.append(kwargs["settings"])
+        return object()
 
-    monkeypatch.setattr("goblin_king.scheduler.KubernetesRuntime", FakeKubernetesRuntime)
+    monkeypatch.setattr(
+        "goblin_king.scheduler.build_kubernetes_runtime",
+        fake_build_kubernetes_runtime,
+    )
     settings = KubernetesRuntimeSettings(
         result_forwarder_image=f"registry.example/control@{CONTROL_DIGEST}"
     )
@@ -121,14 +153,18 @@ def test_direct_submit_forwards_kubernetes_workload_settings(tmp_path: Path, mon
     captured = {}
 
     class FakeKubernetesRuntime:
-        def __init__(self, **kwargs) -> None:
-            captured.update(kwargs)
-
         @staticmethod
         def run(*_args, **_kwargs):
             return GoblinResult.ok(data={"ok": True})
 
-    monkeypatch.setattr("goblin_king.cli.KubernetesRuntime", FakeKubernetesRuntime)
+    def fake_build_kubernetes_runtime(**kwargs):
+        captured.update(kwargs)
+        return FakeKubernetesRuntime()
+
+    monkeypatch.setattr(
+        "goblin_king.cli.build_kubernetes_runtime",
+        fake_build_kubernetes_runtime,
+    )
     input_path = tmp_path / "input.json"
     input_path.write_text('{"message":"hello"}', encoding="utf-8")
     result = runner.invoke(

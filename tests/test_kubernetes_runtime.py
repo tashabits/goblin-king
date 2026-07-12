@@ -5,6 +5,10 @@ from types import SimpleNamespace
 import pytest
 
 from goblin_king.contracts import GoblinContext
+from goblin_king.kubernetes_pod_diagnostics import (
+    DEFAULT_KUBERNETES_LOG_CAPTURE_BYTES,
+    read_bounded_kubernetes_pod_log,
+)
 from goblin_king.kubernetes_runtime import KubernetesRuntime as ExtractedKubernetesRuntime
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 from goblin_king.runtime import KubernetesRuntime
@@ -175,3 +179,60 @@ def test_image_pull_failure_returns_prompt_bounded_diagnostic(monkeypatch) -> No
     assert (result.error or "").endswith("...")
     assert len(result.error or "") <= 500
     assert core.request_timeout == 5
+
+
+def test_failed_job_worker_logs_share_transport_and_size_bounds() -> None:
+    """Verify normal execution and validation use the same bounded log reader."""
+
+    class Core:
+        list_timeout = None
+        log_timeout = None
+        log_limit = None
+
+        def list_namespaced_pod(self, **kwargs):
+            self.list_timeout = kwargs.get("_request_timeout")
+            pod = SimpleNamespace(metadata=SimpleNamespace(name="worker-pod"))
+            return SimpleNamespace(items=[pod])
+
+        def read_namespaced_pod_log(self, **kwargs):
+            self.log_timeout = kwargs.get("_request_timeout")
+            self.log_limit = kwargs.get("limit_bytes")
+            return "x" * 1_000
+
+    core = Core()
+
+    logs = _runtime()._worker_logs(core, "worker-job")
+
+    assert core.list_timeout == 5
+    assert core.log_timeout == 5
+    assert core.log_limit == DEFAULT_KUBERNETES_LOG_CAPTURE_BYTES
+    assert len(logs) == 500
+    assert logs.endswith("...")
+
+
+def test_kubernetes_log_reader_decodes_client_byte_responses() -> None:
+    """Return readable validation logs when the Kubernetes client yields bytes."""
+    class LogResponse:
+        data = "worker output \N{CHECK MARK}".encode()
+        released = False
+
+        def release_conn(self) -> None:
+            self.released = True
+
+    class ByteLogCore:
+        def __init__(self) -> None:
+            self.response = LogResponse()
+
+        def read_namespaced_pod_log(self, **kwargs):
+            assert kwargs["_preload_content"] is False
+            return self.response
+
+    core = ByteLogCore()
+
+    assert read_bounded_kubernetes_pod_log(
+        core,
+        namespace="workers",
+        pod_name="worker-pod",
+        container="worker",
+    ) == "worker output \N{CHECK MARK}"
+    assert core.response.released is True

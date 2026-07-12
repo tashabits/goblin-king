@@ -26,6 +26,8 @@ from goblin_king.contracts import (
     utc_now,
 )
 from goblin_king.store import SQLiteStore
+from goblin_king.validation import WorkerValidationResult
+from goblin_king.workers import WorkerImageMap
 from tests.api_helpers import auth_headers, build_api_client
 
 
@@ -85,6 +87,107 @@ def test_goblins_endpoint_reports_validation_status(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert echo["validation_status"]["state"] == "validated"
     assert echo["validation_status"]["image_digest"] == "sha256:echo"
+
+
+def test_admin_kubernetes_worker_validation_persists_scheduler_proof(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Verify the authenticated operation returns diagnostics and records exact proof."""
+    captured: dict[str, object] = {}
+
+    def fake_validate(**kwargs):
+        captured.update(kwargs)
+        return [
+            WorkerValidationResult(
+                kind="example.echo",
+                ok=True,
+                image="goblin-king-example-echo:local",
+                image_digest="kubernetes:goblin-king-example-echo:local",
+                validated_at=utc_now(),
+                result_status="success",
+                artifact_count=1,
+                artifacts=[
+                    ArtifactRecord(
+                        name="proof.txt",
+                        uri="artifact://proof.txt",
+                        media_type="text/plain",
+                    )
+                ],
+                checks=["kubernetes-job", "result-envelope", "artifact-metadata"],
+                exit_code=0,
+                logs={"worker": "validation log"},
+            )
+        ]
+
+    monkeypatch.setattr("goblin_king.api.validate_workers_with_kubernetes", fake_validate)
+    client, store, _ = build_client(tmp_path)
+
+    unauthorized = client.post(
+        "/admin/workers/validate-kubernetes",
+        json={"kinds": ["example.echo"], "input": {"message": "proof"}},
+    )
+    response = client.post(
+        "/admin/workers/validate-kubernetes",
+        headers=auth_headers(),
+        json={
+            "kinds": ["example.echo"],
+            "input": {"message": "proof"},
+            "require_success": True,
+            "timeout_seconds": 41,
+        },
+    )
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200
+    validation = response.json()["validations"][0]
+    assert validation["image_digest"] == "kubernetes:goblin-king-example-echo:local"
+    assert validation["logs"] == {"worker": "validation log"}
+    assert validation["artifacts"][0]["name"] == "proof.txt"
+    assert captured["input_payload"] == {"message": "proof"}
+    assert captured["timeout_seconds"] == 41
+    assert (
+        captured["kubernetes_runtime_settings"]
+        is client.app.state.goblin_king.settings.kubernetes_runtime
+    )
+    stored = store.get_latest_worker_validation(
+        kind="example.echo",
+        image_digest="kubernetes:goblin-king-example-echo:local",
+        contract_version="goblin-king/v1alpha1",
+        validator_version="goblin-king-validator/v1",
+    )
+    assert stored is not None
+    assert stored.status == "passed"
+    assert any(
+        record.action == "worker.kubernetes_validated"
+        for record in store.list_audit_logs(limit=20)
+    )
+
+
+def test_admin_kubernetes_validation_reports_missing_worker_mapping(tmp_path: Path) -> None:
+    """Verify an absent configured mapping fails without contacting the cluster."""
+    client, store, _ = build_client(tmp_path)
+    client.app.state.goblin_king.workers = WorkerImageMap.from_definitions({})
+
+    response = client.post(
+        "/admin/workers/validate-kubernetes",
+        headers=auth_headers(),
+        json={
+            "kinds": ["example.echo"],
+            "input": {},
+            "require_success": True,
+            "timeout_seconds": 10,
+        },
+    )
+
+    assert response.status_code == 200
+    validation = response.json()["validations"][0]
+    assert validation["ok"] is False
+    assert "missing Docker worker image mapping for 'example.echo'" in validation["error"]
+    assert validation["logs"] == {}
+    persisted = store.latest_worker_validation_for_kind("example.echo")
+    assert persisted is not None
+    assert persisted.status == "failed"
 
 
 def test_goblins_endpoint_uses_project_settings(tmp_path: Path) -> None:

@@ -55,6 +55,34 @@ def test_notebook_and_repository_validation_share_runtime_settings(
         fake_kubernetes_validation,
     )
 
+    def fake_generic_validation(**kwargs):
+        captured.append(kwargs["kubernetes_runtime_settings"])
+        return [
+            WorkerValidationResult(
+                kind="example.echo",
+                ok=True,
+                image="goblin-king-example-echo:local",
+                image_digest=runtime_settings.validation_image_identity(
+                    "goblin-king-example-echo:local",
+                    "example.echo",
+                ),
+                result_status="success",
+                checks=["kubernetes-job"],
+            )
+        ]
+
+    monkeypatch.setattr(
+        "goblin_king.api.validate_workers_with_kubernetes",
+        fake_generic_validation,
+    )
+
+    generic_validation = client.post(
+        "/admin/workers/validate-kubernetes",
+        headers=_admin_headers(),
+        json={"kinds": ["example.echo"], "input": {}},
+    )
+    assert generic_validation.status_code == 200
+
     notebook = client.post(
         "/notebooks/goblins",
         headers=_admin_headers(),
@@ -113,10 +141,10 @@ def test_notebook_and_repository_validation_share_runtime_settings(
     )
     assert repository_validation.status_code == 200
 
-    assert len(captured) == 2
+    assert len(captured) == 3
     assert all(settings is api_settings.kubernetes_runtime for settings in captured)
     store = SQLiteStore(api_settings.db)
-    for kind in ("notebook.settings-proof", repository_kind):
+    for kind in ("example.echo", "notebook.settings-proof", repository_kind):
         proof = store.latest_worker_validation_for_kind(kind)
         assert proof is not None
         assert proof.effective_policy == {

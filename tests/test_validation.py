@@ -216,15 +216,20 @@ def test_api_kubernetes_notebook_validation_uses_short_job_id(monkeypatch) -> No
     )
 
     class FakeKubernetesRuntime:
-        def __init__(self, **kwargs) -> None:
-            captured["settings"] = kwargs["settings"]
-
         def run(self, _definition, _entrypoint, _payload, context, **_kwargs):
             captured["job_id"] = context.metadata["job_id"]
             captured["kind"] = context.metadata["kind"]
             return GoblinResult.ok(data={"ok": True})
 
-    monkeypatch.setattr(api_module, "KubernetesRuntime", FakeKubernetesRuntime)
+    def fake_build_kubernetes_runtime(**kwargs):
+        captured["settings"] = kwargs["settings"]
+        return FakeKubernetesRuntime()
+
+    monkeypatch.setattr(
+        api_module,
+        "build_kubernetes_runtime",
+        fake_build_kubernetes_runtime,
+    )
 
     settings = KubernetesRuntimeSettings(
         result_forwarder_image="registry.example/control@sha256:" + "a" * 64,

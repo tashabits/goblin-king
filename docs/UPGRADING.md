@@ -53,6 +53,34 @@ inspection. A configured false read-only-root policy is rejected as a conflict. 
 [Kubernetes Workload Security](kubernetes-workload-security.md) before enabling per-kind
 ServiceAccounts.
 
+## Generic Kubernetes Validation Upgrade
+
+This release adds an attainable first-proof path for generic registry workers. No
+database migration, API settings migration, registry rewrite, worker image-map rewrite,
+or worker contract change is required.
+
+- Existing `goblin-king workers validate` calls still use Docker by default.
+- Use `--runtime kubernetes` only when intentionally creating Kubernetes proof.
+- `--build` and `--run-root` remain Docker-only.
+- `WorkerValidationResult` keeps all existing fields and adds default-empty `artifacts`
+  and `logs` fields.
+- Existing `KubernetesRuntime` construction and `run(...) -> GoblinResult` behavior are
+  unchanged; the additive observed-run path is used by validation to capture diagnostics
+  before transient Job cleanup.
+- Generic API validation, notebook validation, scheduler execution, and direct
+  Kubernetes CLI execution use one typed runtime factory. Existing API settings and CLI
+  defaults remain valid; non-default forwarder/pull settings now apply to generic proof
+  as well as normal execution.
+- When `restricted-v1` is enabled, generic validation identity includes the effective
+  workload-security contract and per-kind ServiceAccount. Existing legacy proof becomes
+  stale by design and each affected kind must be revalidated.
+- Existing SQLite and Redis layouts are unchanged.
+
+After installing the updated API and scheduler images, invoke
+`POST /admin/workers/validate-kubernetes` for each generic worker identity before its
+first normal Kubernetes job. Prefer digest-pinned image references. See the
+[exact proof guide](kubernetes-generic-worker-validation-proof.md).
+
 ## Docker Data-Volume Placement
 
 Deployments that set `GOBLIN_KING_DOCKER_DATA_VOLUME` must also set an absolute

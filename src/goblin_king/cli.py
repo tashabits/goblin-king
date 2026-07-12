@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import uuid4
 
 import typer
@@ -96,14 +96,17 @@ from goblin_king.kubernetes_cli import (
     WorkloadImagePullSecretsOption,
     kubernetes_runtime_settings,
 )
+from goblin_king.kubernetes_runtime_factory import build_kubernetes_runtime
 from goblin_king.kubernetes_runtime_settings import (
     DEFAULT_KUBERNETES_IMAGE_PULL_POLICY,
     DEFAULT_RESULT_FORWARDER_IMAGE,
+    KubernetesRuntimeSettings,
 )
+from goblin_king.kubernetes_validation import validate_workers_with_kubernetes
 from goblin_king.metadata import goblin_job_metadata
 from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.resource_policies import ResourcePolicyError, ResourcePolicySet
-from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRuntime, new_run_context
+from goblin_king.runtime import DockerRuntime, InProcessRuntime, new_run_context
 from goblin_king.runtime_helpers import docker_policy_args, kubernetes_policy_fields
 from goblin_king.scheduler import DEFAULT_INTERVAL_SECONDS, Scheduler, next_run_after
 from goblin_king.smoke import run_adopter_project_smoke
@@ -135,7 +138,7 @@ runs_app = typer.Typer(help="Inspect goblin runs.")
 schedules_app = typer.Typer(help="Create and inspect schedules.")
 scheduler_app = typer.Typer(help="Run scheduler passes.")
 smoke_app = typer.Typer(help="Run local end-to-end smoke proofs.")
-workers_app = typer.Typer(help="Build Docker worker images.")
+workers_app = typer.Typer(help="Build and validate container worker images.")
 resource_policies_app = typer.Typer(help="Inspect runtime resource policy mappings.")
 directory_ui_app = typer.Typer(help="Run the Goblin Directory browser service.")
 DockerRunRootOption = Annotated[
@@ -145,6 +148,7 @@ DockerRunRootOption = Annotated[
         help="Writable host path shared with the Docker worker data volume.",
     ),
 ]
+ValidationRuntimeOption = Literal["docker", "kubernetes"]
 app.add_typer(api_app, name="api")
 app.add_typer(auth_app, name="auth")
 app.add_typer(goblins_app, name="goblins")
@@ -676,9 +680,10 @@ def submit_job(
             resource_policy=policy,
         )
     elif runtime == "kubernetes":
-        result = KubernetesRuntime(
+        result = build_kubernetes_runtime(
             workers=worker_map,
             redis_url=redis_url,
+            event_bus=None,
             settings=kubernetes_runtime_settings(
                 result_forwarder_image=result_forwarder_image,
                 worker_image_pull_policy=worker_image_pull_policy,
@@ -1357,6 +1362,10 @@ def validate_worker_contracts(
         Path | None,
         typer.Option("--project", help="Project settings path to validate discovered workers."),
     ] = None,
+    runtime: Annotated[
+        ValidationRuntimeOption,
+        typer.Option("--runtime", help="Validation runtime; Docker remains the default."),
+    ] = "docker",
     kind: Annotated[
         list[str] | None,
         typer.Option("--kind", help="Validate only this goblin kind; repeatable."),
@@ -1377,6 +1386,15 @@ def validate_worker_contracts(
         str,
         typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
     ] = DEFAULT_REDIS_URL,
+    result_forwarder_image: ResultForwarderImageOption = DEFAULT_RESULT_FORWARDER_IMAGE,
+    worker_image_pull_policy: WorkerImagePullPolicyOption = (
+        DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
+    ),
+    result_forwarder_image_pull_policy: ResultForwarderImagePullPolicyOption = (
+        DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
+    ),
+    workload_image_pull_secrets: WorkloadImagePullSecretsOption = None,
+    kubernetes_runtime_settings_path: KubernetesRuntimeSettingsPathOption = None,
     run_root: DockerRunRootOption = None,
     json_output: Annotated[
         bool,
@@ -1384,7 +1402,7 @@ def validate_worker_contracts(
     ] = False,
     db: Annotated[Path, typer.Option("--db", help="SQLite database path.")] = DEFAULT_DB_PATH,
 ) -> None:
-    """Run Docker workers with temp contract mounts and validate result envelopes."""
+    """Run workers through Docker or Kubernetes and validate result envelopes."""
     if project is not None:
         loaded_registry = _load_project_registry(project)
         loaded_workers = _load_project_workers(_load_project_settings(project))
@@ -1394,20 +1412,58 @@ def validate_worker_contracts(
             raise typer.Exit(1)
         loaded_registry = _load_registry(registry)
         loaded_workers = _load_workers(images)
-    results = validate_workers(
-        registry=loaded_registry,
-        workers=loaded_workers,
-        input_payload=_load_input(input_path),
-        kinds=kind,
-        build=build,
-        require_success=require_success,
-        timeout_seconds=timeout_seconds,
-        redis_url=redis_url,
-        run_root=run_root,
-    )
+    input_payload = _load_input(input_path)
+    effective_kubernetes_settings: KubernetesRuntimeSettings | None = None
+    if runtime == "kubernetes":
+        if build:
+            typer.echo("--build is available only with --runtime docker", err=True)
+            raise typer.Exit(1)
+        if run_root is not None:
+            typer.echo("--run-root is available only with --runtime docker", err=True)
+            raise typer.Exit(1)
+        effective_kubernetes_settings = kubernetes_runtime_settings(
+            result_forwarder_image=result_forwarder_image,
+            worker_image_pull_policy=worker_image_pull_policy,
+            result_forwarder_image_pull_policy=result_forwarder_image_pull_policy,
+            workload_image_pull_secrets=workload_image_pull_secrets,
+            settings_path=kubernetes_runtime_settings_path,
+        )
+        results = validate_workers_with_kubernetes(
+            registry=loaded_registry,
+            workers=loaded_workers,
+            input_payload=input_payload,
+            kinds=kind,
+            require_success=require_success,
+            timeout_seconds=timeout_seconds or 120,
+            redis_url=redis_url,
+            kubernetes_runtime_settings=effective_kubernetes_settings,
+        )
+    else:
+        results = validate_workers(
+            registry=loaded_registry,
+            workers=loaded_workers,
+            input_payload=input_payload,
+            kinds=kind,
+            build=build,
+            require_success=require_success,
+            timeout_seconds=timeout_seconds,
+            redis_url=redis_url,
+            run_root=run_root,
+        )
     store = SQLiteStore(db)
     for result in results:
-        store.save_worker_validation(validation_record(result))
+        effective_policy = (
+            {
+                "kubernetes_workload_security": (
+                    effective_kubernetes_settings.effective_workload_security(result.kind)
+                )
+            }
+            if effective_kubernetes_settings is not None
+            else None
+        )
+        store.save_worker_validation(
+            validation_record(result, effective_policy=effective_policy)
+        )
     _print_validation_results(results, json_output=json_output)
 
 

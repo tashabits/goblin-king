@@ -18,7 +18,12 @@ from goblin_king.events import (
 )
 from goblin_king.kubernetes_job_manifest import build_kubernetes_job_manifest
 from goblin_king.kubernetes_placement import placement_metadata
-from goblin_king.kubernetes_pod_diagnostics import find_image_pull_failure
+from goblin_king.kubernetes_pod_diagnostics import (
+    KubernetesRunObservation,
+    capture_kubernetes_pod_diagnostics,
+    find_image_pull_failure,
+    read_kubernetes_worker_log_excerpt,
+)
 from goblin_king.kubernetes_runtime_settings import (
     DEFAULT_KUBERNETES_IMAGE_PULL_POLICY,
     DEFAULT_RESULT_FORWARDER_IMAGE,
@@ -84,19 +89,44 @@ class KubernetesRuntime:
         resource_policy: ResourcePolicy | None = None,
     ) -> GoblinResult:
         """Create a Kubernetes Job for one worker and return its result envelope."""
+        return self.run_observed(
+            definition,
+            _entrypoint,
+            input_payload,
+            context,
+            timeout_seconds=timeout_seconds,
+            resource_policy=resource_policy,
+            _capture_diagnostics=False,
+        ).result
+
+    def run_observed(
+        self,
+        definition: GoblinDefinition,
+        _entrypoint: Callable[[dict[str, Any], GoblinContext], Any] | None,
+        input_payload: dict[str, Any],
+        context: GoblinContext,
+        *,
+        timeout_seconds: int | None = None,
+        resource_policy: ResourcePolicy | None = None,
+        _capture_diagnostics: bool = True,
+    ) -> KubernetesRunObservation:
+        """Run one Job and capture bounded diagnostics before transient cleanup."""
         try:
             worker = self.workers.get(definition.kind)
         except WorkerConfigError as error:
-            return GoblinResult.failed(error=str(error))
+            return KubernetesRunObservation(result=GoblinResult.failed(error=str(error)))
 
         try:
             batch, core = kubernetes_clients()
         except Exception as error:  # pragma: no cover - depends on cluster config
-            return GoblinResult.failed(error=f"kubernetes runtime unavailable: {error}")
+            return KubernetesRunObservation(
+                result=GoblinResult.failed(error=f"kubernetes runtime unavailable: {error}")
+            )
 
         name = kubernetes_name(f"gk-{definition.kind}-{context.run_id}")
         config_name = f"{name}-input"
         worker_id = f"k8s-worker-{context.run_id}"
+        job_created = False
         self._emit_worker_event("worker.started", context, worker_id, {"kind": definition.kind})
         try:
             core.create_namespaced_config_map(
@@ -125,28 +155,40 @@ class KubernetesRuntime:
                     kind=definition.kind,
                 ),
             )
-            result = self._wait_for_result(
+            job_created = True
+            observation = self._wait_for_result_observed(
                 batch=batch,
                 core=core,
                 name=name,
                 run_id=context.run_id,
                 timeout_seconds=timeout_seconds,
-            )
+            ).with_job_created()
         except Exception as error:  # pragma: no cover - cluster errors vary by provider
-            result = GoblinResult.failed(
-                error=f"{definition.kind} Kubernetes worker failed: {error}"
+            observation = KubernetesRunObservation(
+                result=GoblinResult.failed(
+                    error=f"{definition.kind} Kubernetes worker failed: {error}"
+                ),
+                job_created=job_created,
             )
         finally:
             self._record_worker_heartbeats(context)
+            if _capture_diagnostics and job_created:
+                observation = capture_kubernetes_pod_diagnostics(
+                    core=core,
+                    namespace=self.namespace,
+                    job_name=name,
+                    observation=observation,
+                )
             self._cleanup(batch=batch, core=core, job_name=name, config_name=config_name)
 
+        result = observation.result
         self._emit_worker_event(
             "worker.completed" if result.status == "success" else "worker.failed",
             context,
             worker_id,
             {"kind": definition.kind, "status": result.status, "error": result.error},
         )
-        return result
+        return observation
 
     def _job_manifest(
         self,
@@ -187,47 +229,63 @@ class KubernetesRuntime:
         timeout_seconds: int | None,
     ) -> GoblinResult:
         """Wait for Job completion while failing promptly on a known image-pull error."""
+        return self._wait_for_result_observed(
+            batch=batch,
+            core=core,
+            name=name,
+            run_id=run_id,
+            timeout_seconds=timeout_seconds,
+        ).result
+
+    def _wait_for_result_observed(
+        self,
+        *,
+        batch: Any,
+        core: Any,
+        name: str,
+        run_id: str,
+        timeout_seconds: int | None,
+    ) -> KubernetesRunObservation:
+        """Wait for completion while retaining contract and startup diagnostics."""
         started = time.monotonic()
         limit = (timeout_seconds or 300) + 30
         while time.monotonic() - started < limit:
             job = batch.read_namespaced_job(name=name, namespace=self.namespace)
             if getattr(job.status, "succeeded", 0):
-                result = self._load_result(run_id)
-                return result or GoblinResult.failed(
-                    error=f"{name} completed without a Redis result"
+                observation = self._load_result_observed(run_id)
+                if observation.result_received:
+                    return observation
+                return KubernetesRunObservation(
+                    result=GoblinResult.failed(
+                        error=f"{name} completed without a Redis result"
+                    )
                 )
             if getattr(job.status, "failed", 0):
                 logs = self._worker_logs(core, name)
-                return GoblinResult.failed(error=f"{name} failed: {logs}")
+                return KubernetesRunObservation(
+                    result=GoblinResult.failed(error=f"{name} failed: {logs}")
+                )
             pull_failure = find_image_pull_failure(
                 core,
                 namespace=self.namespace,
                 job_name=name,
             )
             if pull_failure is not None:
-                return GoblinResult.failed(error=pull_failure.describe(name))
+                return KubernetesRunObservation(
+                    result=GoblinResult.failed(error=pull_failure.describe(name))
+                )
             time.sleep(self.poll_interval_seconds)
-        return GoblinResult.failed(error=f"{name} exceeded wait timeout")
+        return KubernetesRunObservation(
+            result=GoblinResult.failed(error=f"{name} exceeded wait timeout")
+        )
 
     def _worker_logs(self, core: Any, job_name: str) -> str:
         """Return a compact log excerpt for the worker pod behind a Job."""
-        try:
-            pods = core.list_namespaced_pod(
-                namespace=self.namespace,
-                label_selector=f"job-name={job_name}",
-            )
-            if not pods.items:
-                return "no worker pod found"
-            return str(
-                core.read_namespaced_pod_log(
-                    name=pods.items[0].metadata.name,
-                    namespace=self.namespace,
-                    container="worker",
-                    tail_lines=40,
-                )
-            )
-        except Exception as error:  # pragma: no cover - diagnostic best effort
-            return f"unable to read worker logs: {error}"
+        return read_kubernetes_worker_log_excerpt(
+            core,
+            namespace=self.namespace,
+            job_name=job_name,
+        )
 
     def _load_result(self, run_id: str) -> GoblinResult | None:
         """Load a Kubernetes worker result from Redis."""
@@ -242,6 +300,23 @@ class KubernetesRuntime:
             return GoblinResult.model_validate_json(result_json)
         except ValueError as error:
             return GoblinResult.failed(error=f"worker produced invalid result JSON: {error}")
+
+    def _load_result_observed(self, run_id: str) -> KubernetesRunObservation:
+        """Load a result while distinguishing missing and invalid envelopes."""
+        result = self._load_result(run_id)
+        if result is None:
+            return KubernetesRunObservation(
+                result=GoblinResult.failed(error="worker result was not received")
+            )
+        invalid_prefix = "worker produced invalid result JSON:"
+        envelope_valid = not (
+            result.status == "failed" and (result.error or "").startswith(invalid_prefix)
+        )
+        return KubernetesRunObservation(
+            result=result,
+            result_received=True,
+            result_envelope_valid=envelope_valid,
+        )
 
     def _record_worker_heartbeats(self, context: GoblinContext) -> None:
         """Read heartbeat payloads left by a worker in Redis and persist them."""
