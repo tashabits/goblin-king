@@ -520,6 +520,14 @@ Or run the local simulation target:
 make simulate
 ```
 
+Hardened Compose deployments that set `GOBLIN_KING_DOCKER_DATA_VOLUME` must also set
+`GOBLIN_KING_RUN_ROOT` to an absolute writable path inside that volume's scheduler
+mount. The bundled Compose stack uses `/app/.goblin-king/runs`. A deployment with
+read-only config at `/config` and writable state at `/data` should use `/data/runs` or
+pass `--run-root /data/runs`; relative named-volume roots are rejected before work is
+leased. See [Writable Docker Runtime Data](docs/writable-docker-runtime-data.md) for the
+Compose example, artifact placement, failure behavior, and expired-lease recovery.
+
 Run the API locally:
 
 ```bash
@@ -1032,6 +1040,8 @@ Goblin King provides:
   command for image builds, result envelopes, and artifacts.
 - [Goblin Resource Policies](docs/goblin-resource-policies.md): Per-goblin resource
   expectations, defaults, ceilings, and Docker/Kubernetes mapping.
+- [Writable Docker Runtime Data](docs/writable-docker-runtime-data.md): Hardened
+  read-only scheduler placement, shared run/artifact roots, and lease recovery.
 - [Release Checklist](docs/RELEASE_CHECKLIST.md): Internal wheel, Docker image, local
   CI, Docker adoption, and Helm proof checklist.
 - [Compatibility Matrix](docs/COMPATIBILITY.md): Contract and schema compatibility

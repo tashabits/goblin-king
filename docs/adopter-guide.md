@@ -193,6 +193,23 @@ goblin-king scheduler run-once \
 Use `goblin-king jobs list` and `goblin-king runs show <run-id> --with-job` to inspect
 the completed work.
 
+For a scheduler container with a read-only root or read-only `/config`, mount durable
+state separately and point Docker execution at it explicitly:
+
+```yaml
+environment:
+  GOBLIN_KING_DOCKER_DATA_VOLUME: my-project_goblin-data
+  GOBLIN_KING_RUN_ROOT: /data/runs
+volumes:
+  - ./goblin-config:/config:ro
+  - goblin-data:/data
+```
+
+The run root must be absolute and inside the mounted named volume. Its parent is also
+the base for relative artifact storage. See
+[Writable Docker Runtime Data](writable-docker-runtime-data.md) for the complete
+read-only Compose example and scheduler recovery semantics.
+
 ## Run With Compose
 
 For the bundled fixture, use:

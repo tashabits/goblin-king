@@ -327,6 +327,37 @@ def test_claim_due_jobs_once_and_reclaim_after_lease_expiry(tmp_path: Path) -> N
     assert expired[0].lease_owner == "worker-c"
 
 
+def test_claim_due_jobs_recovers_an_expired_running_lease(tmp_path: Path) -> None:
+    """Allow a replacement scheduler to recover work stranded after mark-running."""
+    now = utc_now()
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    store.save_job(
+        JobRecord(
+            id="job-stranded",
+            kind="example.echo",
+            input={},
+            created_at=now - timedelta(minutes=2),
+            due_at=now - timedelta(minutes=2),
+            status="running",
+            attempt_count=1,
+            lease_owner="dead-scheduler",
+            leased_until=now - timedelta(seconds=1),
+        )
+    )
+
+    recovered = store.claim_due_jobs(
+        worker_id="replacement-scheduler",
+        now=now,
+        lease_until=now + timedelta(seconds=60),
+        limit=10,
+    )
+
+    assert [job.id for job in recovered] == ["job-stranded"]
+    assert recovered[0].status == "leased"
+    assert recovered[0].attempt_count == 1
+    assert recovered[0].lease_owner == "replacement-scheduler"
+
+
 def test_store_persists_fanout_and_job_metadata(tmp_path: Path) -> None:
     """Verify fanout records and child job metadata persist."""
     now = utc_now()

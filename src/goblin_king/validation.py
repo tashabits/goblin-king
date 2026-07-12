@@ -13,6 +13,7 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 from goblin_king.contracts import GoblinDefinition, GoblinResult, WorkerValidationRecord
+from goblin_king.docker_runtime_paths import configured_docker_run_root
 from goblin_king.registry import GoblinRegistry
 from goblin_king.runtime import DockerRuntime, new_run_context
 from goblin_king.runtime_helpers import kubernetes_name
@@ -156,13 +157,11 @@ def validate_workers(
 
     with TemporaryDirectory(prefix="goblin-contract-validation-") as temp_dir:
         root = Path(temp_dir)
-        effective_run_root = run_root
-        if effective_run_root is None:
-            effective_run_root = (
-                Path(".goblin-king") / "runs"
-                if os.environ.get("GOBLIN_KING_DOCKER_DATA_VOLUME")
-                else root / "runs"
-            )
+        effective_run_root = configured_docker_run_root(run_root)
+        if effective_run_root is None and not os.environ.get(
+            "GOBLIN_KING_DOCKER_DATA_VOLUME"
+        ):
+            effective_run_root = root / "runs"
         runtime = DockerRuntime(
             workers=workers,
             redis_url=redis_url,
