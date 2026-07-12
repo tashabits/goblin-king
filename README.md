@@ -766,7 +766,9 @@ those systems instead of assuming one cloud.
 The default chart maps `persistence.artifactSubdirectory: artifacts` to
 `config.artifactRoot: /data/artifacts`. Keep those values aligned when using a custom
 PVC layout. The worker keeps an isolated `emptyDir`; only the trusted forwarder mounts
-the PVC artifact subpath. See
+the PVC artifact subpath. Under `restricted-v1`, the forwarder root remains read-only,
+the transient artifact source is mounted read-only, and only the result volume plus the
+narrow PVC subpath are writable. See
 [Kubernetes Artifact Retention](docs/kubernetes-artifact-retention.md) for failure,
 security, upgrade, and reproducible PNG/ZIP proof details.
 

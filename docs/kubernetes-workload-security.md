@@ -21,13 +21,21 @@ result envelopes, and worker behavior remain unchanged.
   `allowPrivilegeEscalation: false`, `privileged: false`, read-only root,
   `RuntimeDefault` seccomp, and all Linux capabilities dropped;
 - complete CPU and memory requests/limits for both containers;
-- only the result volume mounted writable in the result forwarder;
+- only the result volume mounted writable in the result forwarder when retention is disabled;
+- when retention is enabled, the forwarder additionally receives the transient artifact source
+  read-only and only the configured PVC artifact subpath writable, while the worker never receives
+  the PVC;
 - no arbitrary Pod fragment, credential value, command, volume, capability, or security
   context accepted from configuration.
 
 The default restricted IDs are `65532:65532` with `fsGroup: 65532`. Worker resources
 default to `100m`/`1` CPU and `64Mi`/`512Mi` memory request/limit. Forwarder resources
 default to `10m`/`100m` CPU and `16Mi`/`64Mi` memory.
+
+Mount composition happens before the restricted security profile is applied. A retention-enabled
+forwarder therefore keeps `readOnlyRootFilesystem: true` while writing only through its result
+volume and narrow PVC subpath; `/artifacts` remains a read-only source mount. The legacy profile
+with retention disabled keeps the established inline forwarder command and original mount shape.
 
 ## Helm Migration
 

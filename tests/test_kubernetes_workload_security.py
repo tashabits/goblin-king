@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from goblin_king.contracts import GoblinContext
+from goblin_king.kubernetes_artifact_config import KubernetesArtifactRetention
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 from goblin_king.kubernetes_workload_security import (
     KubernetesWorkloadSecurityError,
@@ -109,6 +110,41 @@ def test_restricted_profile_hardens_pod_and_every_container() -> None:
     assert forwarder["volumeMounts"] == [
         {"name": "result", "mountPath": "/goblin-result"}
     ]
+
+
+def test_restricted_profile_hardens_retention_mounts_after_composition() -> None:
+    settings = KubernetesRuntimeSettings(
+        workload_security_profile="restricted-v1",
+        artifact_retention=KubernetesArtifactRetention(
+            claim_name="release-data",
+            volume_subdirectory="artifacts",
+            uri_root="/data/artifacts",
+        ),
+    )
+    policy = ResourcePolicy.model_validate(
+        {"filesystem": {"read_only_root": True}}
+    )
+
+    pod_spec = _manifest(settings, resource_policy=policy)["spec"]["template"]["spec"]
+    worker, forwarder = pod_spec["containers"]
+
+    assert forwarder["securityContext"]["readOnlyRootFilesystem"] is True
+    assert forwarder["volumeMounts"] == [
+        {"name": "result", "mountPath": "/goblin-result"},
+        {"name": "artifacts", "mountPath": "/artifacts", "readOnly": True},
+        {
+            "name": "retained-artifacts",
+            "mountPath": "/goblin-retained-artifacts",
+            "subPath": "artifacts",
+        },
+    ]
+    assert "retained-artifacts" not in {
+        mount["name"] for mount in worker["volumeMounts"]
+    }
+    assert {
+        "name": "retained-artifacts",
+        "persistentVolumeClaim": {"claimName": "release-data"},
+    } in pod_spec["volumes"]
 
 
 def test_service_account_token_is_opt_in_for_one_declared_kind() -> None:

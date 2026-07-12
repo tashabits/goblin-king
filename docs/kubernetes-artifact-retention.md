@@ -47,6 +47,13 @@ the version-matched `goblin_king.kubernetes_result_forwarder` module from the co
 the retention validator and copier are part of that package. Operators using a separate forwarder
 image must publish the same Goblin King version before enabling the PVC settings.
 
+With `restricted-v1`, retention mounts are composed before the security profile is applied. The
+forwarder has a read-only root filesystem, reads the transient `/artifacts` mount read-only, and
+writes only to `/goblin-result` plus the configured PVC `subPath` mounted at
+`/goblin-retained-artifacts`. The worker still has no PVC mount. Linux read-only-root policy does not
+make mounted volumes read-only, so the per-mount `readOnly` flag and narrow PVC projection remain
+the relevant write boundary.
+
 ## Retention Contract
 
 For every declared artifact, the forwarder:
