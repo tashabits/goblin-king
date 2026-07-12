@@ -560,6 +560,7 @@ def test_jobs_endpoint_queues_without_running(tmp_path: Path) -> None:
     )
     assert events.status_code == 200
     assert events.json()["items"][0]["event_type"] == "job.queued"
+    assert events.json()["items"][0]["sequence"] > 0
 
 
 def test_jobs_endpoint_preserves_project_config_source_metadata(tmp_path: Path) -> None:

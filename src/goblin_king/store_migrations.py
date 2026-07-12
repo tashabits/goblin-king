@@ -89,6 +89,35 @@ def ensure_schema_columns(engine: Engine) -> None:
             connection.execute(text("ALTER TABLE schedules ADD COLUMN project_id TEXT"))
         if "project_id" not in event_columns:
             connection.execute(text("ALTER TABLE events ADD COLUMN project_id TEXT"))
+        if "sequence" not in event_columns:
+            connection.execute(
+                text("ALTER TABLE events ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0")
+            )
+        if connection.execute(text("SELECT COUNT(*) FROM events WHERE sequence = 0")).scalar_one():
+            connection.execute(
+                text(
+                    "WITH ordered AS ("
+                    "SELECT id, ROW_NUMBER() OVER (ORDER BY rowid) AS causal_sequence "
+                    "FROM events"
+                    ") "
+                    "UPDATE events SET sequence = ("
+                    "SELECT causal_sequence FROM ordered WHERE ordered.id = events.id"
+                    ")"
+                )
+            )
+        connection.execute(
+            text(
+                "INSERT OR IGNORE INTO causal_sequences (scope, value) "
+                "SELECT 'events', COALESCE(MAX(sequence), 0) FROM events"
+            )
+        )
+        connection.execute(
+            text(
+                "UPDATE causal_sequences SET value = MAX("
+                "value, (SELECT COALESCE(MAX(sequence), 0) FROM events)"
+                ") WHERE scope = 'events'"
+            )
+        )
         if "probe_path" not in long_service_columns:
             connection.execute(
                 text(
@@ -108,6 +137,12 @@ def ensure_schema_columns(engine: Engine) -> None:
                 )
         connection.execute(
             text(
+                "UPDATE runs SET finished_at = started_at "
+                "WHERE finished_at IS NOT NULL AND finished_at < started_at"
+            )
+        )
+        connection.execute(
+            text(
                 "CREATE UNIQUE INDEX IF NOT EXISTS "
                 "uq_repository_entries_active_project_name "
                 "ON repository_entries (COALESCE(project_id, ''), name) "
@@ -119,5 +154,11 @@ def ensure_schema_columns(engine: Engine) -> None:
                 "CREATE UNIQUE INDEX IF NOT EXISTS "
                 "ix_repository_versions_entry_version "
                 "ON repository_versions (entry_id, version)"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_events_causal_sequence "
+                "ON events (sequence)"
             )
         )

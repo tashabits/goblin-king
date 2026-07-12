@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from goblin_king.causal_time import causally_after
 from goblin_king.contracts import GoblinResult, JobRecord, RunRecord, utc_now
 from goblin_king.events import EventBus
 from goblin_king.resource_policies import policy_from_job_metadata
@@ -53,6 +54,16 @@ def record_unexpected_job_failure(
     )
     result = GoblinResult.failed(error=message)
     resource_policy = policy_from_job_metadata(current.metadata)
+    attempt_started_at = causally_after(
+        current.created_at,
+        store.latest_event_created_at(job_id=current.id, event_type="job.running"),
+        candidate=started_at,
+    )
+    finished_at = causally_after(
+        attempt_started_at,
+        store.latest_event_created_at(job_id=current.id),
+        candidate=utc_now(),
+    )
     run = RunRecord(
         id=context.run_id,
         job_id=current.id,
@@ -60,8 +71,8 @@ def record_unexpected_job_failure(
         project_id=current.project_id,
         attempt=attempt,
         status="failed",
-        started_at=started_at,
-        finished_at=max(utc_now(), started_at),
+        started_at=attempt_started_at,
+        finished_at=finished_at,
         result=result,
         error=message,
         timeout_seconds=current.timeout_seconds,
@@ -86,5 +97,6 @@ def record_unexpected_job_failure(
             "error": message,
             "scheduler_exception": True,
         },
+        after=run.finished_at,
     )
     return run

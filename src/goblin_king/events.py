@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
 from redis import Redis
 from redis.exceptions import RedisError, ResponseError
 
+from goblin_king.causal_time import causally_after
 from goblin_king.contracts import EventRecord, HeartbeatRecord, utc_now
 from goblin_king.store import SQLiteStore
 
@@ -53,11 +55,12 @@ class EventBus:
         schedule_id: str | None = None,
         worker_id: str | None = None,
         scheduler_id: str | None = None,
+        after: datetime | None = None,
     ) -> EventRecord:
         """Persist and publish one event envelope."""
         event = EventRecord(
             id=str(uuid4()),
-            created_at=utc_now(),
+            created_at=causally_after(after) if after is not None else utc_now(),
             event_type=event_type,
             source=source,
             project_id=project_id,
@@ -69,7 +72,7 @@ class EventBus:
             scheduler_id=scheduler_id,
             payload=payload or {},
         )
-        self.store.save_event(event)
+        event = self.store.save_event(event)
         self._publish(self.event_channel, event.model_dump(mode="json"))
         self._append_stream(event.model_dump(mode="json"))
         return event

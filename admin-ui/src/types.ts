@@ -43,6 +43,7 @@ export type Run = {
 
 export type EventRecord = {
   id: string;
+  sequence: number;
   event_type: string;
   source: string;
   created_at: string;

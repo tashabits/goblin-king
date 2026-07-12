@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from croniter import croniter
 
 from goblin_king.auth import audit
+from goblin_king.causal_time import causally_after
 from goblin_king.contracts import (
     GoblinResult,
     JobRecord,
@@ -197,6 +198,7 @@ class Scheduler:
                 schedule_id=schedule.id,
                 scheduler_id=self.worker_id,
                 payload={"kind": schedule.kind, "due_at": current.isoformat()},
+                after=job.created_at,
             )
             materialized.append(job)
         return materialized
@@ -287,16 +289,17 @@ class Scheduler:
                 fanout_id=job.fanout_id,
                 scheduler_id=self.worker_id,
                 payload={"kind": job.kind, "leased_until": job.leased_until.isoformat()},
+                after=job.created_at,
             )
             runnable.append(job)
         return runnable
 
     def run_claimed_job(self, job: JobRecord, now: datetime | None = None) -> RunRecord:
         """Execute one leased job and persist both run and final job status."""
-        started_at = _ensure_utc(now or utc_now())
+        requested_start = _ensure_utc(now or utc_now())
         attempt = job.attempt_count + 1
         self.store.mark_job_running(job.id, attempt_count=attempt)
-        self.event_bus.emit(
+        running_event = self.event_bus.emit(
             "job.running",
             source="scheduler",
             project_id=job.project_id,
@@ -305,7 +308,10 @@ class Scheduler:
             fanout_id=job.fanout_id,
             scheduler_id=self.worker_id,
             payload={"kind": job.kind, "attempt": attempt},
+            after=job.created_at,
         )
+        started_at = causally_after(running_event.created_at, candidate=requested_start)
+        started_monotonic = time.monotonic()
 
         runtime = self.runtime
         runtime_workers = self.workers
@@ -384,7 +390,7 @@ class Scheduler:
                 )
             if validation_error is not None:
                 result = GoblinResult.failed(error=validation_error)
-                finished_at = utc_now()
+                finished_at = self._finish_attempt_timestamp(job.id, started_at)
                 run = RunRecord(
                     id=context.run_id,
                     job_id=job.id,
@@ -413,6 +419,7 @@ class Scheduler:
                     fanout_id=job.fanout_id,
                     scheduler_id=self.worker_id,
                     payload={"kind": job.kind, "error": validation_error},
+                    after=run.finished_at,
                 )
                 audit(
                     self.store,
@@ -438,8 +445,9 @@ class Scheduler:
             )
         else:
             result = runtime.run(definition, entrypoint, runtime_input, context)
-        finished_at = utc_now()
-        status = _status_for_result(result, started_at, finished_at, job.timeout_seconds)
+        finished_at = self._finish_attempt_timestamp(job.id, started_at)
+        elapsed_seconds = time.monotonic() - started_monotonic
+        status = _status_for_result(result, elapsed_seconds, job.timeout_seconds)
         error = result.error
         if status == "timed_out" and error is None:
             error = f"job exceeded timeout_seconds={job.timeout_seconds}"
@@ -468,7 +476,7 @@ class Scheduler:
                 job.id,
                 status="retrying",
                 last_error=error,
-                due_at=started_at,
+                due_at=requested_start,
             )
             self.event_bus.emit(
                 "job.retrying",
@@ -480,6 +488,7 @@ class Scheduler:
                 fanout_id=job.fanout_id,
                 scheduler_id=self.worker_id,
                 payload={"kind": job.kind, "attempt": attempt, "error": error},
+                after=run.finished_at,
             )
         else:
             self.store.finish_job(job.id, status=status, last_error=error)
@@ -493,8 +502,17 @@ class Scheduler:
                 fanout_id=job.fanout_id,
                 scheduler_id=self.worker_id,
                 payload={"kind": job.kind, "attempt": attempt, "error": error},
+                after=run.finished_at,
             )
         return run
+
+    def _finish_attempt_timestamp(self, job_id: str, started_at: datetime) -> datetime:
+        """Place Run completion after its start and latest persisted worker event."""
+        return causally_after(
+            started_at,
+            self.store.latest_event_created_at(job_id=job_id),
+            candidate=utc_now(),
+        )
 
     def _validate_before_container_run(
         self,
@@ -683,12 +701,11 @@ def next_run_after(schedule: ScheduleRecord, now: datetime) -> datetime:
 
 def _status_for_result(
     result: GoblinResult,
-    started_at: datetime,
-    finished_at: datetime,
+    elapsed_seconds: float,
     timeout_seconds: int | None,
 ) -> str:
-    """Map a result envelope plus elapsed time into a persisted run/job status."""
-    if timeout_seconds is not None and (finished_at - started_at).total_seconds() > timeout_seconds:
+    """Map a result envelope plus monotonic elapsed time into a run/job status."""
+    if timeout_seconds is not None and elapsed_seconds > timeout_seconds:
         return "timed_out"
     return "completed" if result.status == "success" else "failed"
 

@@ -1,5 +1,7 @@
 """Local persistence tests for Phase 1 SQLite storage."""
 
+import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from pathlib import Path
 
@@ -410,13 +412,164 @@ def test_store_persists_events_and_filters(tmp_path: Path) -> None:
         scheduler_id="scheduler-1",
     )
 
-    store.save_event(first)
-    store.save_event(second)
+    persisted_first = store.save_event(first)
+    persisted_second = store.save_event(second)
 
-    assert [event.id for event in store.list_events()] == ["event-1", "event-2"]
+    events = store.list_events()
+    assert [event.id for event in events] == ["event-1", "event-2"]
+    assert [event.sequence for event in events] == [1, 2]
+    assert persisted_first.sequence == 1
+    assert persisted_second.sequence == 2
     assert [event.id for event in store.list_events(event_type="job.completed")] == ["event-2"]
     assert [event.id for event in store.list_events(after_id="event-1")] == ["event-2"]
     assert [event.id for event in store.list_events(job_id="job-1")] == ["event-1", "event-2"]
+
+
+def test_store_clamps_backward_event_time_and_orders_by_durable_sequence(tmp_path: Path) -> None:
+    """Preserve call order when an event producer's wall clock moves backward."""
+    now = utc_now()
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+
+    first = store.save_event(
+        EventRecord(
+            id="event-later-clock",
+            created_at=now,
+            event_type="worker.started",
+            source="runtime",
+            job_id="job-1",
+        )
+    )
+    second = store.save_event(
+        EventRecord(
+            id="event-rolled-back-clock",
+            created_at=now - timedelta(seconds=2),
+            event_type="worker.completed",
+            source="runtime",
+            job_id="job-1",
+        )
+    )
+
+    events = store.list_events(job_id="job-1")
+    assert [event.sequence for event in events] == [1, 2]
+    assert first.created_at < second.created_at
+    assert events == [first, second]
+    assert store.list_events(after_id=first.id) == [second]
+
+
+def test_concurrent_event_writers_receive_unique_causal_sequences(tmp_path: Path) -> None:
+    """Serialize event insertion across independent store connections."""
+    db_path = tmp_path / "goblin.sqlite3"
+    stores = [SQLiteStore(db_path) for _ in range(8)]
+    timestamp = utc_now()
+
+    def persist(index: int) -> EventRecord:
+        return stores[index].save_event(
+            EventRecord(
+                id=f"event-{index}",
+                created_at=timestamp,
+                event_type="worker.progress",
+                source="worker",
+                job_id="job-1",
+            )
+        )
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        list(executor.map(persist, range(8)))
+
+    events = SQLiteStore(db_path).list_events(job_id="job-1")
+    assert [event.sequence for event in events] == list(range(1, 9))
+    assert all(
+        left.created_at < right.created_at
+        for left, right in zip(events, events[1:], strict=False)
+    )
+
+
+def test_event_sequence_is_not_reused_after_history_cleanup(tmp_path: Path) -> None:
+    """Keep the causal counter monotonic even when retained event rows are deleted."""
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    first = store.save_event(
+        EventRecord(id="event-1", created_at=utc_now(), event_type="test", source="api")
+    )
+    with store.engine.begin() as connection:
+        connection.execute(store_module.events_table.delete())
+
+    second = store.save_event(
+        EventRecord(id="event-2", created_at=utc_now(), event_type="test", source="api")
+    )
+
+    assert first.sequence == 1
+    assert second.sequence == 2
+
+
+def test_schema_migration_repairs_historical_inverted_run_timestamps(tmp_path: Path) -> None:
+    """Prevent API reads from exposing an already-persisted future start time."""
+    db_path = tmp_path / "goblin.sqlite3"
+    store = SQLiteStore(db_path)
+    started_at = utc_now()
+    store.save_job(
+        JobRecord(id="job-legacy", kind="example.echo", input={}, created_at=started_at)
+    )
+    with store.engine.begin() as connection:
+        connection.execute(
+            store_module.runs_table.insert().values(
+                id="run-legacy",
+                job_id="job-legacy",
+                kind="example.echo",
+                attempt=1,
+                status="completed",
+                started_at=started_at,
+                finished_at=started_at - timedelta(seconds=1),
+                result_json=GoblinResult.ok().model_dump_json(),
+                max_retries=0,
+            )
+        )
+
+    repaired = SQLiteStore(db_path).get_run("run-legacy")
+
+    assert repaired is not None
+    assert repaired.finished_at == repaired.started_at
+
+
+def test_schema_migration_backfills_stable_sequences_for_legacy_events(tmp_path: Path) -> None:
+    """Give pre-sequence event rows their original insertion order during upgrade."""
+    db_path = tmp_path / "legacy.sqlite3"
+    now = utc_now()
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE events (
+                id TEXT PRIMARY KEY,
+                created_at DATETIME NOT NULL,
+                event_type TEXT NOT NULL,
+                source TEXT NOT NULL,
+                project_id TEXT,
+                job_id TEXT,
+                run_id TEXT,
+                fanout_id TEXT,
+                schedule_id TEXT,
+                worker_id TEXT,
+                scheduler_id TEXT,
+                payload_json TEXT NOT NULL DEFAULT '{}'
+            )
+            """
+        )
+        connection.executemany(
+            "INSERT INTO events (id, created_at, event_type, source) VALUES (?, ?, ?, ?)",
+            [
+                ("event-first", now.isoformat(), "worker.started", "runtime"),
+                (
+                    "event-second",
+                    (now - timedelta(seconds=1)).isoformat(),
+                    "worker.completed",
+                    "runtime",
+                ),
+            ],
+        )
+
+    events = SQLiteStore(db_path).list_events()
+
+    assert [event.id for event in events] == ["event-first", "event-second"]
+    assert [event.sequence for event in events] == [1, 2]
 
 
 def test_store_upserts_heartbeats(tmp_path: Path) -> None:

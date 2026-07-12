@@ -2026,17 +2026,18 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                     "repository_source_hash": repository_version.source_hash,
                 }
             )
+        created_at = utc_now()
         job = JobRecord(
             id=str(uuid4()),
             kind=definition.kind,
             input=request.input,
-            created_at=utc_now(),
+            created_at=created_at,
             created_by=principal.user_id,
             correlation_id=request.correlation_id,
             project_id=project_id,
             status="queued",
             priority=request.priority,
-            due_at=utc_now(),
+            due_at=created_at,
             max_retries=max_retries,
             timeout_seconds=timeout_seconds,
             metadata=metadata,
@@ -2048,6 +2049,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             project_id=project_id,
             job_id=job.id,
             payload={"kind": job.kind, "created_by": job.created_by},
+            after=job.created_at,
         )
         audit(
             state.store,
@@ -3094,6 +3096,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             fanout_id=cancelled.fanout_id,
             schedule_id=cancelled.schedule_id,
             payload={"kind": cancelled.kind},
+            after=cancelled.created_at,
         )
         audit(
             state.store,
@@ -3212,6 +3215,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                     job_id=job.id,
                     fanout_id=job.fanout_id,
                     payload={"kind": job.kind, "created_by": job.created_by},
+                    after=job.created_at,
                 )
             audit(
                 state.store,
@@ -3282,6 +3286,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                     "source_job_id": job_id,
                     "reason": request.reason,
                 },
+                after=retry.created_at,
             )
             audit(
                 state.store,

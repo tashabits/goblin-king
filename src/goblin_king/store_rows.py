@@ -126,6 +126,7 @@ def _row_to_event(payload: dict[str, Any]) -> EventRecord:
     """Convert a SQLAlchemy row mapping into the public EventRecord contract."""
     return EventRecord(
         id=payload["id"],
+        sequence=int(payload.get("sequence") or 0),
         created_at=_coerce_datetime(payload["created_at"]),
         event_type=payload["event_type"],
         source=payload["source"],

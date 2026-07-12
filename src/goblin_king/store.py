@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, delete, func, or_, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
 
+from goblin_king.causal_time import causally_after
 from goblin_king.contracts import (
     ApiTokenRecord,
     ArtifactRecord,
@@ -63,6 +64,7 @@ from goblin_king.store_schema import (
     api_tokens_table,
     artifacts_table,
     audit_logs_table,
+    causal_sequences_table,
     deployment_records_table,
     events_table,
     fanouts_table,
@@ -87,6 +89,7 @@ from goblin_king.store_schema import (
 )
 
 DEFAULT_DB_PATH = Path(".goblin-king") / "goblin-king.sqlite3"
+EVENT_SEQUENCE = events_table.c.sequence
 REPOSITORY_STATUS_TRANSITIONS = {
     "draft": {"validated", "rejected", "retired"},
     "validated": {"pending_review", "rejected", "retired"},
@@ -161,25 +164,52 @@ class SQLiteStore:
                 )
             )
 
-    def save_event(self, event: EventRecord) -> None:
-        """Insert one durable event record."""
-        with self.engine.begin() as connection:
-            connection.execute(
-                events_table.insert().values(
-                    id=event.id,
-                    created_at=event.created_at,
-                    event_type=event.event_type,
-                    source=event.source,
-                    project_id=event.project_id,
-                    job_id=event.job_id,
-                    run_id=event.run_id,
-                    fanout_id=event.fanout_id,
-                    schedule_id=event.schedule_id,
-                    worker_id=event.worker_id,
-                    scheduler_id=event.scheduler_id,
-                    payload_json=json.dumps(event.payload),
+    def save_event(self, event: EventRecord) -> EventRecord:
+        """Insert one causally ordered event and return its durable sequence/timestamp."""
+        with self.engine.connect() as connection:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+            try:
+                previous = connection.execute(
+                    select(events_table.c.created_at)
+                    .order_by(EVENT_SEQUENCE.desc())
+                    .limit(1)
+                ).scalar_one_or_none()
+                created_at = causally_after(
+                    _coerce_datetime(previous) if previous is not None else None,
+                    candidate=event.created_at,
                 )
-            )
+                connection.execute(
+                    update(causal_sequences_table)
+                    .where(causal_sequences_table.c.scope == "events")
+                    .values(value=causal_sequences_table.c.value + 1)
+                )
+                sequence = connection.execute(
+                    select(causal_sequences_table.c.value).where(
+                        causal_sequences_table.c.scope == "events"
+                    )
+                ).scalar_one()
+                connection.execute(
+                    events_table.insert().values(
+                        id=event.id,
+                        sequence=sequence,
+                        created_at=created_at,
+                        event_type=event.event_type,
+                        source=event.source,
+                        project_id=event.project_id,
+                        job_id=event.job_id,
+                        run_id=event.run_id,
+                        fanout_id=event.fanout_id,
+                        schedule_id=event.schedule_id,
+                        worker_id=event.worker_id,
+                        scheduler_id=event.scheduler_id,
+                        payload_json=json.dumps(event.payload),
+                    )
+                )
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+        return event.model_copy(update={"sequence": sequence, "created_at": created_at})
 
     def save_worker_validation(self, validation: WorkerValidationRecord) -> None:
         """Insert one worker contract validation record."""
@@ -893,17 +923,17 @@ class SQLiteStore:
         """Return durable events with simple bounded filtering."""
         bounded_limit = max(1, min(limit, 500))
         with self.engine.connect() as connection:
-            query = select(events_table).order_by(events_table.c.created_at, events_table.c.id)
+            query = select(events_table).order_by(EVENT_SEQUENCE)
             if event_type is not None:
                 query = query.where(events_table.c.event_type == event_type)
             if project_id is not None:
                 query = query.where(events_table.c.project_id == project_id)
             if after_id is not None:
                 cursor = connection.execute(
-                    select(events_table.c.created_at).where(events_table.c.id == after_id)
+                    select(EVENT_SEQUENCE).where(events_table.c.id == after_id)
                 ).scalar_one_or_none()
                 if cursor is not None:
-                    query = query.where(events_table.c.created_at > cursor)
+                    query = query.where(EVENT_SEQUENCE > cursor)
             for column_name, value in {
                 "job_id": job_id,
                 "run_id": run_id,
@@ -920,6 +950,22 @@ class SQLiteStore:
                 .all()
             )
         return [_row_to_event(dict(row)) for row in rows]
+
+    def latest_event_created_at(
+        self,
+        *,
+        job_id: str | None = None,
+        event_type: str | None = None,
+    ) -> datetime | None:
+        """Return the newest durable event timestamp by causal insertion sequence."""
+        with self.engine.connect() as connection:
+            query = select(events_table.c.created_at).order_by(EVENT_SEQUENCE.desc()).limit(1)
+            if job_id is not None:
+                query = query.where(events_table.c.job_id == job_id)
+            if event_type is not None:
+                query = query.where(events_table.c.event_type == event_type)
+            value = connection.execute(query).scalar_one_or_none()
+        return _coerce_datetime(value) if value is not None else None
 
     def count_events(self, *, project_id: str | None = None) -> int:
         """Return a simple event count for pagination metadata."""

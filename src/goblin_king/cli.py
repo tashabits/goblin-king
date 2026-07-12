@@ -12,6 +12,7 @@ from redis import Redis
 from redis.exceptions import RedisError
 
 from goblin_king.auth import create_api_token, create_project, create_user
+from goblin_king.causal_time import causally_after
 from goblin_king.cli_support import (
     DEFAULT_IMAGES_PATH,
     DEFAULT_PROJECT_PATH,
@@ -667,7 +668,7 @@ def submit_job(
         )
     else:
         result = InProcessRuntime().run(definition, entrypoint, input_payload, context)
-    finished_at = utc_now()
+    finished_at = causally_after(started_at, candidate=utc_now())
     run = RunRecord(
         id=context.run_id,
         job_id=job.id,

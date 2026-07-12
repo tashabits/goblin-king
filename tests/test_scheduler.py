@@ -7,6 +7,7 @@ from pathlib import Path
 
 from goblin_king.contracts import (
     GoblinDefinition,
+    GoblinResult,
     JobRecord,
     ScheduleRecord,
     WorkerValidationRecord,
@@ -92,6 +93,69 @@ def test_run_once_materializes_due_schedule_and_executes_echo(tmp_path: Path) ->
     assert "job.running" in event_types
     assert "job.completed" in event_types
     assert store.get_heartbeat("test-worker") is not None
+
+
+def test_immediate_attempts_remain_causal_when_wall_clock_rolls_back(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Order fast success/failure Runs and events independently of wall-clock rollback."""
+    now = utc_now()
+    scheduler, store = build_scheduler(tmp_path)
+    monkeypatch.setattr(scheduler.event_bus, "_publish", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(scheduler.event_bus, "_append_stream", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("goblin_king.events.utc_now", lambda: now - timedelta(seconds=5))
+    monkeypatch.setattr("goblin_king.scheduler.utc_now", lambda: now - timedelta(seconds=5))
+    for job_id, should_fail in (("job-success", False), ("job-failure", True)):
+        store.save_job(
+            JobRecord(
+                id=job_id,
+                kind="example.echo",
+                input={"should_fail": should_fail},
+                created_at=now,
+                due_at=now,
+            )
+        )
+
+    def immediate_attempt(_definition, _entrypoint, input_payload, context, **_kwargs):
+        job_id = context.metadata["job_id"]
+        scheduler.event_bus.emit(
+            "worker.started",
+            source="runtime",
+            job_id=job_id,
+            run_id=context.run_id,
+        )
+        failed = bool(input_payload["should_fail"])
+        scheduler.event_bus.emit(
+            "worker.failed" if failed else "worker.completed",
+            source="runtime",
+            job_id=job_id,
+            run_id=context.run_id,
+        )
+        return GoblinResult.failed(error="expected") if failed else GoblinResult.ok()
+
+    monkeypatch.setattr(scheduler.runtime, "run", immediate_attempt)
+
+    runs = {run.job_id: run for run in scheduler.run_once(now)}
+
+    assert runs["job-success"].status == "completed"
+    assert runs["job-failure"].status == "failed"
+    for job_id, run in runs.items():
+        events = store.list_events(job_id=job_id)
+        assert [event.sequence for event in events] == sorted(
+            event.sequence for event in events
+        )
+        assert all(
+            left.created_at < right.created_at
+            for left, right in zip(events, events[1:], strict=False)
+        )
+        assert run.finished_at is not None
+        assert run.started_at <= run.finished_at
+        running = next(event for event in events if event.event_type == "job.running")
+        worker_started = next(event for event in events if event.event_type == "worker.started")
+        terminal = events[-1]
+        assert running.created_at < run.started_at <= worker_started.created_at
+        assert run.finished_at < terminal.created_at
 
 
 def test_validation_gate_reuses_passing_proof(tmp_path: Path, monkeypatch) -> None:
@@ -405,6 +469,12 @@ def test_failing_goblin_retries_then_fails(tmp_path: Path) -> None:
     assert second[0].status == "failed"
     assert second_job.status == "failed"
     assert second_job.attempt_count == 2
+    assert all(
+        run.finished_at is not None and run.started_at <= run.finished_at
+        for run in first + second
+    )
+    events = store.list_events(job_id=second_job.id)
+    assert [event.sequence for event in events] == sorted(event.sequence for event in events)
 
 
 def test_timeout_configuration_marks_overdue_run(tmp_path: Path) -> None:
@@ -427,6 +497,8 @@ def test_timeout_configuration_marks_overdue_run(tmp_path: Path) -> None:
     job = store.list_jobs()[0]
 
     assert runs[0].status == "timed_out"
+    assert runs[0].finished_at is not None
+    assert runs[0].started_at <= runs[0].finished_at
     assert job.status == "timed_out"
 
 

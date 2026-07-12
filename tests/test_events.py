@@ -30,6 +30,8 @@ def test_event_bus_writes_sqlite_pubsub_and_redis_stream(
     event = bus.emit("job.completed", source="cli", job_id="job-1", payload={"ok": True})
 
     assert store.list_events()[0].id == event.id
+    assert event.sequence == 1
+    assert calls["publish"][0][1]["sequence"] == 1
     assert calls["publish"][0][1]["event_type"] == "job.completed"
     assert calls["xadd"][0][0] == DEFAULT_EVENT_STREAM
     assert json.loads(calls["xadd"][0][1]["event"])["job_id"] == "job-1"
