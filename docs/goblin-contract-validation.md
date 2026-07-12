@@ -21,6 +21,12 @@ that only succeed when they receive non-contract environment.
 The gate protects both demo goblins and project-defined goblins. Python helpers are
 optional; the container contract is the worker interface.
 
+In named-volume Docker deployments, validation and normal execution share the explicit
+writable root configured by `GOBLIN_KING_RUN_ROOT` or `--run-root`. The value must be an
+absolute path inside the scheduler's mount of `GOBLIN_KING_DOCKER_DATA_VOLUME`. See
+[Writable Docker Runtime Data](writable-docker-runtime-data.md) for hardened Compose
+placement and recovery behavior.
+
 ## What Is Validated
 
 Validation checks:
@@ -67,6 +73,8 @@ name; the proof is for the resolved image identity behind that name.
 | Contract version is unsupported | Reject validation and scheduling. | Update the worker or Goblin King deployment so both declare a supported contract. |
 | Result file is missing or malformed | Reject execution and show the worker contract error. | Ensure the worker writes valid `result.json` to the mounted result path. |
 | Artifact metadata points to missing files | Reject validation. | Write artifact bytes under the mounted artifact root before referencing them. |
+| Named data volume has no absolute writable run root | Fail fast before scheduling. | Set `GOBLIN_KING_RUN_ROOT=/data/runs` or pass `--run-root /data/runs` inside the shared volume mount. |
+| Validation setup raises after a lease | Persist a failed Run, clear the lease, emit a terminal validation event, and continue the scheduler pass. | Correct the writable path or Docker configuration, then submit or retry the job. |
 | Passing proof exists for current digest | Allow execution. | No action needed until the image digest, contract version, validator version, or policy changes. |
 
 ## CLI Examples

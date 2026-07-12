@@ -327,6 +327,13 @@ goblin-king scheduler run-once \
 For a real local stack, run the scheduler loop as a service through Docker Compose or
 Helm, then manage schedules through the CLI, API, or admin interface.
 
+When Compose sets `GOBLIN_KING_DOCKER_DATA_VOLUME`, set
+`GOBLIN_KING_RUN_ROOT=/data/runs` (or the equivalent absolute path inside the same
+volume mount). Do not rely on the scheduler working directory: hardened images may
+mount project configuration there read-only. The scheduler also accepts
+`--run-root /data/runs`. Detailed placement, failure, and expired-lease behavior is in
+[Writable Docker Runtime Data](writable-docker-runtime-data.md).
+
 For a project-oriented Docker Compose stack that mounts project config and opens the
 React admin, see [Adopter Admin Dev/Test Stack](adopter-admin-dev-stack.md).
 For a shorter proof checklist centered on the admin panels, see

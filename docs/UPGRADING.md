@@ -25,6 +25,15 @@ Record:
 8. Submit one short goblin and probe one long-running goblin.
 9. Inspect runs, events, heartbeats, artifacts, and audit logs.
 
+## Docker Data-Volume Placement
+
+Deployments that set `GOBLIN_KING_DOCKER_DATA_VOLUME` must also set an absolute
+`GOBLIN_KING_RUN_ROOT` inside the scheduler's mount of that volume. For example, a
+volume mounted at `/data` should use `/data/runs`. This replaces the unsafe implicit
+working-directory placement used by earlier builds. Update Compose environment before
+starting the upgraded scheduler; see
+[Writable Docker Runtime Data](writable-docker-runtime-data.md).
+
 ## Compatibility Fixtures
 
 The `examples/compatibility/project-ready-v0_1/` fixture is the baseline for the
