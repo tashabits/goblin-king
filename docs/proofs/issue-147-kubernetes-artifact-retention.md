@@ -81,24 +81,25 @@ kind delete cluster --name gk-artifact-proof
 
 Date: 2026-07-12
 
-Base after the Kubernetes forwarder-image rebase: `1d482614fcd3f4ee626cb0c7da64d5c1847fa4b0`
+Base after the Kubernetes workload-security rebase: `d286bd2deb441b474c47b7d70b8e439031761e29`
 
 Observed before live cluster proof:
 
 ```text
-367 passed, 2 skipped in 108.99s
+380 passed, 2 skipped in 142.41s
 All checks passed!
 1 chart(s) linted, 0 chart(s) failed
-Default and persistence-disabled Helm renders completed.
-Public API, project-ready compatibility, API settings, and Kubernetes configuration: 15 passed.
+Legacy/restricted and persistence-enabled/disabled Helm renders completed.
+Focused retention, workload-security, configuration, runtime, and documentation: 48 passed, 2 skipped.
 ```
 
 The two skipped tests create direct and nested symbolic links; the Windows test account lacks
 link-creation permission. Traversal, external containment, count, size, media type, digest,
 unconfigured storage, atomic retention, idempotency, API download after source deletion, cleanup,
-manifest isolation, typed settings, legacy inline-forwarder compatibility, and failed-Job retention
-tests ran. Helm rendering proved that persistence-enabled API/scheduler Pods receive the artifact
-PVC settings and persistence-disabled Pods omit the claim while retaining the URI-root setting.
+manifest isolation, typed settings, legacy inline-forwarder compatibility, restricted retention
+mount composition, kind-specific security, and failed-Job retention tests ran. Helm rendering proved
+that persistence-enabled API/scheduler Pods receive the artifact PVC settings and
+persistence-disabled Pods omit the claim while retaining the URI-root setting.
 
 Live kind execution was not performed in this implementation worktree. The publishing verifier must
 run the commands above and replace this limitation with the observed commit SHA, image identities,
