@@ -92,6 +92,97 @@ def test_workers_validate_accepts_project_settings() -> None:
     assert "unknown goblin kind: example.missing" in result.stdout
 
 
+def test_workers_validate_kubernetes_returns_and_persists_exact_proof(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Verify the existing validation command exposes the Kubernetes proof path."""
+    from goblin_king.validation import WorkerValidationResult
+
+    captured: dict[str, object] = {}
+
+    def fake_validate(**kwargs):
+        captured.update(kwargs)
+        return [
+            WorkerValidationResult(
+                kind="example.echo",
+                ok=True,
+                image="goblin-king-example-echo:local",
+                image_digest="kubernetes:goblin-king-example-echo:local",
+                validated_at=utc_now(),
+                result_status="success",
+                logs={"worker": "validation log"},
+            )
+        ]
+
+    monkeypatch.setattr(
+        "goblin_king.cli.validate_workers_with_kubernetes",
+        fake_validate,
+    )
+    db_path = tmp_path / "goblin.sqlite3"
+
+    result = runner.invoke(
+        app,
+        [
+            "workers",
+            "validate",
+            "--runtime",
+            "kubernetes",
+            "--registry",
+            "examples/goblins.json",
+            "--images",
+            "goblin-images.json",
+            "--input",
+            "examples/input.json",
+            "--kind",
+            "example.echo",
+            "--timeout-seconds",
+            "37",
+            "--db",
+            str(db_path),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)[0]["logs"] == {"worker": "validation log"}
+    assert captured["timeout_seconds"] == 37
+    stored = SQLiteStore(db_path).latest_worker_validation_for_kind("example.echo")
+    assert stored is not None
+    assert stored.image_digest == "kubernetes:goblin-king-example-echo:local"
+
+
+def test_workers_validate_kubernetes_rejects_docker_build_option(monkeypatch) -> None:
+    """Verify runtime-specific options fail before any Kubernetes Job is submitted."""
+
+    def fail_if_called(**_kwargs):
+        raise AssertionError("Kubernetes validation must not start")
+
+    monkeypatch.setattr(
+        "goblin_king.cli.validate_workers_with_kubernetes",
+        fail_if_called,
+    )
+    result = runner.invoke(
+        app,
+        [
+            "workers",
+            "validate",
+            "--runtime",
+            "kubernetes",
+            "--registry",
+            "examples/goblins.json",
+            "--images",
+            "goblin-images.json",
+            "--input",
+            "examples/input.json",
+            "--build",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "--build is available only with --runtime docker" in result.stderr
+
+
 def test_workers_validate_image_reports_missing_image(monkeypatch) -> None:
     """Verify direct image validation reports unavailable prebuilt images clearly."""
 

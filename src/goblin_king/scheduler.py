@@ -39,6 +39,7 @@ from goblin_king.validation import (
     VALIDATOR_VERSION,
     format_validation_gate_error,
     inspect_image_identity,
+    kubernetes_image_identity,
     validate_workers,
     validation_record,
 )
@@ -553,12 +554,16 @@ class Scheduler:
         worker_map = workers or self.workers
         active_registry = registry or self.registry
         active_runtime = runtime or self.runtime
+        validation_runtime = (
+            "kubernetes" if isinstance(active_runtime, KubernetesRuntime) else "docker"
+        )
         payload = job.input if input_payload is None else input_payload
         if worker_map is None:
             return format_validation_gate_error(
                 kind=kind,
                 image=None,
                 reason="worker image map is required for validation",
+                runtime=validation_runtime,
             )
         try:
             worker = worker_map.get(kind)
@@ -567,6 +572,7 @@ class Scheduler:
                 kind=kind,
                 image=None,
                 reason=str(error),
+                runtime=validation_runtime,
             )
         validation_run_root = (
             active_runtime.run_root if isinstance(active_runtime, DockerRuntime) else None
@@ -622,6 +628,7 @@ class Scheduler:
                 image_digest=validation_identity,
                 stale_from_digest=latest_for_kind.image_digest if latest_for_kind else None,
                 reason=error,
+                runtime=validation_runtime,
             )
         cached = self.store.get_latest_worker_validation(
             kind=kind,
@@ -638,6 +645,7 @@ class Scheduler:
                 image_digest=validation_identity or image_digest,
                 stale_from_digest=latest_for_kind.image_digest if latest_for_kind else None,
                 reason="no current Kubernetes validation proof exists; validate first",
+                runtime=validation_runtime,
             )
         results = validate_workers(
             registry=active_registry,
@@ -678,6 +686,7 @@ class Scheduler:
                 contract_version=result.contract_version,
                 validator_version=result.validator_version,
                 reason=result.error or "worker validation failed",
+                runtime=validation_runtime,
             )
         return None
 

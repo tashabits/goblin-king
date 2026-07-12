@@ -1,7 +1,9 @@
 """Local runtime tests for in-process goblin execution."""
 
 import subprocess
+from types import SimpleNamespace
 
+from goblin_king import runtime as runtime_module
 from goblin_king.contracts import GoblinContext, GoblinDefinition, GoblinResult
 from goblin_king.registry import GoblinRegistry
 from goblin_king.resource_policies import ResourcePolicy
@@ -12,6 +14,7 @@ from goblin_king.runtime import (
     _worker_env,
     _worker_secret_refs,
 )
+from goblin_king.runtime_observation import KubernetesRunObservation
 from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
 from goblin_king.workers import WorkerImageDefinition, WorkerImageMap
 
@@ -99,6 +102,102 @@ def test_kubernetes_job_includes_result_forwarder() -> None:
         "env"
     ]
     assert {"name": "result", "mountPath": "/goblin-result"} in forwarder["volumeMounts"]
+
+
+def test_kubernetes_observed_run_captures_bounded_logs_before_cleanup(monkeypatch) -> None:
+    """Verify validation callers can retain Job diagnostics after transient cleanup."""
+    created: dict[str, object] = {}
+    deleted: list[str] = []
+    pod = SimpleNamespace(
+        metadata=SimpleNamespace(name="validation-pod"),
+        status=SimpleNamespace(
+            container_statuses=[
+                SimpleNamespace(
+                    name="worker",
+                    state=SimpleNamespace(terminated=SimpleNamespace(exit_code=0)),
+                )
+            ]
+        ),
+    )
+
+    class FakeBatch:
+        def create_namespaced_job(self, *, namespace, body):
+            created["namespace"] = namespace
+            created["job"] = body
+
+        def read_namespaced_job(self, *, name, namespace):
+            return SimpleNamespace(status=SimpleNamespace(succeeded=1, failed=0))
+
+        def delete_namespaced_job(self, *, name, namespace, propagation_policy):
+            deleted.append(name)
+
+    class FakeCore:
+        def create_namespaced_config_map(self, *, namespace, body):
+            created["config"] = body
+
+        def list_namespaced_pod(self, *, namespace, label_selector):
+            return SimpleNamespace(items=[pod])
+
+        def read_namespaced_pod_log(self, *, name, namespace, container, **kwargs):
+            assert kwargs.get("limit_bytes") == runtime_module.DEFAULT_RUNTIME_LOG_CAPTURE_BYTES
+            return f"{container} log"
+
+        def delete_namespaced_config_map(self, *, name, namespace):
+            deleted.append(name)
+
+    runtime = KubernetesRuntime(
+        workers=WorkerImageMap.from_definitions(
+            {
+                "example.validation": WorkerImageDefinition(
+                    context=".", image="validation:local"
+                )
+            }
+        ),
+        namespace="proof",
+        poll_interval_seconds=0,
+    )
+    monkeypatch.setattr(
+        runtime_module,
+        "kubernetes_clients",
+        lambda: (FakeBatch(), FakeCore()),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_load_result_observed",
+        lambda _run_id: KubernetesRunObservation(
+            result=GoblinResult.ok(data={"validated": True}),
+            result_received=True,
+            result_envelope_valid=True,
+        ),
+    )
+    context = GoblinContext(
+        run_id="validation-run",
+        artifact_root=".goblin-king/artifacts/validation-run",
+        metadata={"job_id": "validation-job"},
+    )
+
+    observation = runtime.run_observed(
+        GoblinDefinition(
+            kind="example.validation",
+            display_name="Validation",
+            module="container.only",
+        ),
+        None,
+        {"value": 1},
+        context,
+        timeout_seconds=17,
+    )
+
+    assert observation.result.status == "success"
+    assert observation.result_envelope_valid is True
+    assert observation.exit_code == 0
+    assert observation.logs == {
+        "worker": "worker log",
+        "result-forwarder": "result-forwarder log",
+    }
+    assert created["namespace"] == "proof"
+    assert created["job"]["spec"]["activeDeadlineSeconds"] == 17  # type: ignore[index]
+    assert len(deleted) == 2
 
 
 def test_kubernetes_job_omits_placement_fields_without_metadata() -> None:

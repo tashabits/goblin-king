@@ -50,6 +50,8 @@ from goblin_king.api_models import (
     ImagePromotionUpdateRequest,
     JobCreateRequest,
     JobListResponse,
+    KubernetesWorkerValidateRequest,
+    KubernetesWorkerValidateResponse,
     LongServiceCreateRequest,
     LongServiceProbeResponse,
     NotebookGoblinCreateRequest,
@@ -143,6 +145,7 @@ from goblin_king.fanout import (
     retry_job,
 )
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
+from goblin_king.kubernetes_validation import validate_workers_with_kubernetes
 from goblin_king.metadata import goblin_job_metadata
 from goblin_king.notebook_services import (
     NotebookServiceRuntimeError,
@@ -1472,6 +1475,44 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                 }
             )
         return payload
+
+    @app.post(
+        "/admin/workers/validate-kubernetes",
+        response_model=KubernetesWorkerValidateResponse,
+        tags=["admin", "goblins"],
+        operation_id="validateGenericWorkersWithKubernetes",
+    )
+    def validate_generic_workers_with_kubernetes(
+        request: KubernetesWorkerValidateRequest,
+        principal: Principal = Depends(require_admin_principal),
+    ) -> KubernetesWorkerValidateResponse:
+        """Validate configured registry workers through bounded Kubernetes Jobs."""
+        results = validate_workers_with_kubernetes(
+            registry=state.registry,
+            workers=state.workers,
+            input_payload=request.input,
+            kinds=request.kinds,
+            require_success=request.require_success,
+            timeout_seconds=request.timeout_seconds,
+            redis_url=state.settings.redis_url,
+            event_bus=state.event_bus,
+        )
+        for result in results:
+            state.store.save_worker_validation(validation_record(result))
+        audit(
+            state.store,
+            action="worker.kubernetes_validated",
+            outcome="success" if all(result.ok for result in results) else "failure",
+            principal=principal,
+            project_id=principal.project_id,
+            resource_type="worker_validation",
+            detail={
+                "kinds": [result.kind for result in results],
+                "passed": [result.kind for result in results if result.ok],
+                "failed": [result.kind for result in results if not result.ok],
+            },
+        )
+        return KubernetesWorkerValidateResponse(validations=results)
 
     @app.post(
         "/notebooks/goblins",

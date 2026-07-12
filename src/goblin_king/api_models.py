@@ -165,6 +165,21 @@ class LongServiceProbeResponse(BaseModel):
     response: dict[str, Any]
 
 
+class KubernetesWorkerValidateRequest(BaseModel):
+    """Request body for validating configured generic workers with Kubernetes Jobs."""
+
+    kinds: list[str] | None = None
+    input: dict[str, Any] = Field(default_factory=dict)
+    require_success: bool = True
+    timeout_seconds: int = Field(default=120, gt=0, le=3600)
+
+
+class KubernetesWorkerValidateResponse(BaseModel):
+    """Contract proofs produced by bounded generic-worker Kubernetes Jobs."""
+
+    validations: list[WorkerValidationResult]
+
+
 class NotebookGoblinCreateRequest(BaseModel):
     """Request body for building a notebook-defined Python function goblin."""
 

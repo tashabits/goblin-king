@@ -7,12 +7,17 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from goblin_king.contracts import GoblinDefinition, GoblinResult, WorkerValidationRecord
+from goblin_king.contracts import (
+    ArtifactRecord,
+    GoblinDefinition,
+    GoblinResult,
+    WorkerValidationRecord,
+)
 from goblin_king.docker_runtime_paths import configured_docker_run_root
 from goblin_king.registry import GoblinRegistry
 from goblin_king.runtime import DockerRuntime, new_run_context
@@ -36,11 +41,13 @@ class WorkerValidationResult(BaseModel):
     result_status: str | None = None
     result_file: str | None = None
     artifact_count: int = 0
+    artifacts: list[ArtifactRecord] = Field(default_factory=list)
     error: str | None = None
     checks: list[str] = Field(default_factory=list)
     exit_code: int | None = None
     stdout: str | None = None
     stderr: str | None = None
+    logs: dict[str, str] = Field(default_factory=dict)
 
 
 def validation_record(
@@ -72,6 +79,7 @@ def format_validation_gate_error(
     stale_from_digest: str | None = None,
     contract_version: str = GOBLIN_CONTAINER_CONTRACT_VERSION,
     validator_version: str = VALIDATOR_VERSION,
+    runtime: Literal["docker", "kubernetes"] = "docker",
 ) -> str:
     """Return an actionable scheduler error for mandatory worker validation failures."""
     details = [
@@ -84,14 +92,21 @@ def format_validation_gate_error(
     ]
     if stale_from_digest:
         details.append(f"Previous validation digest: {stale_from_digest}")
+    if runtime == "kubernetes":
+        revalidate_command = (
+            "goblin-king workers validate --runtime kubernetes "
+            f"--kind {kind} --input <input-json> --require-success"
+        )
+    else:
+        revalidate_command = (
+            "goblin-king workers validate "
+            f"--kind {kind} --input <input-json> --build --require-success"
+        )
     details.extend(
         [
             f"Reason: {reason}",
             "Validate first, then schedule.",
-            (
-                "Revalidate with: goblin-king workers validate "
-                f"--kind {kind} --input <input-json> --build --require-success"
-            ),
+            f"Revalidate with: {revalidate_command}",
         ]
     )
     return "\n".join(details)
@@ -127,6 +142,11 @@ def validation_status_payload(
         "validated_at": validation.validated_at.isoformat(),
         "failure_reasons": validation.failure_reasons,
     }
+
+
+def kubernetes_image_identity(image: str) -> str:
+    """Return the exact Kubernetes worker identity used by the scheduler gate."""
+    return f"kubernetes:{image}"
 
 
 def validate_workers(
