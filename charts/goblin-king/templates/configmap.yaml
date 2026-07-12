@@ -24,7 +24,9 @@ data:
         "result_forwarder_image": {{ include "goblin-king.resultForwarderImage" . | quote }},
         "worker_image_pull_policy": {{ include "goblin-king.workerImagePullPolicy" . | quote }},
         "result_forwarder_image_pull_policy": {{ include "goblin-king.resultForwarderImagePullPolicy" . | quote }},
-        "workload_image_pull_secret_names": {{ include "goblin-king.workloadImagePullSecretNames" . }}
+        "workload_image_pull_secret_names": {{ include "goblin-king.workloadImagePullSecretNames" . }},
+        "workload_security_profile": {{ .Values.scheduler.workloadSecurity.profile | quote }},
+        "restricted_workload": {{ include "goblin-king.restrictedWorkloadSettings" . }}
       },
       "oidc": {
         "enabled": {{ .Values.config.oidc.enabled }},
@@ -61,3 +63,8 @@ data:
     }
   goblin-resource-policies.json: |
 {{ .Values.resourcePolicies | toPrettyJson | indent 4 }}
+  goblin-kubernetes-runtime.json: |
+    {
+      "workload_security_profile": {{ .Values.scheduler.workloadSecurity.profile | quote }},
+      "restricted_workload": {{ include "goblin-king.restrictedWorkloadSettings" . }}
+    }

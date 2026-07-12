@@ -223,6 +223,14 @@ The Helm chart should keep Kubernetes resource policy optional and configurable.
 with existing cluster policy may turn off Goblin King-specific defaults and supply their
 own admission controls, quotas, or network policies.
 
+The generated-Job `restricted-v1` profile supplies complete worker defaults and merges
+resolved CPU/memory policy fields over them. It requires a read-only root. Because the
+legacy chart default remains `filesystem.read_only_root: false`, enabling the restricted
+profile must be paired with `resourcePolicies.defaults.filesystem.read_only_root: true`.
+An explicit false value is rejected before Job creation rather than being silently
+overridden. Forwarder resources come from the restricted runtime settings and are not
+controlled by a user-authored goblin policy.
+
 ## Runtime Responsibility Matrix
 
 | Control | Goblin King | Docker runtime | Kubernetes/Helm runtime |

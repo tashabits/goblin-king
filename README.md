@@ -656,6 +656,13 @@ scheduler:
     pullPolicy: ""
   workloadImagePullSecrets:
     - backup-registry
+  workloadSecurity:
+    profile: restricted-v1
+
+resourcePolicies:
+  defaults:
+    filesystem:
+      read_only_root: true
 ```
 
 Digest values take precedence over tags. Global pull-secret names are inherited by
@@ -665,6 +672,16 @@ forwarder image-pull error becomes a bounded failed Run, its transient Job and C
 are cleaned up, and the scheduler continues with later work. See
 [Kubernetes Runtime Images](docs/kubernetes-runtime-images.md) for CLI/API settings,
 separate forwarder images, compatibility behavior, and proof commands.
+
+`legacy` remains the generated-workload security default for downstream compatibility.
+The explicit `restricted-v1` profile disables automatic ServiceAccount tokens, applies
+non-root/read-only/seccomp/capability controls and complete resources to both
+containers, and binds validation proof to the effective security contract. The existing
+resource-policy default is read-write for compatibility, so restricted chart users must
+also set `resourcePolicies.defaults.filesystem.read_only_root: true`; a false value is
+rejected rather than silently relaxed. See
+[Kubernetes Workload Security](docs/kubernetes-workload-security.md) for migration,
+per-kind ServiceAccounts, settings, and live proof.
 
 The Helm chart exposes the admin/API service through an ingress by default using the
 `nginx` ingress class. Disable it for deployments that already provide ingress routing:
@@ -1104,6 +1121,8 @@ Goblin King provides:
   Docker socket cautions.
 - [Security Model](docs/security-model.md): Honest container security expectations and
   runtime hardening guidance.
+- [Kubernetes Workload Security](docs/kubernetes-workload-security.md): Versioned
+  legacy/restricted profiles, token isolation, contexts, resources, and migration.
 - [Public API Boundary](docs/PUBLIC_API.md): Stable root imports, semi-public commands,
   internal modules, and internal wheel compatibility policy.
 - [API Roadmap](docs/api-roadmap.md): Covered API surfaces and maintainer notes.

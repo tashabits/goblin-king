@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from goblin_king import api as api_module
 from goblin_king.contracts import GoblinDefinition, GoblinResult, NotebookGoblinRecord, utc_now
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
+from goblin_king.notebooks import notebook_validation_identity
 from goblin_king.registry import GoblinRegistry
 from goblin_king.validation import WorkerValidationResult, _validate_one, validate_workers
 from goblin_king.workers import WorkerImageDefinition, WorkerImageMap
@@ -226,7 +227,8 @@ def test_api_kubernetes_notebook_validation_uses_short_job_id(monkeypatch) -> No
     monkeypatch.setattr(api_module, "KubernetesRuntime", FakeKubernetesRuntime)
 
     settings = KubernetesRuntimeSettings(
-        result_forwarder_image="registry.example/control@sha256:" + "a" * 64
+        result_forwarder_image="registry.example/control@sha256:" + "a" * 64,
+        workload_security_profile="restricted-v1",
     )
     result = api_module._validate_notebook_with_kubernetes(
         record=record,
@@ -241,5 +243,9 @@ def test_api_kubernetes_notebook_validation_uses_short_job_id(monkeypatch) -> No
     assert result.ok is True
     assert captured["kind"] == kind
     assert captured["settings"] is settings
+    assert result.image_digest == notebook_validation_identity(
+        settings.validation_image_identity(record.image, record.kind),
+        record.source_hash,
+    )
     assert len(captured["job_id"]) <= 63
     assert captured["job_id"].startswith("validation-repository")

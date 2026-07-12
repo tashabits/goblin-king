@@ -86,12 +86,49 @@ def test_digest_precedence_and_separate_forwarder_settings_render_exactly() -> N
         "registry-main",
         "registry-backup",
     ]
-    assert _api_config(documents)["kubernetes_runtime"] == {
-        "result_forwarder_image": forwarder_image,
-        "worker_image_pull_policy": "Never",
-        "result_forwarder_image_pull_policy": "Always",
-        "workload_image_pull_secret_names": ["registry-main", "registry-backup"],
+    api_runtime = _api_config(documents)["kubernetes_runtime"]
+    assert api_runtime["result_forwarder_image"] == forwarder_image
+    assert api_runtime["worker_image_pull_policy"] == "Never"
+    assert api_runtime["result_forwarder_image_pull_policy"] == "Always"
+    assert api_runtime["workload_image_pull_secret_names"] == [
+        "registry-main",
+        "registry-backup",
+    ]
+    assert api_runtime["workload_security_profile"] == "legacy"
+
+
+def test_restricted_workload_settings_render_for_api_and_scheduler() -> None:
+    documents = _helm_documents(
+        "--set-string",
+        "scheduler.workloadSecurity.profile=restricted-v1",
+        "--set",
+        "scheduler.workloadSecurity.restricted.runAsUser=10001",
+        "--set",
+        "scheduler.workloadSecurity.restricted.runAsGroup=10002",
+        "--set",
+        "scheduler.workloadSecurity.restricted.fsGroup=10003",
+        "--set-string",
+        "scheduler.workloadSecurity.restricted.resultForwarderResources.cpuLimit=75m",
+        "--set-string",
+        "scheduler.workloadSecurity.restricted.workerServiceAccounts.example\\.echo=goblin-reader",
+    )
+    scheduler = _deployment(documents, "scheduler")
+    command = scheduler["spec"]["template"]["spec"]["containers"][0]["command"]
+    runtime_file = _runtime_config(documents)
+
+    assert _option(command, "--kubernetes-runtime-settings") == (
+        "/config/goblin-kubernetes-runtime.json"
+    )
+    assert runtime_file["workload_security_profile"] == "restricted-v1"
+    restricted = runtime_file["restricted_workload"]
+    assert restricted["run_as_user"] == 10001
+    assert restricted["run_as_group"] == 10002
+    assert restricted["fs_group"] == 10003
+    assert restricted["result_forwarder_resources"]["cpu_limit"] == "75m"
+    assert restricted["worker_service_account_names"] == {
+        "example.echo": "goblin-reader"
     }
+    assert _api_config(documents)["kubernetes_runtime"]["restricted_workload"] == restricted
 
 
 def _helm_documents(*arguments: str) -> list[dict]:
@@ -121,6 +158,16 @@ def _api_config(documents: list[dict]) -> dict:
         and "goblin-king-api.json" in document.get("data", {})
     )
     return json.loads(config["data"]["goblin-king-api.json"])
+
+
+def _runtime_config(documents: list[dict]) -> dict:
+    config = next(
+        document
+        for document in documents
+        if document.get("kind") == "ConfigMap"
+        and "goblin-kubernetes-runtime.json" in document.get("data", {})
+    )
+    return json.loads(config["data"]["goblin-kubernetes-runtime.json"])
 
 
 def _option(arguments: list[str], name: str) -> str:

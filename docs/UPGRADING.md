@@ -40,6 +40,19 @@ Secret names through `image.pullSecrets` or `scheduler.workloadImagePullSecrets`
 Before applying, render and confirm digest precedence, forwarder CLI arguments, pull
 policies, and Secret names. See [Kubernetes Runtime Images](kubernetes-runtime-images.md).
 
+### Restricted workload migration
+
+Upgrades remain on `scheduler.workloadSecurity.profile: legacy`. This preserves the
+established generated Pod shape and avoids changing workers that currently run as root,
+write outside contract mounts, or depend on implicit cluster credentials.
+
+Migrate deliberately to `restricted-v1`: verify both images under UID/GID 65532 (or
+configured IDs), set `resourcePolicies.defaults.filesystem.read_only_root: true`, render
+the chart, revalidate each worker under the new security identity, and run a real Pod
+inspection. A configured false read-only-root policy is rejected as a conflict. Review
+[Kubernetes Workload Security](kubernetes-workload-security.md) before enabling per-kind
+ServiceAccounts.
+
 ## Docker Data-Volume Placement
 
 Deployments that set `GOBLIN_KING_DOCKER_DATA_VOLUME` must also set an absolute

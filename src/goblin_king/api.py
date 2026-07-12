@@ -402,12 +402,14 @@ def _validate_notebook_with_kubernetes(
     kubernetes_runtime_settings: KubernetesRuntimeSettings | None = None,
 ) -> WorkerValidationResult:
     """Validate a notebook-defined function with an in-cluster Kubernetes Job."""
+    runtime_settings = kubernetes_runtime_settings or KubernetesRuntimeSettings()
     runtime = KubernetesRuntime(
         workers=notebook_worker_map(record),
         redis_url=redis_url,
         event_bus=event_bus,
-        settings=kubernetes_runtime_settings,
+        settings=runtime_settings,
     )
+    image_identity = runtime_settings.validation_image_identity(record.image, record.kind)
     context = new_run_context(validation_job_id(record.kind), record.kind)
     try:
         run_result = runtime.run(
@@ -423,7 +425,7 @@ def _validate_notebook_with_kubernetes(
             ok=False,
             image=record.image,
             image_digest=notebook_validation_identity(
-                f"kubernetes:{record.image}",
+                image_identity,
                 record.source_hash,
             ),
             validated_at=utc_now(),
@@ -436,7 +438,7 @@ def _validate_notebook_with_kubernetes(
         ok=ok,
         image=record.image,
         image_digest=notebook_validation_identity(
-            f"kubernetes:{record.image}",
+            image_identity,
             record.source_hash,
         ),
         validated_at=utc_now(),
@@ -1572,7 +1574,8 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         project_for_request(principal, record.project_id)
         input_payload = notebook_worker_input(record, request.input)
         timeout_seconds = request.timeout_seconds or record.timeout_seconds
-        if _running_in_kubernetes():
+        in_kubernetes = _running_in_kubernetes()
+        if in_kubernetes:
             result = _validate_notebook_with_kubernetes(
                 record=record,
                 input_payload=input_payload,
@@ -1602,7 +1605,22 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                     )
                 }
             )
-        state.store.save_worker_validation(validation_record(result))
+        state.store.save_worker_validation(
+            validation_record(
+                result,
+                effective_policy=(
+                    {
+                        "kubernetes_workload_security": (
+                            state.settings.kubernetes_runtime.effective_workload_security(
+                                record.kind
+                            )
+                        )
+                    }
+                    if in_kubernetes
+                    else None
+                ),
+            )
+        )
         audit(
             state.store,
             action="notebook_goblin.validated",
@@ -2318,7 +2336,8 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                 )
             input_payload = notebook_worker_input(record, request.input)
             timeout_seconds = request.timeout_seconds or record.timeout_seconds
-            if _running_in_kubernetes():
+            in_kubernetes = _running_in_kubernetes()
+            if in_kubernetes:
                 result = _validate_notebook_with_kubernetes(
                     record=record,
                     input_payload=input_payload,
@@ -2348,7 +2367,22 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                         )
                     }
                 )
-            state.store.save_worker_validation(validation_record(result))
+            state.store.save_worker_validation(
+                validation_record(
+                    result,
+                    effective_policy=(
+                        {
+                            "kubernetes_workload_security": (
+                                state.settings.kubernetes_runtime.effective_workload_security(
+                                    record.kind
+                                )
+                            )
+                        }
+                        if in_kubernetes
+                        else None
+                    ),
+                )
+            )
             proof = result.model_dump(mode="json")
             outcome = "success" if result.ok else "failure"
             if not result.ok:

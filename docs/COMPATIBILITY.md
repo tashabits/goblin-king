@@ -15,6 +15,8 @@ Goblin King `0.1.0` is the first project-ready internal package baseline.
 | API settings schema | `goblin-king/v1alpha1` | `goblin-king-api.json` may point to direct registry/image paths or project settings and may add typed `kubernetes_runtime` image settings. |
 | Kubernetes runtime constructor | `goblin-king/v1alpha1` | The established `goblin_king.runtime.KubernetesRuntime` import and legacy image/pull-policy arguments remain valid; new settings are additive. |
 | Helm control image values | `goblin-king/v1alpha1` | Repository/tag and map/string pull-secret forms remain supported; optional digest and forwarder values are additive, with digest precedence. |
+| Kubernetes workload security | `legacy` / `restricted-v1` | `legacy` remains the default and preserves generated Pod shape. `restricted-v1` is opt-in and binds validation proof to its effective controls. |
+| Kubernetes worker ServiceAccount | `restricted-v1` | Configuration accepts only explicit kind-to-name bindings. Automatic token mounting stays disabled; a bounded projected token is mounted only in that worker. |
 
 The machine-readable version of this matrix lives at
 `compatibility/goblin-king-compatibility.json`.

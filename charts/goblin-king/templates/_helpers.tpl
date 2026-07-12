@@ -62,6 +62,7 @@ imagePullSecrets:
 {{- else if and (kindIs "map" .) (hasKey . "name") -}}
 {{- $name = get . "name" -}}
 {{- end -}}
+
 {{- if $name -}}{{- $names = append $names $name -}}{{- end -}}
 {{- end -}}
 {{- range .Values.scheduler.workloadImagePullSecrets -}}
@@ -74,6 +75,28 @@ imagePullSecrets:
 {{- if $name -}}{{- $names = append $names $name -}}{{- end -}}
 {{- end -}}
 {{- $names | uniq | toJson -}}
+{{- end -}}
+
+{{- define "goblin-king.restrictedWorkloadSettings" -}}
+{{- $settings := .Values.scheduler.workloadSecurity.restricted -}}
+{{- $workerResources := dict
+  "cpu_request" $settings.workerResources.cpuRequest
+  "cpu_limit" $settings.workerResources.cpuLimit
+  "memory_request" $settings.workerResources.memoryRequest
+  "memory_limit" $settings.workerResources.memoryLimit -}}
+{{- $forwarderResources := dict
+  "cpu_request" $settings.resultForwarderResources.cpuRequest
+  "cpu_limit" $settings.resultForwarderResources.cpuLimit
+  "memory_request" $settings.resultForwarderResources.memoryRequest
+  "memory_limit" $settings.resultForwarderResources.memoryLimit -}}
+{{- dict
+  "run_as_user" $settings.runAsUser
+  "run_as_group" $settings.runAsGroup
+  "fs_group" $settings.fsGroup
+  "worker_resources" $workerResources
+  "result_forwarder_resources" $forwarderResources
+  "worker_service_account_names" $settings.workerServiceAccounts
+  | toJson -}}
 {{- end -}}
 
 {{- define "goblin-king.podSecurityContext" -}}

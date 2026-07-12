@@ -122,6 +122,7 @@ class KubernetesRuntime:
                     timeout_seconds=timeout_seconds,
                     resource_policy=resource_policy,
                     placement=placement_metadata(definition, context),
+                    kind=definition.kind,
                 ),
             )
             result = self._wait_for_result(
@@ -158,6 +159,7 @@ class KubernetesRuntime:
         timeout_seconds: int | None,
         resource_policy: ResourcePolicy | None = None,
         placement: dict[str, dict[str, str]] | None = None,
+        kind: str | None = None,
     ) -> dict[str, Any]:
         """Build the Kubernetes Job manifest that mirrors the Docker worker contract."""
         return build_kubernetes_job_manifest(
@@ -172,6 +174,7 @@ class KubernetesRuntime:
             heartbeat_interval_seconds=self.heartbeat_interval_seconds,
             resource_policy=resource_policy,
             placement=placement,
+            kind=kind,
         )
 
     def _wait_for_result(

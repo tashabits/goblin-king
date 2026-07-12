@@ -576,8 +576,15 @@ class Scheduler:
             if isinstance(active_runtime, DockerRuntime)
             else "docker"
         )
+        validation_policy = dict(resource_policy)
         if isinstance(active_runtime, KubernetesRuntime):
-            image_digest, image_error = f"kubernetes:{worker.image}", None
+            image_digest, image_error = (
+                active_runtime.settings.validation_image_identity(worker.image, kind),
+                None,
+            )
+            validation_policy["kubernetes_workload_security"] = (
+                active_runtime.settings.effective_workload_security(kind)
+            )
         else:
             image_digest, image_error = inspect_image_identity(docker_executable, worker.image)
         validation_identity = (
@@ -607,7 +614,7 @@ class Scheduler:
                     }
                 )
             self.store.save_worker_validation(
-                validation_record(result, effective_policy=resource_policy)
+                validation_record(result, effective_policy=validation_policy)
             )
             return format_validation_gate_error(
                 kind=kind,
@@ -653,7 +660,7 @@ class Scheduler:
                 }
             )
         self.store.save_worker_validation(
-            validation_record(result, effective_policy=resource_policy)
+            validation_record(result, effective_policy=validation_policy)
         )
         if not result.ok:
             stale_from_digest = (

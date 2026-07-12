@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from goblin_king.api import create_app
 from goblin_king.api_settings import ApiSettings
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
+from goblin_king.store import SQLiteStore
 from goblin_king.validation import WorkerValidationResult
 
 
@@ -17,6 +18,12 @@ def test_notebook_and_repository_validation_share_runtime_settings(
     runtime_settings = KubernetesRuntimeSettings(
         result_forwarder_image="registry.example/control@sha256:" + "a" * 64,
         workload_image_pull_secret_names=["registry-main"],
+        workload_security_profile="restricted-v1",
+        restricted_workload={
+            "worker_service_account_names": {
+                "notebook.settings-proof": "goblin-notebook-reader"
+            }
+        },
     )
     api_settings = ApiSettings(
         registry=Path("examples/goblins.json").resolve(),
@@ -98,6 +105,7 @@ def test_notebook_and_repository_validation_share_runtime_settings(
     )
     assert submitted.status_code == 200
     entry_id = submitted.json()["entry"]["id"]
+    repository_kind = submitted.json()["version"]["kind"]
     repository_validation = client.post(
         f"/repository/entries/{entry_id}/validate",
         headers=owner_headers,
@@ -107,6 +115,15 @@ def test_notebook_and_repository_validation_share_runtime_settings(
 
     assert len(captured) == 2
     assert all(settings is api_settings.kubernetes_runtime for settings in captured)
+    store = SQLiteStore(api_settings.db)
+    for kind in ("notebook.settings-proof", repository_kind):
+        proof = store.latest_worker_validation_for_kind(kind)
+        assert proof is not None
+        assert proof.effective_policy == {
+            "kubernetes_workload_security": (
+                runtime_settings.effective_workload_security(kind)
+            )
+        }
 
 
 def _admin_headers() -> dict[str, str]:

@@ -9,6 +9,7 @@ from goblin_king.events import DEFAULT_HEARTBEAT_CHANNEL, worker_heartbeat_key
 from goblin_king.kubernetes_placement import apply_kubernetes_placement, placement_metadata
 from goblin_king.kubernetes_result_forwarder import RESULT_FORWARDER_SCRIPT
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
+from goblin_king.kubernetes_workload_security import apply_restricted_workload_security
 from goblin_king.resource_policies import ResourcePolicy
 from goblin_king.runtime_helpers import kubernetes_policy_fields, resource_policy_env
 from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
@@ -27,6 +28,7 @@ def build_kubernetes_job_manifest(
     heartbeat_interval_seconds: int,
     resource_policy: ResourcePolicy | None = None,
     placement: dict[str, dict[str, str]] | None = None,
+    kind: str | None = None,
 ) -> dict[str, Any]:
     """Build a Job manifest without widening the typed runtime settings boundary."""
     worker_container = _worker_container(
@@ -38,16 +40,17 @@ def build_kubernetes_job_manifest(
         heartbeat_interval_seconds=heartbeat_interval_seconds,
         resource_policy=resource_policy,
     )
+    result_forwarder_container = _result_forwarder_container(
+        context=context,
+        timeout_seconds=timeout_seconds,
+        settings=settings,
+        redis_url=redis_url,
+    )
     pod_spec: dict[str, Any] = {
         "restartPolicy": "Never",
         "containers": [
             worker_container,
-            _result_forwarder_container(
-                context=context,
-                timeout_seconds=timeout_seconds,
-                settings=settings,
-                redis_url=redis_url,
-            ),
+            result_forwarder_container,
         ],
         "volumes": [
             {"name": "input", "configMap": {"name": config_name}},
@@ -60,6 +63,18 @@ def build_kubernetes_job_manifest(
             {"name": secret_name}
             for secret_name in settings.workload_image_pull_secret_names
         ]
+    if settings.workload_security_profile == "restricted-v1":
+        effective_kind = kind or str(context.metadata.get("kind") or "") or None
+        apply_restricted_workload_security(
+            pod_spec=pod_spec,
+            worker_container=worker_container,
+            result_forwarder_container=result_forwarder_container,
+            settings=settings.restricted_workload,
+            kind=effective_kind,
+            resource_policy_read_only_root=(
+                resource_policy.filesystem.read_only_root if resource_policy else None
+            ),
+        )
     effective_placement = placement or placement_metadata(None, context)
     if effective_placement is not None:
         apply_kubernetes_placement(pod_spec, effective_placement)

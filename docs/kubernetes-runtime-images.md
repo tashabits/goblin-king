@@ -135,3 +135,6 @@ local retag of `goblin-king:local` should be necessary.
 
 See [issue #146 proof](proofs/issue-146-kubernetes-forwarder-images.md) for automated
 coverage, commands, and the live-cluster proof boundary.
+
+For generated Pod credentials, security contexts, and both-container resource controls,
+continue with [Kubernetes Workload Security](kubernetes-workload-security.md).

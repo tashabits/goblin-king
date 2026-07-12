@@ -74,6 +74,22 @@ def test_mandatory_validation_gate_is_documented() -> None:
     assert "| Condition | Scheduler behavior | Operator fix |" in validation_doc
 
 
+def test_kubernetes_workload_security_migration_is_documented() -> None:
+    """Keep the compatibility default and secure opt-in path discoverable."""
+    readme = Path("README.md").read_text(encoding="utf-8")
+    security_doc = Path("docs/kubernetes-workload-security.md").read_text(
+        encoding="utf-8"
+    )
+    security_flat = " ".join(security_doc.split())
+
+    assert "docs/kubernetes-workload-security.md" in readme
+    assert "`legacy` remains the default" in security_flat
+    assert "`restricted-v1`" in security_doc
+    assert "automountServiceAccountToken: false" in security_doc
+    assert "mounted only in the worker container" in security_flat
+    assert "resourcePolicies.defaults.filesystem.read_only_root=true" in security_flat
+
+
 def test_repository_operator_docs_cover_stack_enablement() -> None:
     """Verify optional Directory service docs cover local and cluster operators."""
     readme = Path("README.md").read_text(encoding="utf-8")
