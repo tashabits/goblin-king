@@ -101,6 +101,13 @@ The package wheel contains all three retention/forwarder modules. Helm rendering
 persistence-enabled API/scheduler Pods receive the artifact PVC settings and persistence-disabled
 Pods omit the claim while retaining the URI-root setting.
 
+After the final failed-Job artifact regression was added, 52 affected lifecycle/runtime tests and
+all 7 Docker runtime tests passed. One complete-suite attempt reached 345 passed and one skipped
+before the disposable Redis fixture reset a localhost connection in an unchanged Docker test; that
+exact test and then the complete Docker test file passed in isolation. The earlier complete branch
+checkpoint passed 345 tests with one skipped. This external fixture instability is recorded rather
+than presented as a clean post-change full-suite receipt.
+
 Live kind execution was not performed in this implementation worktree. The publishing verifier must
 run the commands above and replace this limitation with the observed commit SHA, image identities,
 Job/Pod state, receipt, and cleanup result. No live output is inferred here.
