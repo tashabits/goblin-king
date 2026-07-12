@@ -71,6 +71,9 @@ or worker contract change is required.
   Kubernetes CLI execution use one typed runtime factory. Existing API settings and CLI
   defaults remain valid; non-default forwarder/pull settings now apply to generic proof
   as well as normal execution.
+- When `restricted-v1` is enabled, generic validation identity includes the effective
+  workload-security contract and per-kind ServiceAccount. Existing legacy proof becomes
+  stale by design and each affected kind must be revalidated.
 - Existing SQLite and Redis layouts are unchanged.
 
 After installing the updated API and scheduler images, invoke

@@ -75,7 +75,8 @@ goblin-king scheduler run \
   --result-forwarder-image registry.example/control@sha256:<digest> \
   --worker-image-pull-policy IfNotPresent \
   --result-forwarder-image-pull-policy IfNotPresent \
-  --workload-image-pull-secret primary-registry
+  --workload-image-pull-secret primary-registry \
+  --kubernetes-runtime-settings /etc/goblin-king/kubernetes-runtime.json
 
 goblin-king jobs submit example.echo \
   --runtime kubernetes \
@@ -111,7 +112,9 @@ validation Jobs:
 
 All control-plane paths use one typed runtime factory. Generic validation cannot replace
 the configured forwarder or pull settings through its HTTP request, and scheduler/API
-construction retains the same namespace discovery and bounded diagnostic helpers.
+construction retains the same namespace discovery and bounded diagnostic helpers. The
+optional CLI settings file also carries `restricted-v1` and per-kind ServiceAccount
+settings into generic proof, using the same identity as scheduled execution.
 
 Older JSON settings files and older constructor calls remain valid. The Python
 constructor still accepts `image_pull_policy` and `result_forwarder_image`; when no

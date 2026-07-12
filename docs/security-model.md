@@ -85,7 +85,10 @@ network, and admission controls.
 Generic validation receives its forwarder image, worker/forwarder pull policies, and
 symbolic pull-secret names only from the same typed operator settings used by the
 scheduler. Its request cannot weaken or replace those settings. Namespace discovery and
-bounded Pod diagnostic helpers are shared by the runtime factory as well.
+bounded Pod diagnostic helpers are shared by the runtime factory as well. With
+`restricted-v1`, the validation identity binds the effective security profile and
+per-kind ServiceAccount; legacy proof and proof for another ServiceAccount cannot pass
+the scheduler gate.
 
 ## Secrets
 

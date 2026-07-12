@@ -219,4 +219,7 @@ same forwarder identity, policies, and `imagePullSecrets` as normal scheduler Po
 Deterministic tests also prove that API generic/notebook/repository validation,
 scheduler static/dynamic workers, and direct CLI execution all use the shared typed
 runtime factory. Pod log reads retain the same 64 KiB per-container and five-second
-request bounds. No independent validation-only configuration path remains.
+request bounds. Under `restricted-v1`, the persisted identity also includes the effective
+profile and per-kind ServiceAccount decision. A passing legacy identity therefore cannot
+authorize restricted execution, and changing a kind's ServiceAccount requires fresh
+proof. No independent validation-only configuration path remains.

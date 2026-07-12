@@ -197,9 +197,12 @@ passes its typed `kubernetes_runtime` settings into the same factory used by sch
 execution and notebook validation. The CLI builds that same typed settings object from
 the established forwarder-image, worker/forwarder pull-policy, and repeatable pull-secret
 options. The factory retains the runtime's shared namespace discovery and bounded Pod
-diagnostics. This prevents validation from passing with a local/default forwarder while
-normal scheduling uses another image, policy, Secret set, namespace, or diagnostic
-boundary. Legacy constructor calls and Docker validation remain unchanged.
+diagnostics. A runtime settings file may also select `restricted-v1`; its effective
+profile and per-kind ServiceAccount decision become part of the same validation identity
+used by the scheduler. This prevents validation from passing with a local/default
+forwarder or legacy Pod contract while normal scheduling uses another image, policy,
+Secret set, namespace, security contract, or diagnostic boundary. Legacy constructor
+calls and Docker validation remain unchanged.
 
 ## Project-Defined Goblins
 

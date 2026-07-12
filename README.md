@@ -329,7 +329,10 @@ command, mount, credential, or Kubernetes manifest. Docker validation remains th
 default, and `--build`/`--run-root` remain Docker-only options. Kubernetes validation,
 scheduled execution, notebook validation, and direct submission all construct their
 runtime from the same typed settings factory, including forwarder image, pull policies,
-pull-secret names, namespace discovery, and bounded diagnostics.
+pull-secret names, workload-security profile, per-kind ServiceAccount selection,
+namespace discovery, and bounded diagnostics. Under `restricted-v1`, proof identity
+includes that effective security contract, so legacy proof cannot authorize the
+restricted workload.
 
 Adopting projects can validate workers directly from project settings:
 

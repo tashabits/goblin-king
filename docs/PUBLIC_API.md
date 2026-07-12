@@ -102,7 +102,9 @@ account, or raw Job manifest.
 The endpoint reads the typed `kubernetes_runtime` member from API settings and uses the
 same runtime factory as scheduler and notebook execution. Forwarder identity, worker and
 forwarder pull policies, workload pull-secret names, namespace discovery, and bounded
-diagnostics therefore cannot be selected independently by this request.
+diagnostics therefore cannot be selected independently by this request. The configured
+workload-security profile and per-kind ServiceAccount decision are included in restricted
+validation identity, so a legacy proof does not authorize a `restricted-v1` execution.
 
 The response contains `validations`, one `WorkerValidationResult` per selected kind.
 Existing result fields remain unchanged. The additive `artifacts` field returns
