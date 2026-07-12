@@ -100,21 +100,13 @@ def test_kubernetes_job_includes_result_forwarder() -> None:
         container for container in containers if container["name"] == "result-forwarder"
     )
     assert forwarder["image"] == "goblin-king:test"
-    assert forwarder["command"] == [
-        "python",
-        "-m",
-        "goblin_king.kubernetes_result_forwarder",
-    ]
+    assert forwarder["command"][0:2] == ["python", "-c"]
     assert {"name": "GOBLIN_REDIS_URL", "value": "redis://redis:6379/0"} in forwarder["env"]
     assert {"name": "GOBLIN_RESULT_PATH", "value": "/goblin-result/result.json"} in forwarder[
         "env"
     ]
     assert {"name": "result", "mountPath": "/goblin-result"} in forwarder["volumeMounts"]
-    assert {
-        "name": "artifacts",
-        "mountPath": "/artifacts",
-        "readOnly": True,
-    } in forwarder["volumeMounts"]
+    assert {mount["name"] for mount in forwarder["volumeMounts"]} == {"result"}
 
 
 def test_kubernetes_job_retains_artifacts_on_operator_pvc() -> None:
@@ -153,6 +145,11 @@ def test_kubernetes_job_retains_artifacts_on_operator_pvc() -> None:
 
     pod_spec = manifest["spec"]["template"]["spec"]
     worker, forwarder = pod_spec["containers"]
+    assert forwarder["command"] == [
+        "python",
+        "-m",
+        "goblin_king.kubernetes_result_forwarder",
+    ]
     assert "retained-artifacts" not in {
         volume_mount["name"] for volume_mount in worker["volumeMounts"]
     }

@@ -6,6 +6,7 @@ import hashlib
 import mimetypes
 import re
 import shutil
+import stat
 import tempfile
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote, unquote, urlsplit
@@ -134,20 +135,40 @@ def _resolve_source(source_root: Path, artifact: ArtifactRecord) -> Path:
     if not candidate.is_absolute():
         candidate = source_root / candidate
     try:
+        unresolved_relative = candidate.relative_to(source_root)
+    except ValueError as error:
+        raise ArtifactRetentionError(
+            f"artifact {artifact.name!r} is missing or outside the worker artifact root"
+        ) from error
+    if ".." in unresolved_relative.parts:
+        raise ArtifactRetentionError(
+            f"artifact {artifact.name!r} is missing or outside the worker artifact root"
+        )
+    _reject_symbolic_link_components(source_root, unresolved_relative, artifact.name)
+    try:
         resolved = candidate.resolve(strict=True)
-        relative = resolved.relative_to(source_root)
+        resolved.relative_to(source_root)
     except (FileNotFoundError, ValueError) as error:
         raise ArtifactRetentionError(
             f"artifact {artifact.name!r} is missing or outside the worker artifact root"
         ) from error
-    current = source_root
-    for part in relative.parts:
-        current /= part
-        if current.is_symlink():
-            raise ArtifactRetentionError(f"artifact {artifact.name!r} may not use symbolic links")
     if not resolved.is_file():
         raise ArtifactRetentionError(f"artifact {artifact.name!r} is not a regular file")
     return resolved
+
+
+def _reject_symbolic_link_components(root: Path, relative: Path, name: str) -> None:
+    current = root
+    for part in relative.parts:
+        current /= part
+        try:
+            mode = current.lstat().st_mode
+        except OSError as error:
+            raise ArtifactRetentionError(
+                f"artifact {name!r} is missing or outside the worker artifact root"
+            ) from error
+        if stat.S_ISLNK(mode):
+            raise ArtifactRetentionError(f"artifact {name!r} may not use symbolic links")
 
 
 def _copy_and_hash(source: Path, destination: Path, remaining: int, name: str) -> tuple[int, str]:

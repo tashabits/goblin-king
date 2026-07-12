@@ -41,6 +41,12 @@ If the PVC claim variable is absent, artifact-free results behave normally. A re
 or more artifacts becomes an explicit failed result with no retained artifact metadata. This avoids
 claiming that bytes survived when no durable backend was available.
 
+Without a PVC, generated Pods keep the established inline `python -c` forwarder contract, so a
+custom forwarder image that provides Python and Redis remains compatible. Enabling retention uses
+the version-matched `goblin_king.kubernetes_result_forwarder` module from the control image because
+the retention validator and copier are part of that package. Operators using a separate forwarder
+image must publish the same Goblin King version before enabling the PVC settings.
+
 ## Retention Contract
 
 For every declared artifact, the forwarder:

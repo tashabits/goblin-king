@@ -18,6 +18,7 @@ from goblin_king.kubernetes_artifact_config import (
     DEFAULT_ARTIFACT_MAX_FILES,
 )
 from goblin_king.kubernetes_placement import apply_kubernetes_placement, placement_metadata
+from goblin_king.kubernetes_result_forwarder import RESULT_FORWARDER_SCRIPT
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 from goblin_king.kubernetes_workload_security import apply_restricted_workload_security
 from goblin_king.resource_policies import ResourcePolicy
@@ -175,6 +176,13 @@ def _result_forwarder_container(
     redis_url: str,
     resource_policy: ResourcePolicy | None,
 ) -> dict[str, Any]:
+    if settings.artifact_retention is None:
+        return _legacy_result_forwarder_container(
+            context=context,
+            timeout_seconds=timeout_seconds,
+            settings=settings,
+            redis_url=redis_url,
+        )
     max_files = DEFAULT_ARTIFACT_MAX_FILES
     max_bytes = DEFAULT_ARTIFACT_MAX_BYTES
     if resource_policy is not None:
@@ -229,3 +237,29 @@ def _result_forwarder_container(
             }
         )
     return container
+
+
+def _legacy_result_forwarder_container(
+    *,
+    context: GoblinContext,
+    timeout_seconds: int | None,
+    settings: KubernetesRuntimeSettings,
+    redis_url: str,
+) -> dict[str, Any]:
+    """Keep custom pre-retention forwarder images compatible when no PVC is configured."""
+    return {
+        "name": "result-forwarder",
+        "image": settings.result_forwarder_image,
+        "imagePullPolicy": settings.result_forwarder_image_pull_policy,
+        "command": ["python", "-c", RESULT_FORWARDER_SCRIPT],
+        "env": [
+            {"name": "GOBLIN_RUN_ID", "value": context.run_id},
+            {"name": "GOBLIN_REDIS_URL", "value": redis_url},
+            {"name": "GOBLIN_RESULT_PATH", "value": "/goblin-result/result.json"},
+            {
+                "name": "GOBLIN_RESULT_WAIT_SECONDS",
+                "value": str((timeout_seconds or 300) + 15),
+            },
+        ],
+        "volumeMounts": [{"name": "result", "mountPath": "/goblin-result"}],
+    }

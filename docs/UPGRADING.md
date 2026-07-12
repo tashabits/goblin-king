@@ -123,6 +123,11 @@ Successfully retained results add actual `artifact.<name>.bytes`,
 metrics. When a Kubernetes result declares artifacts but retention is not configured or
 cannot complete, the result is failed explicitly and artifact entries are omitted.
 
+Custom forwarder images retain the earlier inline Python-plus-Redis command contract while
+artifact retention is disabled. Enabling PVC retention switches the sidecar to the packaged
+forwarder module, so a separate forwarder image must contain the same Goblin King version as the
+control plane before the PVC settings are enabled.
+
 The chart's default `ReadWriteOnce` PVC is appropriate for the documented single-node
 local cluster. Review access modes before a multi-node upgrade; use `ReadWriteMany` or an
 equivalent backend when API and worker Pods may run on different nodes.
