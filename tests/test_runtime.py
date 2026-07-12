@@ -3,8 +3,12 @@
 import subprocess
 from types import SimpleNamespace
 
-from goblin_king import runtime as runtime_module
+from goblin_king import kubernetes_runtime as kubernetes_runtime_module
 from goblin_king.contracts import GoblinContext, GoblinDefinition, GoblinResult
+from goblin_king.kubernetes_pod_diagnostics import (
+    DEFAULT_KUBERNETES_LOG_CAPTURE_BYTES,
+    KubernetesRunObservation,
+)
 from goblin_king.registry import GoblinRegistry
 from goblin_king.resource_policies import ResourcePolicy
 from goblin_king.runtime import (
@@ -14,7 +18,6 @@ from goblin_king.runtime import (
     _worker_env,
     _worker_secret_refs,
 )
-from goblin_king.runtime_observation import KubernetesRunObservation
 from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
 from goblin_king.workers import WorkerImageDefinition, WorkerImageMap
 
@@ -139,7 +142,7 @@ def test_kubernetes_observed_run_captures_bounded_logs_before_cleanup(monkeypatc
             return SimpleNamespace(items=[pod])
 
         def read_namespaced_pod_log(self, *, name, namespace, container, **kwargs):
-            assert kwargs.get("limit_bytes") == runtime_module.DEFAULT_RUNTIME_LOG_CAPTURE_BYTES
+            assert kwargs.get("limit_bytes") == DEFAULT_KUBERNETES_LOG_CAPTURE_BYTES
             return f"{container} log"
 
         def delete_namespaced_config_map(self, *, name, namespace):
@@ -157,7 +160,7 @@ def test_kubernetes_observed_run_captures_bounded_logs_before_cleanup(monkeypatc
         poll_interval_seconds=0,
     )
     monkeypatch.setattr(
-        runtime_module,
+        kubernetes_runtime_module,
         "kubernetes_clients",
         lambda: (FakeBatch(), FakeCore()),
     )
@@ -227,7 +230,11 @@ def test_kubernetes_observed_run_captures_logs_when_wait_fails(monkeypatch) -> N
         ),
         namespace="proof",
     )
-    monkeypatch.setattr(runtime_module, "kubernetes_clients", lambda: (batch, core))
+    monkeypatch.setattr(
+        kubernetes_runtime_module,
+        "kubernetes_clients",
+        lambda: (batch, core),
+    )
 
     def fail_wait(**_kwargs):
         raise RuntimeError("job status unavailable")

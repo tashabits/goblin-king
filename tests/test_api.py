@@ -146,6 +146,10 @@ def test_admin_kubernetes_worker_validation_persists_scheduler_proof(
     assert validation["artifacts"][0]["name"] == "proof.txt"
     assert captured["input_payload"] == {"message": "proof"}
     assert captured["timeout_seconds"] == 41
+    assert (
+        captured["kubernetes_runtime_settings"]
+        is client.app.state.goblin_king.settings.kubernetes_runtime
+    )
     stored = store.get_latest_worker_validation(
         kind="example.echo",
         image_digest="kubernetes:goblin-king-example-echo:local",

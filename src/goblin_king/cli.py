@@ -96,6 +96,7 @@ from goblin_king.kubernetes_cli import (
     WorkloadImagePullSecretsOption,
     kubernetes_runtime_settings,
 )
+from goblin_king.kubernetes_runtime_factory import build_kubernetes_runtime
 from goblin_king.kubernetes_runtime_settings import (
     DEFAULT_KUBERNETES_IMAGE_PULL_POLICY,
     DEFAULT_RESULT_FORWARDER_IMAGE,
@@ -104,7 +105,7 @@ from goblin_king.kubernetes_validation import validate_workers_with_kubernetes
 from goblin_king.metadata import goblin_job_metadata
 from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.resource_policies import ResourcePolicyError, ResourcePolicySet
-from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRuntime, new_run_context
+from goblin_king.runtime import DockerRuntime, InProcessRuntime, new_run_context
 from goblin_king.runtime_helpers import docker_policy_args, kubernetes_policy_fields
 from goblin_king.scheduler import DEFAULT_INTERVAL_SECONDS, Scheduler, next_run_after
 from goblin_king.smoke import run_adopter_project_smoke
@@ -678,9 +679,10 @@ def submit_job(
             resource_policy=policy,
         )
     elif runtime == "kubernetes":
-        result = KubernetesRuntime(
+        result = build_kubernetes_runtime(
             workers=worker_map,
             redis_url=redis_url,
+            event_bus=None,
             settings=kubernetes_runtime_settings(
                 result_forwarder_image=result_forwarder_image,
                 worker_image_pull_policy=worker_image_pull_policy,
@@ -1383,6 +1385,14 @@ def validate_worker_contracts(
         str,
         typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
     ] = DEFAULT_REDIS_URL,
+    result_forwarder_image: ResultForwarderImageOption = DEFAULT_RESULT_FORWARDER_IMAGE,
+    worker_image_pull_policy: WorkerImagePullPolicyOption = (
+        DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
+    ),
+    result_forwarder_image_pull_policy: ResultForwarderImagePullPolicyOption = (
+        DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
+    ),
+    workload_image_pull_secrets: WorkloadImagePullSecretsOption = None,
     run_root: DockerRunRootOption = None,
     json_output: Annotated[
         bool,
@@ -1416,6 +1426,12 @@ def validate_worker_contracts(
             require_success=require_success,
             timeout_seconds=timeout_seconds or 120,
             redis_url=redis_url,
+            kubernetes_runtime_settings=kubernetes_runtime_settings(
+                result_forwarder_image=result_forwarder_image,
+                worker_image_pull_policy=worker_image_pull_policy,
+                result_forwarder_image_pull_policy=result_forwarder_image_pull_policy,
+                workload_image_pull_secrets=workload_image_pull_secrets,
+            ),
         )
     else:
         results = validate_workers(

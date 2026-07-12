@@ -185,6 +185,14 @@ def test_workers_validate_kubernetes_returns_and_persists_exact_proof(
             "example.echo",
             "--timeout-seconds",
             "37",
+            "--result-forwarder-image",
+            "registry.example/control@sha256:abc",
+            "--worker-image-pull-policy",
+            "Never",
+            "--result-forwarder-image-pull-policy",
+            "Always",
+            "--workload-image-pull-secret",
+            "registry-main",
             "--db",
             str(db_path),
             "--json",
@@ -194,6 +202,11 @@ def test_workers_validate_kubernetes_returns_and_persists_exact_proof(
     assert result.exit_code == 0
     assert json.loads(result.stdout)[0]["logs"] == {"worker": "validation log"}
     assert captured["timeout_seconds"] == 37
+    runtime_settings = captured["kubernetes_runtime_settings"]
+    assert runtime_settings.result_forwarder_image == "registry.example/control@sha256:abc"
+    assert runtime_settings.worker_image_pull_policy == "Never"
+    assert runtime_settings.result_forwarder_image_pull_policy == "Always"
+    assert runtime_settings.workload_image_pull_secret_names == ("registry-main",)
     stored = SQLiteStore(db_path).latest_worker_validation_for_kind("example.echo")
     assert stored is not None
     assert stored.image_digest == "kubernetes:goblin-king-example-echo:local"

@@ -144,6 +144,7 @@ from goblin_king.fanout import (
     list_fanout_details,
     retry_job,
 )
+from goblin_king.kubernetes_runtime_factory import build_kubernetes_runtime
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 from goblin_king.kubernetes_validation import validate_workers_with_kubernetes
 from goblin_king.metadata import goblin_job_metadata
@@ -162,7 +163,7 @@ from goblin_king.notebooks import (
 from goblin_king.project import ProjectSettingsError
 from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.resource_policies import ResourcePolicyError
-from goblin_king.runtime import KubernetesRuntime, new_run_context
+from goblin_king.runtime import new_run_context
 from goblin_king.scheduler import next_run_after
 from goblin_king.termination import terminate_runtime
 from goblin_king.validation import (
@@ -406,7 +407,7 @@ def _validate_notebook_with_kubernetes(
 ) -> WorkerValidationResult:
     """Validate a notebook-defined function with an in-cluster Kubernetes Job."""
     runtime_settings = kubernetes_runtime_settings or KubernetesRuntimeSettings()
-    runtime = KubernetesRuntime(
+    runtime = build_kubernetes_runtime(
         workers=notebook_worker_map(record),
         redis_url=redis_url,
         event_bus=event_bus,
@@ -1496,6 +1497,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             timeout_seconds=request.timeout_seconds,
             redis_url=state.settings.redis_url,
             event_bus=state.event_bus,
+            kubernetes_runtime_settings=state.settings.kubernetes_runtime,
         )
         for result in results:
             state.store.save_worker_validation(validation_record(result))

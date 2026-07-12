@@ -6,8 +6,11 @@ from typing import Any
 
 from goblin_king.contracts import GoblinDefinition, utc_now
 from goblin_king.events import EventBus
+from goblin_king.kubernetes_runtime import KubernetesRuntime
+from goblin_king.kubernetes_runtime_factory import build_kubernetes_runtime
+from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 from goblin_king.registry import GoblinRegistry
-from goblin_king.runtime import KubernetesRuntime, new_run_context
+from goblin_king.runtime import new_run_context
 from goblin_king.validation import (
     WorkerValidationResult,
     kubernetes_image_identity,
@@ -26,16 +29,15 @@ def validate_workers_with_kubernetes(
     timeout_seconds: int = 120,
     redis_url: str = "redis://localhost:6379/0",
     event_bus: EventBus | None = None,
-    runtime: KubernetesRuntime | None = None,
+    kubernetes_runtime_settings: KubernetesRuntimeSettings | None = None,
 ) -> list[WorkerValidationResult]:
     """Run selected generic workers as bounded Jobs and return contract proof details."""
     definitions, results = _selected_definitions(registry, kinds)
-    # The injectable runtime is the configuration seam for issue #146. Once Kubernetes
-    # runtime settings are centralized, API and scheduler callers must share that factory.
-    active_runtime = runtime or KubernetesRuntime(
+    active_runtime = build_kubernetes_runtime(
         workers=workers,
         redis_url=redis_url,
         event_bus=event_bus,
+        settings=kubernetes_runtime_settings or KubernetesRuntimeSettings(),
     )
     for definition in definitions:
         results.append(

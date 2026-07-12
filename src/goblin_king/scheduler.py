@@ -22,6 +22,7 @@ from goblin_king.contracts import (
     utc_now,
 )
 from goblin_king.events import EventBus
+from goblin_king.kubernetes_runtime_factory import build_kubernetes_runtime
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 from goblin_king.metadata import goblin_job_metadata
 from goblin_king.notebooks import (
@@ -124,7 +125,7 @@ class Scheduler:
                 event_bus=self.event_bus,
             )
         if self.runtime_mode == "kubernetes":
-            return KubernetesRuntime(
+            return build_kubernetes_runtime(
                 workers=self.workers,
                 redis_url=self.redis_url,
                 event_bus=self.event_bus,
@@ -145,7 +146,7 @@ class Scheduler:
                 event_bus=self.event_bus,
             )
         if self.runtime_mode == "kubernetes":
-            return KubernetesRuntime(
+            return build_kubernetes_runtime(
                 workers=workers,
                 redis_url=self.redis_url,
                 event_bus=self.event_bus,
