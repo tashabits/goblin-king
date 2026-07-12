@@ -257,7 +257,7 @@ def test_kubernetes_retention_configuration_is_validated_and_environment_driven(
     )
 
     assert config is not None
-    assert config.destination_root == "/goblin-artifact-volume/artifacts/retained"
+    assert config.destination_root == "/goblin-retained-artifacts"
     assert KubernetesArtifactRetention.from_environment({}) is None
     with pytest.raises(ValueError, match="Kubernetes resource name"):
         KubernetesArtifactRetention(claim_name="../claim")

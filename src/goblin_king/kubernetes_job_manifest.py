@@ -225,6 +225,7 @@ def _result_forwarder_container(
             {
                 "name": "retained-artifacts",
                 "mountPath": settings.artifact_retention.volume_mount_path,
+                "subPath": settings.artifact_retention.volume_subdirectory,
             }
         )
     return container

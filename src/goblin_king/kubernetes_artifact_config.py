@@ -11,7 +11,7 @@ from pathlib import Path, PurePosixPath
 DEFAULT_ARTIFACT_MAX_BYTES = 100 * 1024 * 1024
 DEFAULT_ARTIFACT_MAX_FILES = 100
 ARTIFACT_SOURCE_ROOT = "/artifacts"
-ARTIFACT_VOLUME_MOUNT_PATH = "/goblin-artifact-volume"
+ARTIFACT_VOLUME_MOUNT_PATH = "/goblin-retained-artifacts"
 ARTIFACT_PVC_CLAIM_ENV = "GOBLIN_KING_K8S_ARTIFACT_PVC_CLAIM"
 ARTIFACT_VOLUME_SUBDIRECTORY_ENV = "GOBLIN_KING_K8S_ARTIFACT_VOLUME_SUBDIRECTORY"
 ARTIFACT_URI_ROOT_ENV = "GOBLIN_KING_K8S_ARTIFACT_URI_ROOT"
@@ -53,7 +53,7 @@ class KubernetesArtifactRetention:
     @property
     def destination_root(self) -> str:
         """Return the sidecar-visible directory receiving retained bytes."""
-        return str(PurePosixPath(self.volume_mount_path) / self.volume_subdirectory)
+        return self.volume_mount_path
 
     @classmethod
     def from_environment(

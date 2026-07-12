@@ -158,7 +158,8 @@ def test_kubernetes_job_retains_artifacts_on_operator_pvc() -> None:
     }
     assert {
         "name": "retained-artifacts",
-        "mountPath": "/goblin-artifact-volume",
+        "mountPath": "/goblin-retained-artifacts",
+        "subPath": "artifacts",
     } in forwarder["volumeMounts"]
     assert {
         "name": "retained-artifacts",
@@ -166,7 +167,7 @@ def test_kubernetes_job_retains_artifacts_on_operator_pvc() -> None:
     } in pod_spec["volumes"]
     assert {
         "name": "GOBLIN_ARTIFACT_DESTINATION_ROOT",
-        "value": "/goblin-artifact-volume/artifacts",
+        "value": "/goblin-retained-artifacts",
     } in forwarder["env"]
     assert {
         "name": "GOBLIN_KING_K8S_ARTIFACT_URI_ROOT",
