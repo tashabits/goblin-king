@@ -34,6 +34,14 @@ Observed before the live pass: 46 tests passed, Ruff passed, Helm lint passed, a
 manifests, resource merging, intentional relaxation rejection, per-kind projected token
 isolation, API/scheduler proof identity, settings-file loading, and Helm rendering.
 
+Final gates after the live pass and documentation review observed:
+
+- `python -m pytest -q`: 361 passed in 104.71 seconds;
+- `python -m ruff check .`: passed;
+- `helm lint charts/goblin-king`: passed with only the existing optional-icon note;
+- restricted-profile `helm template`: passed with read-only resource policy enabled;
+- `git diff --check` and worktree status: clean.
+
 ## Live Kind Proof
 
 Context: `kind-goblin-king-upstream-proof`
