@@ -60,6 +60,20 @@ def test_scheduler_cli_forwards_kubernetes_workload_settings(tmp_path: Path, mon
             return []
 
     monkeypatch.setattr("goblin_king.cli.Scheduler", FakeScheduler)
+    settings_path = tmp_path / "kubernetes-runtime.json"
+    settings_path.write_text(
+        json.dumps(
+            {
+                "workload_security_profile": "restricted-v1",
+                "restricted_workload": {
+                    "worker_service_account_names": {
+                        "example.echo": "goblin-echo-reader"
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
     result = runner.invoke(
         app,
         [
@@ -83,6 +97,8 @@ def test_scheduler_cli_forwards_kubernetes_workload_settings(tmp_path: Path, mon
             "registry-main",
             "--workload-image-pull-secret",
             "registry-backup",
+            "--kubernetes-runtime-settings",
+            str(settings_path),
         ],
     )
 
@@ -95,6 +111,10 @@ def test_scheduler_cli_forwards_kubernetes_workload_settings(tmp_path: Path, mon
         "registry-main",
         "registry-backup",
     )
+    assert settings.workload_security_profile == "restricted-v1"
+    assert settings.restricted_workload.worker_service_account_names == {
+        "example.echo": "goblin-echo-reader"
+    }
 
 
 def test_direct_submit_forwards_kubernetes_workload_settings(tmp_path: Path, monkeypatch) -> None:
@@ -137,6 +157,7 @@ def test_direct_submit_forwards_kubernetes_workload_settings(tmp_path: Path, mon
     assert result.exit_code == 0, result.output
     assert captured["settings"].result_forwarder_image.endswith(CONTROL_DIGEST)
     assert captured["settings"].workload_image_pull_secret_names == ("registry-main",)
+    assert captured["settings"].workload_security_profile == "legacy"
 
 
 def test_api_settings_load_kubernetes_runtime_boundary(tmp_path: Path) -> None:
@@ -149,6 +170,12 @@ def test_api_settings_load_kubernetes_runtime_boundary(tmp_path: Path) -> None:
                     "worker_image_pull_policy": "Never",
                     "result_forwarder_image_pull_policy": "Always",
                     "workload_image_pull_secret_names": ["registry-main"],
+                    "workload_security_profile": "restricted-v1",
+                    "restricted_workload": {
+                        "worker_service_account_names": {
+                            "example.echo": "goblin-echo-reader"
+                        }
+                    },
                 }
             }
         ),
@@ -161,3 +188,7 @@ def test_api_settings_load_kubernetes_runtime_boundary(tmp_path: Path) -> None:
     assert settings.worker_image_pull_policy == "Never"
     assert settings.result_forwarder_image_pull_policy == "Always"
     assert settings.workload_image_pull_secret_names == ("registry-main",)
+    assert settings.workload_security_profile == "restricted-v1"
+    assert settings.restricted_workload.worker_service_account_names == {
+        "example.echo": "goblin-echo-reader"
+    }

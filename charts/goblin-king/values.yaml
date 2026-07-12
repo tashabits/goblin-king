@@ -109,6 +109,23 @@ scheduler:
       digest: ""
     pullPolicy: ""
   workloadImagePullSecrets: []
+  workloadSecurity:
+    profile: legacy
+    restricted:
+      runAsUser: 65532
+      runAsGroup: 65532
+      fsGroup: 65532
+      workerResources:
+        cpuRequest: 100m
+        cpuLimit: "1"
+        memoryRequest: 64Mi
+        memoryLimit: 512Mi
+      resultForwarderResources:
+        cpuRequest: 10m
+        cpuLimit: 100m
+        memoryRequest: 16Mi
+        memoryLimit: 64Mi
+      workerServiceAccounts: {}
   serviceAccount:
     create: true
     name: ""

@@ -97,6 +97,8 @@ spec:
             - --workload-image-pull-secret
             - {{ . | quote }}
             {{- end }}
+            - --kubernetes-runtime-settings
+            - /config/goblin-kubernetes-runtime.json
             {{- end }}
             {{- if .Values.config.projectSettingsPath }}
             - --project

@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
-import re
+import json
 from collections.abc import Sequence
+from hashlib import sha256
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from goblin_king.kubernetes_workload_security import (
+    KubernetesRestrictedWorkloadSettings,
+    KubernetesWorkloadSecurityProfile,
+    kubernetes_object_name,
+)
+
 KubernetesImagePullPolicy = Literal["Always", "IfNotPresent", "Never"]
 DEFAULT_KUBERNETES_IMAGE_PULL_POLICY: KubernetesImagePullPolicy = "IfNotPresent"
 DEFAULT_RESULT_FORWARDER_IMAGE = "goblin-king:local"
-_KUBERNETES_OBJECT_NAME = re.compile(r"^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$")
 
 
 class KubernetesRuntimeSettings(BaseModel):
@@ -28,6 +34,10 @@ class KubernetesRuntimeSettings(BaseModel):
         DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
     )
     workload_image_pull_secret_names: tuple[str, ...] = ()
+    workload_security_profile: KubernetesWorkloadSecurityProfile = "legacy"
+    restricted_workload: KubernetesRestrictedWorkloadSettings = Field(
+        default_factory=KubernetesRestrictedWorkloadSettings
+    )
 
     @field_validator("result_forwarder_image")
     @classmethod
@@ -48,16 +58,45 @@ class KubernetesRuntimeSettings(BaseModel):
             raise ValueError("workload_image_pull_secret_names must be a list of names")
         names: list[str] = []
         for item in value:
-            if not isinstance(item, str) or not item.strip():
-                raise ValueError("workload image pull Secret names must be non-empty strings")
-            normalized = item.strip()
-            if len(normalized) > 253 or _KUBERNETES_OBJECT_NAME.fullmatch(normalized) is None:
-                raise ValueError(
-                    "workload image pull Secret names must be Kubernetes DNS subdomain names"
-                )
+            normalized = kubernetes_object_name(
+                item,
+                field_name="workload image pull Secret name",
+            )
             if normalized not in names:
                 names.append(normalized)
         return tuple(names)
+
+    def effective_workload_security(self, kind: str | None) -> dict[str, object]:
+        """Expose the effective versioned security contract for validation proof."""
+        if self.workload_security_profile == "legacy":
+            return {"profile": "legacy"}
+        service_account_name = self.restricted_workload.service_account_for(kind)
+        return {
+            "profile": self.workload_security_profile,
+            "automount_service_account_token": False,
+            "service_account_name": service_account_name,
+            "worker_service_account_token_projected": service_account_name is not None,
+            "pod_security_context": self.restricted_workload.pod_security_context(),
+            "container_security_context": (
+                self.restricted_workload.container_security_context()
+            ),
+            "worker_resources": self.restricted_workload.worker_resources.manifest(),
+            "result_forwarder_resources": (
+                self.restricted_workload.result_forwarder_resources.manifest()
+            ),
+        }
+
+    def validation_image_identity(self, image: str, kind: str | None) -> str:
+        """Bind restricted validation proof to its effective security contract."""
+        base = f"kubernetes:{image}"
+        if self.workload_security_profile == "legacy":
+            return base
+        payload = json.dumps(
+            self.effective_workload_security(kind),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return f"{base}:workload-security:{sha256(payload.encode()).hexdigest()}"
 
     @classmethod
     def from_legacy_options(

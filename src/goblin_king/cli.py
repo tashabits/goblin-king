@@ -89,6 +89,7 @@ from goblin_king.fanout import (
 )
 from goblin_king.jsonio import pretty_json
 from goblin_king.kubernetes_cli import (
+    KubernetesRuntimeSettingsPathOption,
     ResultForwarderImageOption,
     ResultForwarderImagePullPolicyOption,
     WorkerImagePullPolicyOption,
@@ -616,6 +617,7 @@ def submit_job(
         DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
     ),
     workload_image_pull_secrets: WorkloadImagePullSecretsOption = None,
+    kubernetes_runtime_settings_path: KubernetesRuntimeSettingsPathOption = None,
 ) -> None:
     """Submit and immediately execute one job through the selected runtime."""
     loaded, worker_map = _load_scheduler_discovery(registry, images, project, runtime)
@@ -682,6 +684,7 @@ def submit_job(
                 worker_image_pull_policy=worker_image_pull_policy,
                 result_forwarder_image_pull_policy=result_forwarder_image_pull_policy,
                 workload_image_pull_secrets=workload_image_pull_secrets,
+                settings_path=kubernetes_runtime_settings_path,
             ),
         ).run(
             definition,
@@ -1072,6 +1075,7 @@ def scheduler_run_once(
         DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
     ),
     workload_image_pull_secrets: WorkloadImagePullSecretsOption = None,
+    kubernetes_runtime_settings_path: KubernetesRuntimeSettingsPathOption = None,
 ) -> None:
     """Run one deterministic scheduler pass and print any created runs."""
     registry, workers = _load_scheduler_discovery(registry, images, project, runtime)
@@ -1087,6 +1091,7 @@ def scheduler_run_once(
             worker_image_pull_policy=worker_image_pull_policy,
             result_forwarder_image_pull_policy=result_forwarder_image_pull_policy,
             workload_image_pull_secrets=workload_image_pull_secrets,
+            settings_path=kubernetes_runtime_settings_path,
         ),
         resource_policies=_load_resource_policies(resource_policies, project=project),
     )
@@ -1134,6 +1139,7 @@ def scheduler_run(
         DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
     ),
     workload_image_pull_secrets: WorkloadImagePullSecretsOption = None,
+    kubernetes_runtime_settings_path: KubernetesRuntimeSettingsPathOption = None,
 ) -> None:
     """Run scheduler passes until interrupted."""
     registry, workers = _load_scheduler_discovery(registry, images, project, runtime)
@@ -1149,6 +1155,7 @@ def scheduler_run(
             worker_image_pull_policy=worker_image_pull_policy,
             result_forwarder_image_pull_policy=result_forwarder_image_pull_policy,
             workload_image_pull_secrets=workload_image_pull_secrets,
+            settings_path=kubernetes_runtime_settings_path,
         ),
         resource_policies=_load_resource_policies(resource_policies, project=project),
     )
