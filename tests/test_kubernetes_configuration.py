@@ -10,6 +10,11 @@ from typer.testing import CliRunner
 from goblin_king.api_settings import ApiSettings
 from goblin_king.cli import app
 from goblin_king.contracts import GoblinResult
+from goblin_king.kubernetes_artifact_config import (
+    ARTIFACT_PVC_CLAIM_ENV,
+    ARTIFACT_URI_ROOT_ENV,
+    ARTIFACT_VOLUME_SUBDIRECTORY_ENV,
+)
 from goblin_king.kubernetes_runtime_factory import build_kubernetes_runtime
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 from goblin_king.registry import GoblinRegistry
@@ -47,6 +52,19 @@ def test_shared_runtime_factory_preserves_typed_settings_and_namespace(monkeypat
     assert runtime.image_pull_policy == "Never"
     assert runtime.result_forwarder_image_pull_policy == "Always"
     assert runtime.workload_image_pull_secret_names == ("registry-main",)
+
+
+def test_typed_settings_load_artifact_retention_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv(ARTIFACT_PVC_CLAIM_ENV, "artifact-pvc")
+    monkeypatch.setenv(ARTIFACT_VOLUME_SUBDIRECTORY_ENV, "retained/tasks")
+    monkeypatch.setenv(ARTIFACT_URI_ROOT_ENV, "/data/retained/tasks")
+
+    retention = KubernetesRuntimeSettings().artifact_retention
+
+    assert retention is not None
+    assert retention.claim_name == "artifact-pvc"
+    assert retention.volume_subdirectory == "retained/tasks"
+    assert retention.uri_root == "/data/retained/tasks"
 
 
 def test_scheduler_reuses_typed_settings_for_static_and_dynamic_workers(
