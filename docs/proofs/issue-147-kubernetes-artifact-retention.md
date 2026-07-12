@@ -81,32 +81,24 @@ kind delete cluster --name gk-artifact-proof
 
 Date: 2026-07-12
 
-Base after rebase: `6e1118e5db22d8b8dbda17031106f39689f71408`
+Base after the Kubernetes forwarder-image rebase: `1d482614fcd3f4ee626cb0c7da64d5c1847fa4b0`
 
 Observed before live cluster proof:
 
 ```text
-345 passed, 1 skipped in 88.76s
+367 passed, 2 skipped in 108.99s
 All checks passed!
 1 chart(s) linted, 0 chart(s) failed
-helm_retention_variants=passed
-retention_modules_present=True
-Admin UI: 9 passed; production build completed.
+Default and persistence-disabled Helm renders completed.
+Public API, project-ready compatibility, API settings, and Kubernetes configuration: 15 passed.
 ```
 
-The skipped test is the symbolic-link case when the Windows test account lacks link-creation
-permission. Traversal, containment, count, size, media type, digest, unconfigured storage, atomic
-retention, idempotency, API download after source deletion, cleanup, and manifest isolation tests ran.
-The package wheel contains all three retention/forwarder modules. Helm rendering proved that
-persistence-enabled API/scheduler Pods receive the artifact PVC settings and persistence-disabled
-Pods omit the claim while retaining the URI-root setting.
-
-After the final failed-Job artifact regression was added, 52 affected lifecycle/runtime tests and
-all 7 Docker runtime tests passed. One complete-suite attempt reached 345 passed and one skipped
-before the disposable Redis fixture reset a localhost connection in an unchanged Docker test; that
-exact test and then the complete Docker test file passed in isolation. The earlier complete branch
-checkpoint passed 345 tests with one skipped. This external fixture instability is recorded rather
-than presented as a clean post-change full-suite receipt.
+The two skipped tests create direct and nested symbolic links; the Windows test account lacks
+link-creation permission. Traversal, external containment, count, size, media type, digest,
+unconfigured storage, atomic retention, idempotency, API download after source deletion, cleanup,
+manifest isolation, typed settings, legacy inline-forwarder compatibility, and failed-Job retention
+tests ran. Helm rendering proved that persistence-enabled API/scheduler Pods receive the artifact
+PVC settings and persistence-disabled Pods omit the claim while retaining the URI-root setting.
 
 Live kind execution was not performed in this implementation worktree. The publishing verifier must
 run the commands above and replace this limitation with the observed commit SHA, image identities,
