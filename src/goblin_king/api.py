@@ -3085,9 +3085,11 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         project_for_request(principal, before.project_id)
         if before.status in TERMINAL_JOB_STATUSES:
             raise HTTPException(status_code=409, detail=f"job is terminal: {before.status}")
-        cancelled = state.store.cancel_job(job_id)
+        cancelled, changed = state.store.try_cancel_job(job_id)
         if cancelled is None:
             raise HTTPException(status_code=404, detail=f"job not found: {job_id}")
+        if not changed:
+            raise HTTPException(status_code=409, detail=f"job is terminal: {cancelled.status}")
         state.event_bus.emit(
             "job.cancelled",
             source="api",

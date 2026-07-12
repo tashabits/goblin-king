@@ -33,7 +33,7 @@ def record_unexpected_job_failure(
     prior_runs = store.list_job_runs(current.id)
     if prior_runs:
         latest = max(prior_runs, key=lambda run: (run.attempt, run.finished_at))
-        if current.status in TERMINAL_JOB_STATUSES:
+        if current.status in TERMINAL_JOB_STATUSES and latest.attempt >= current.attempt_count:
             return latest
         if current.status != "leased" and latest.attempt >= current.attempt_count:
             store.finish_job(
@@ -80,23 +80,29 @@ def record_unexpected_job_failure(
         leased_until=current.leased_until,
         resource_policy=resource_policy.compact() if resource_policy else None,
     )
-    store.save_run(run)
-    store.finish_job(current.id, status="failed", last_error=message)
-    event_bus.emit(
-        "job.failed",
-        source="scheduler",
-        project_id=current.project_id,
-        job_id=current.id,
-        run_id=run.id,
-        schedule_id=current.schedule_id,
-        fanout_id=current.fanout_id,
-        scheduler_id=scheduler_id,
-        payload={
-            "kind": current.kind,
-            "attempt": attempt,
-            "error": message,
-            "scheduler_exception": True,
-        },
-        after=run.finished_at,
+    finalization = store.finalize_job_attempt(
+        run,
+        status="failed",
+        last_error=message,
+        expected_lease_owner=scheduler_id,
     )
+    run = finalization.run
+    if finalization.outcome == "finalized":
+        event_bus.emit(
+            "job.failed",
+            source="scheduler",
+            project_id=current.project_id,
+            job_id=current.id,
+            run_id=run.id,
+            schedule_id=current.schedule_id,
+            fanout_id=current.fanout_id,
+            scheduler_id=scheduler_id,
+            payload={
+                "kind": current.kind,
+                "attempt": attempt,
+                "error": message,
+                "scheduler_exception": True,
+            },
+            after=run.finished_at,
+        )
     return run

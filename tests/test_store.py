@@ -43,11 +43,12 @@ def test_sqlite_store_retries_concurrent_schema_startup(tmp_path: Path, monkeypa
     monkeypatch.setattr(store_module.time, "sleep", lambda _seconds: None)
 
     store = SQLiteStore(tmp_path / "goblin.sqlite3")
-    store.save_event(
+    result = store.save_event(
         EventRecord(id="event-1", event_type="test", source="api", created_at=utc_now())
     )
 
     assert calls["count"] == 2
+    assert result is None
     assert store.list_events()[0].id == "event-1"
 
 
@@ -412,8 +413,8 @@ def test_store_persists_events_and_filters(tmp_path: Path) -> None:
         scheduler_id="scheduler-1",
     )
 
-    persisted_first = store.save_event(first)
-    persisted_second = store.save_event(second)
+    persisted_first = store.persist_event(first)
+    persisted_second = store.persist_event(second)
 
     events = store.list_events()
     assert [event.id for event in events] == ["event-1", "event-2"]
@@ -430,7 +431,7 @@ def test_store_clamps_backward_event_time_and_orders_by_durable_sequence(tmp_pat
     now = utc_now()
     store = SQLiteStore(tmp_path / "goblin.sqlite3")
 
-    first = store.save_event(
+    first = store.persist_event(
         EventRecord(
             id="event-later-clock",
             created_at=now,
@@ -439,7 +440,7 @@ def test_store_clamps_backward_event_time_and_orders_by_durable_sequence(tmp_pat
             job_id="job-1",
         )
     )
-    second = store.save_event(
+    second = store.persist_event(
         EventRecord(
             id="event-rolled-back-clock",
             created_at=now - timedelta(seconds=2),
@@ -463,7 +464,7 @@ def test_concurrent_event_writers_receive_unique_causal_sequences(tmp_path: Path
     timestamp = utc_now()
 
     def persist(index: int) -> EventRecord:
-        return stores[index].save_event(
+        return stores[index].persist_event(
             EventRecord(
                 id=f"event-{index}",
                 created_at=timestamp,
@@ -487,13 +488,13 @@ def test_concurrent_event_writers_receive_unique_causal_sequences(tmp_path: Path
 def test_event_sequence_is_not_reused_after_history_cleanup(tmp_path: Path) -> None:
     """Keep the causal counter monotonic even when retained event rows are deleted."""
     store = SQLiteStore(tmp_path / "goblin.sqlite3")
-    first = store.save_event(
+    first = store.persist_event(
         EventRecord(id="event-1", created_at=utc_now(), event_type="test", source="api")
     )
     with store.engine.begin() as connection:
         connection.execute(store_module.events_table.delete())
 
-    second = store.save_event(
+    second = store.persist_event(
         EventRecord(id="event-2", created_at=utc_now(), event_type="test", source="api")
     )
 
@@ -501,8 +502,8 @@ def test_event_sequence_is_not_reused_after_history_cleanup(tmp_path: Path) -> N
     assert second.sequence == 2
 
 
-def test_schema_migration_repairs_historical_inverted_run_timestamps(tmp_path: Path) -> None:
-    """Prevent API reads from exposing an already-persisted future start time."""
+def test_schema_migration_repairs_historical_terminal_run_timestamps(tmp_path: Path) -> None:
+    """Prevent API reads from exposing inverted or missing terminal finish timestamps."""
     db_path = tmp_path / "goblin.sqlite3"
     store = SQLiteStore(db_path)
     started_at = utc_now()
@@ -523,11 +524,156 @@ def test_schema_migration_repairs_historical_inverted_run_timestamps(tmp_path: P
                 max_retries=0,
             )
         )
+        connection.execute(
+            store_module.runs_table.insert().values(
+                id="run-legacy-null",
+                job_id="job-legacy",
+                kind="example.echo",
+                attempt=2,
+                status="failed",
+                started_at=started_at,
+                finished_at=None,
+                result_json=GoblinResult.failed(error="legacy").model_dump_json(),
+                max_retries=0,
+            )
+        )
 
-    repaired = SQLiteStore(db_path).get_run("run-legacy")
+    migrated = SQLiteStore(db_path)
+    repaired = migrated.get_run("run-legacy")
+    repaired_null = migrated.get_run("run-legacy-null")
 
     assert repaired is not None
     assert repaired.finished_at == repaired.started_at
+    assert repaired_null is not None
+    assert repaired_null.finished_at == repaired_null.started_at
+
+
+def test_terminal_run_without_finish_is_normalized_when_persisted(tmp_path: Path) -> None:
+    """Preserve the public model shape while keeping durable terminal Run reads complete."""
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    started_at = utc_now()
+    store.save_job(
+        JobRecord(id="job-terminal", kind="example.echo", input={}, created_at=started_at)
+    )
+    store.save_run(
+        RunRecord(
+            id="run-terminal",
+            job_id="job-terminal",
+            kind="example.echo",
+            status="completed",
+            started_at=started_at,
+            result=GoblinResult.ok(),
+        )
+    )
+
+    persisted = store.get_run("run-terminal")
+
+    assert persisted is not None
+    assert persisted.finished_at == persisted.started_at
+
+
+def test_attempt_finalization_and_cancellation_have_one_atomic_winner(tmp_path: Path) -> None:
+    """Prevent cancellation after completion from rewriting a terminal attempt."""
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    started_at = utc_now()
+    store.save_job(
+        JobRecord(
+            id="job-finalized",
+            kind="example.echo",
+            input={},
+            created_at=started_at,
+            status="running",
+            lease_owner="scheduler-a",
+            attempt_count=1,
+        )
+    )
+    run = RunRecord(
+        id="run-finalized",
+        job_id="job-finalized",
+        kind="example.echo",
+        attempt=1,
+        status="completed",
+        started_at=started_at,
+        finished_at=started_at + timedelta(milliseconds=1),
+        result=GoblinResult.ok(),
+    )
+
+    finalization = store.finalize_job_attempt(
+        run,
+        status="completed",
+        expected_lease_owner="scheduler-a",
+    )
+    terminal, changed = store.try_cancel_job("job-finalized")
+
+    assert finalization.outcome == "finalized"
+    assert terminal is not None
+    assert terminal.status == "completed"
+    assert changed is False
+
+
+def test_stale_attempt_cannot_finalize_a_newer_lease(tmp_path: Path) -> None:
+    """Persist old execution evidence without changing the newer scheduler's job state."""
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    started_at = utc_now()
+    store.save_job(
+        JobRecord(
+            id="job-released",
+            kind="example.echo",
+            input={},
+            created_at=started_at,
+            status="running",
+            lease_owner="scheduler-new",
+            attempt_count=2,
+        )
+    )
+    stale_run = RunRecord(
+        id="run-stale",
+        job_id="job-released",
+        kind="example.echo",
+        attempt=1,
+        status="completed",
+        started_at=started_at,
+        finished_at=started_at + timedelta(milliseconds=1),
+        result=GoblinResult.ok(),
+    )
+
+    finalization = store.finalize_job_attempt(
+        stale_run,
+        status="completed",
+        expected_lease_owner="scheduler-old",
+    )
+
+    current = store.get_job("job-released")
+    assert finalization.outcome == "stale"
+    assert current is not None
+    assert current.status == "running"
+    assert current.attempt_count == 2
+    assert current.lease_owner == "scheduler-new"
+    assert store.get_run("run-stale") == stale_run
+
+
+def test_concurrent_cancellation_requests_create_one_state_transition(tmp_path: Path) -> None:
+    """Allow only one caller to win a cancellation compare-and-set."""
+    db_path = tmp_path / "goblin.sqlite3"
+    stores = [SQLiteStore(db_path), SQLiteStore(db_path)]
+    started_at = utc_now()
+    stores[0].save_job(
+        JobRecord(
+            id="job-cancel-once",
+            kind="example.echo",
+            input={},
+            created_at=started_at,
+            status="running",
+            lease_owner="scheduler-a",
+            attempt_count=1,
+        )
+    )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda store: store.try_cancel_job("job-cancel-once"), stores))
+
+    assert sum(1 for _job, changed in results if changed) == 1
+    assert all(job is not None and job.status == "cancelled" for job, _changed in results)
 
 
 def test_schema_migration_backfills_stable_sequences_for_legacy_events(tmp_path: Path) -> None:
@@ -567,9 +713,15 @@ def test_schema_migration_backfills_stable_sequences_for_legacy_events(tmp_path:
         )
 
     events = SQLiteStore(db_path).list_events()
+    with sqlite3.connect(db_path) as connection:
+        delivery_table = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'event_stream_deliveries'"
+        ).fetchone()
 
     assert [event.id for event in events] == ["event-first", "event-second"]
     assert [event.sequence for event in events] == [1, 2]
+    assert delivery_table == ("event_stream_deliveries",)
 
 
 def test_store_upserts_heartbeats(tmp_path: Path) -> None:

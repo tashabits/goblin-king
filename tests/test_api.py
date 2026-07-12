@@ -716,6 +716,7 @@ def test_get_job_and_cancel_job(tmp_path: Path) -> None:
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == "cancelled"
     assert client.post("/jobs/job-1/cancel", headers=auth_headers()).status_code == 409
+    assert len(store.list_events(event_type="job.cancelled", job_id="job-1")) == 1
     assert client.get("/jobs/missing", headers=auth_headers()).status_code == 404
 
 

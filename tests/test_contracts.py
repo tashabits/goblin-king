@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
-from goblin_king.contracts import GoblinDefinition, GoblinResult, RunRecord
+from goblin_king.contracts import EventRecord, GoblinDefinition, GoblinResult, RunRecord
 
 
 def test_goblin_result_ok_serializes_nested_metadata() -> None:
@@ -54,3 +54,30 @@ def test_run_contract_rejects_inverted_terminal_timestamps() -> None:
             started_at=started_at,
             finished_at=started_at - timedelta(seconds=1),
         )
+
+
+def test_pre_sequence_event_payload_remains_compatible() -> None:
+    """Keep older EventRecord construction valid while durable storage assigns a sequence."""
+    event = EventRecord.model_validate(
+        {
+            "id": "legacy-event",
+            "created_at": "2026-07-12T12:00:00Z",
+            "event_type": "job.queued",
+            "source": "api",
+        }
+    )
+
+    assert event.sequence == 0
+
+
+def test_terminal_run_model_keeps_nullable_finish_for_legacy_callers() -> None:
+    """Keep the public model shape stable; persistence normalizes terminal null finishes."""
+    run = RunRecord(
+        id="legacy-run",
+        job_id="legacy-job",
+        kind="example.echo",
+        status="completed",
+        started_at=datetime(2026, 7, 12, 12, 0, tzinfo=UTC),
+    )
+
+    assert run.finished_at is None

@@ -138,7 +138,8 @@ def ensure_schema_columns(engine: Engine) -> None:
         connection.execute(
             text(
                 "UPDATE runs SET finished_at = started_at "
-                "WHERE finished_at IS NOT NULL AND finished_at < started_at"
+                "WHERE (finished_at IS NOT NULL AND finished_at < started_at) "
+                "OR (finished_at IS NULL AND status IN ('completed', 'failed', 'timed_out'))"
             )
         )
         connection.execute(

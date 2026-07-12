@@ -47,6 +47,12 @@ from goblin_king.workers import WorkerConfigError, WorkerImageMap
 DEFAULT_LEASE_SECONDS = 60
 DEFAULT_CLAIM_LIMIT = 10
 DEFAULT_INTERVAL_SECONDS = 5
+
+
+class JobAttemptSuperseded(RuntimeError):
+    """Signal that cancellation or another scheduler won before execution began."""
+
+
 RuntimeMode = Literal["docker", "kubernetes", "in-process"]
 
 
@@ -298,7 +304,14 @@ class Scheduler:
         """Execute one leased job and persist both run and final job status."""
         requested_start = _ensure_utc(now or utc_now())
         attempt = job.attempt_count + 1
-        self.store.mark_job_running(job.id, attempt_count=attempt)
+        if not self.store.try_mark_job_running(
+            job.id,
+            attempt_count=attempt,
+            expected_lease_owner=self.worker_id,
+        ):
+            raise JobAttemptSuperseded(
+                f"job {job.id!r} no longer belongs to scheduler {self.worker_id!r}"
+            )
         running_event = self.event_bus.emit(
             "job.running",
             source="scheduler",
@@ -407,20 +420,26 @@ class Scheduler:
                     leased_until=job.leased_until,
                     resource_policy=resource_policy.compact() if resource_policy else None,
                 )
-                self.store.save_run(run)
-                self.store.finish_job(job.id, status="failed", last_error=validation_error)
-                self.event_bus.emit(
-                    "validation.scheduling_rejected",
-                    source="scheduler",
-                    project_id=job.project_id,
-                    job_id=job.id,
-                    run_id=run.id,
-                    schedule_id=job.schedule_id,
-                    fanout_id=job.fanout_id,
-                    scheduler_id=self.worker_id,
-                    payload={"kind": job.kind, "error": validation_error},
-                    after=run.finished_at,
+                finalization = self.store.finalize_job_attempt(
+                    run,
+                    status="failed",
+                    last_error=validation_error,
+                    expected_lease_owner=self.worker_id,
                 )
+                run = finalization.run
+                if finalization.outcome == "finalized":
+                    self.event_bus.emit(
+                        "validation.scheduling_rejected",
+                        source="scheduler",
+                        project_id=job.project_id,
+                        job_id=job.id,
+                        run_id=run.id,
+                        schedule_id=job.schedule_id,
+                        fanout_id=job.fanout_id,
+                        scheduler_id=self.worker_id,
+                        payload={"kind": job.kind, "error": validation_error},
+                        after=run.finished_at,
+                    )
                 audit(
                     self.store,
                     action="validation.scheduling_rejected",
@@ -428,7 +447,11 @@ class Scheduler:
                     project_id=job.project_id,
                     resource_type="job",
                     resource_id=job.id,
-                    detail={"kind": job.kind, "error": validation_error},
+                    detail={
+                        "kind": job.kind,
+                        "error": validation_error,
+                        "job_transition": finalization.outcome,
+                    },
                 )
                 return run
             result = runtime.run(
@@ -469,41 +492,34 @@ class Scheduler:
             leased_until=job.leased_until,
             resource_policy=resource_policy.compact() if resource_policy else None,
         )
-        self.store.save_run(run)
+        retrying = status == "failed" and attempt <= job.max_retries
+        finalization = self.store.finalize_job_attempt(
+            run,
+            status="retrying" if retrying else status,
+            last_error=error,
+            due_at=requested_start if retrying else None,
+            expected_lease_owner=self.worker_id,
+        )
+        run = finalization.run
 
-        if status == "failed" and attempt <= job.max_retries:
-            self.store.finish_job(
-                job.id,
-                status="retrying",
-                last_error=error,
-                due_at=requested_start,
-            )
-            self.event_bus.emit(
-                "job.retrying",
-                source="scheduler",
-                project_id=job.project_id,
-                job_id=job.id,
-                run_id=run.id,
-                schedule_id=job.schedule_id,
-                fanout_id=job.fanout_id,
-                scheduler_id=self.worker_id,
-                payload={"kind": job.kind, "attempt": attempt, "error": error},
-                after=run.finished_at,
-            )
+        if finalization.outcome != "finalized":
+            return run
+        if retrying:
+            event_type = "job.retrying"
         else:
-            self.store.finish_job(job.id, status=status, last_error=error)
-            self.event_bus.emit(
-                f"job.{status}",
-                source="scheduler",
-                project_id=job.project_id,
-                job_id=job.id,
-                run_id=run.id,
-                schedule_id=job.schedule_id,
-                fanout_id=job.fanout_id,
-                scheduler_id=self.worker_id,
-                payload={"kind": job.kind, "attempt": attempt, "error": error},
-                after=run.finished_at,
-            )
+            event_type = f"job.{status}"
+        self.event_bus.emit(
+            event_type,
+            source="scheduler",
+            project_id=job.project_id,
+            job_id=job.id,
+            run_id=run.id,
+            schedule_id=job.schedule_id,
+            fanout_id=job.fanout_id,
+            scheduler_id=self.worker_id,
+            payload={"kind": job.kind, "attempt": attempt, "error": error},
+            after=run.finished_at,
+        )
         return run
 
     def _finish_attempt_timestamp(self, job_id: str, started_at: datetime) -> datetime:
@@ -665,6 +681,8 @@ class Scheduler:
         for job in self.claim_due_jobs(current):
             try:
                 runs.append(self.run_claimed_job(job, current))
+            except JobAttemptSuperseded:
+                continue
             except Exception as error:  # one malformed attempt must not end the scheduler loop
                 runs.append(
                     record_unexpected_job_failure(

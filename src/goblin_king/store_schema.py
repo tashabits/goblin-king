@@ -23,6 +23,14 @@ causal_sequences_table = Table(
     Column("value", Integer, nullable=False),
 )
 
+event_stream_deliveries_table = Table(
+    "event_stream_deliveries",
+    metadata,
+    Column("target", String, primary_key=True),
+    Column("delivered_sequence", Integer, nullable=False, default=0),
+    Column("stream_id_offset", Integer, nullable=True),
+)
+
 jobs_table = Table(
     "jobs",
     metadata,
