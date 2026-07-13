@@ -122,6 +122,23 @@ The one full-suite failure was the pre-existing zero-timeout scheduler timing as
 isolation. No artifact-retention code path was involved; this remains an upstream timing-test blocker
 rather than being masked by this change.
 
-Live kind execution was not performed in this implementation worktree. The publishing verifier must
-run the commands above and replace this limitation with the observed commit SHA, image identities,
-Job/Pod state, receipt, and cleanup result. No live output is inferred here.
+## Live Resource-Floor Diagnosis
+
+A live kind run on clean commit `99792e6` reached the retention sidecar but exposed a concrete
+resource blocker. The worker exited zero, while the packaged forwarder was exit `137`, reason
+`OOMKilled`, in about three seconds at its former 16 MiB request and 64 MiB limit. The exact control
+image digest was
+`sha256:be88e534ff937666edcf58879f5c69f2e0b4d841d4e96f6322bfec69cf92ad60`; the exact artifact-worker
+digest was
+`sha256:8948af7487eb86adc194d5a2cfef539742d6619d941aba95712fb462169a6df3`.
+
+The storage boundary was healthy during that failure. The API ran as UID/GID `10001:10001` with
+supplementary group `65532`, and `/data/artifacts` was mode `02770`, UID `10001`, GID `65532`.
+
+An otherwise identical manual restricted Pod with a 64 MiB forwarder request and 128 MiB limit
+completed both containers with exit zero in about five seconds. It retained a 68-byte PNG and
+162-byte ZIP with directory/file modes `02770`/`0660` and UID/GID `65532:65532`. This measured floor
+is now the `restricted-v1` default; worker resources and legacy Pod shape remain unchanged.
+
+The complete automated acceptance script must still be rerun against an image containing this
+resource correction. That final JSON receipt is not inferred from the diagnostic Pods.

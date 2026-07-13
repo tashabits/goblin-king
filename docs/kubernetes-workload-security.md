@@ -30,7 +30,9 @@ result envelopes, and worker behavior remain unchanged.
 
 The default restricted IDs are `65532:65532` with `fsGroup: 65532`. Worker resources
 default to `100m`/`1` CPU and `64Mi`/`512Mi` memory request/limit. Forwarder resources
-default to `10m`/`100m` CPU and `16Mi`/`64Mi` memory.
+default to `10m`/`100m` CPU and `64Mi`/`128Mi` memory. The forwarder memory floor is
+versioned with `restricted-v1`: the packaged retention module reproducibly exceeded the former
+64 MiB ceiling, while the same Pod completed at a 64 MiB request and 128 MiB limit.
 
 Mount composition happens before the restricted security profile is applied. A retention-enabled
 forwarder therefore keeps `readOnlyRootFilesystem: true` while writing only through its result
@@ -57,8 +59,8 @@ scheduler:
       resultForwarderResources:
         cpuRequest: 10m
         cpuLimit: 100m
-        memoryRequest: 16Mi
-        memoryLimit: 64Mi
+        memoryRequest: 64Mi
+        memoryLimit: 128Mi
       workerServiceAccounts: {}
 
 resourcePolicies:
@@ -107,8 +109,8 @@ A direct deployment can use the same partial JSON:
     "result_forwarder_resources": {
       "cpu_request": "10m",
       "cpu_limit": "100m",
-      "memory_request": "16Mi",
-      "memory_limit": "64Mi"
+      "memory_request": "64Mi",
+      "memory_limit": "128Mi"
     },
     "worker_service_account_names": {}
   }

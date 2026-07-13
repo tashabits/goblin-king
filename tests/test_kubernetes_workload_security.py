@@ -104,8 +104,8 @@ def test_restricted_profile_hardens_pod_and_every_container() -> None:
         "limits": {"cpu": "1", "memory": "256Mi"},
     }
     assert forwarder["resources"] == {
-        "requests": {"cpu": "10m", "memory": "16Mi"},
-        "limits": {"cpu": "100m", "memory": "64Mi"},
+        "requests": {"cpu": "10m", "memory": "64Mi"},
+        "limits": {"cpu": "100m", "memory": "128Mi"},
     }
     assert forwarder["volumeMounts"] == [
         {"name": "result", "mountPath": "/goblin-result"}
@@ -228,6 +228,19 @@ def test_validation_identity_changes_only_for_restricted_contract() -> None:
             },
         }
     )
+    former_forwarder_floor = KubernetesRuntimeSettings.model_validate(
+        {
+            "workload_security_profile": "restricted-v1",
+            "restricted_workload": {
+                "result_forwarder_resources": {
+                    "cpu_request": "10m",
+                    "cpu_limit": "100m",
+                    "memory_request": "16Mi",
+                    "memory_limit": "64Mi",
+                }
+            },
+        }
+    )
 
     assert legacy.validation_image_identity(image, "example.echo") == f"kubernetes:{image}"
     assert restricted.validation_image_identity(
@@ -235,6 +248,9 @@ def test_validation_identity_changes_only_for_restricted_contract() -> None:
     ) != privileged_kind.validation_image_identity(image, "example.echo")
     assert restricted.validation_image_identity(image, "example.echo").startswith(
         f"kubernetes:{image}:workload-security:"
+    )
+    assert restricted.validation_image_identity(image, "example.echo") != (
+        former_forwarder_floor.validation_image_identity(image, "example.echo")
     )
 
 

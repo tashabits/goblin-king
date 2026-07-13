@@ -16,6 +16,7 @@
     "Job statuses, Run statuses, result envelopes, and existing constructor requirements are unchanged.",
     "Kubernetes runtime image settings are additive; legacy constructor and Helm tag-only values remain valid.",
     "Kubernetes workload security defaults to the legacy generated Pod shape; restricted-v1 is an explicit opt-in profile.",
+    "The versioned restricted-v1 result-forwarder defaults are a 64Mi memory request and 128Mi memory limit; the legacy Pod shape and public settings fields are unchanged.",
     "Generic Kubernetes validation is additive: Docker remains the CLI default, existing validation fields remain, artifacts/logs default empty, and Kubernetes proof shares typed runtime settings with scheduling.",
     "SQLite auto-create and auto-alter behavior is internal and not a compatibility promise."
   ]

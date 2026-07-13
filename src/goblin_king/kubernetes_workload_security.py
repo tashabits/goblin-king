@@ -85,8 +85,8 @@ def default_forwarder_resources() -> KubernetesContainerResources:
     return KubernetesContainerResources(
         cpu_request="10m",
         cpu_limit="100m",
-        memory_request="16Mi",
-        memory_limit="64Mi",
+        memory_request="64Mi",
+        memory_limit="128Mi",
     )
 
 

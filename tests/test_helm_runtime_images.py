@@ -125,6 +125,8 @@ def test_restricted_workload_settings_render_for_api_and_scheduler() -> None:
     assert restricted["run_as_group"] == 10002
     assert restricted["fs_group"] == 10003
     assert restricted["result_forwarder_resources"]["cpu_limit"] == "75m"
+    assert restricted["result_forwarder_resources"]["memory_request"] == "64Mi"
+    assert restricted["result_forwarder_resources"]["memory_limit"] == "128Mi"
     assert restricted["worker_service_account_names"] == {
         "example.echo": "goblin-reader"
     }

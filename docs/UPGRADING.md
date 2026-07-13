@@ -53,6 +53,12 @@ inspection. A configured false read-only-root policy is rejected as a conflict. 
 [Kubernetes Workload Security](kubernetes-workload-security.md) before enabling per-kind
 ServiceAccounts.
 
+The versioned restricted forwarder memory default increases from a 16 MiB request/64 MiB limit to a
+64 MiB request/128 MiB limit. The packaged retention forwarder exceeded the old limit during live
+proof and completed at the new floor. Legacy Pods and worker-resource defaults are unchanged.
+Restricted validation identities include these resources, so revalidate each affected kind after
+upgrading.
+
 ## Generic Kubernetes Validation Upgrade
 
 This release adds an attainable first-proof path for generic registry workers. No

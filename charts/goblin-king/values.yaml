@@ -123,8 +123,8 @@ scheduler:
       resultForwarderResources:
         cpuRequest: 10m
         cpuLimit: 100m
-        memoryRequest: 16Mi
-        memoryLimit: 64Mi
+        memoryRequest: 64Mi
+        memoryLimit: 128Mi
       workerServiceAccounts: {}
   serviceAccount:
     create: true

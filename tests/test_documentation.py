@@ -88,6 +88,7 @@ def test_kubernetes_workload_security_migration_is_documented() -> None:
     assert "automountServiceAccountToken: false" in security_doc
     assert "mounted only in the worker container" in security_flat
     assert "resourcePolicies.defaults.filesystem.read_only_root=true" in security_flat
+    assert "64 MiB request and 128 MiB limit" in security_flat
 
 
 def test_kubernetes_artifact_retention_is_documented_with_honest_proof_limits() -> None:
@@ -115,7 +116,7 @@ def test_kubernetes_artifact_retention_is_documented_with_honest_proof_limits() 
     assert "assert_artifact_root_empty" in acceptance
     assert '"-mindepth"' in acceptance
     assert "validation_identity" in acceptance
-    assert "Live kind execution was not performed" in proof
+    assert "complete automated acceptance script must still be rerun" in proof
     assert "Kubernetes Artifact Retention" in upgrade
     assert "Kubernetes Artifact Boundary" in security
 
