@@ -205,13 +205,17 @@ def test_helm_chart_includes_cloud_neutral_production_controls() -> None:
     assert "networkPolicy:" in values
     assert "max_project_running" in values
     assert "accessModes:" in values
+    assert "artifactSubdirectory: artifacts" in values
     assert "goblin-king.podPlacement" in helpers
     assert "goblin-king.serviceAccountName" in helpers
     assert "secretKeyRef" in api
+    assert "GOBLIN_KING_K8S_ARTIFACT_PVC_CLAIM" in api
     assert "serviceAccountName" in api
     assert "resources:" in api
     assert "nodeSelector:" in helpers
     assert "RoleBinding" in scheduler
+    assert "GOBLIN_KING_K8S_ARTIFACT_PVC_CLAIM" in scheduler
+    assert "GOBLIN_KING_K8S_ARTIFACT_URI_ROOT" in scheduler
     assert "kind: ServiceAccount" in serviceaccounts
     assert "toYaml .Values.persistence.accessModes" in pvc
     assert "kind: HorizontalPodAutoscaler" in hpa

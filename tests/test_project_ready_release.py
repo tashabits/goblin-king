@@ -31,6 +31,10 @@ def test_compatibility_matrix_matches_project_ready_baseline() -> None:
     assert matrix["worker_heartbeat_contract_version"] == WORKER_HEARTBEAT_CONTRACT_VERSION
     assert matrix["api_settings_schema_version"] == API_SETTINGS_SCHEMA_VERSION
     assert matrix["project_settings_schema_version"] == PROJECT_CONFIG_API_VERSION
+    assert any(
+        "64Mi memory request and 128Mi memory limit" in note
+        for note in matrix["notes"]
+    )
 
 
 def test_project_ready_compatibility_fixture_discovers_and_maps_workers() -> None:

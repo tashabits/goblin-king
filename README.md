@@ -294,9 +294,10 @@ python -m goblin_king.cli workers validate \
 ```
 
 For a configured generic worker in Kubernetes, use the same command with the explicit
-runtime. It creates a deadline-bounded Job, captures bounded worker/forwarder logs and
-artifact metadata, and stores proof under the exact identity the Kubernetes scheduler
-checks. Run it where the CLI can reach the cluster and the scheduler's SQLite database:
+runtime. It creates a deadline-bounded Job, loads the final forwarded result, captures
+bounded worker/forwarder logs and retained artifact metadata before cleanup, and stores
+proof under the exact identity the Kubernetes scheduler checks. Run it where the CLI can
+reach the cluster and the scheduler's SQLite database:
 
 ```bash
 python -m goblin_king.cli workers validate \
@@ -329,10 +330,16 @@ command, mount, credential, or Kubernetes manifest. Docker validation remains th
 default, and `--build`/`--run-root` remain Docker-only options. Kubernetes validation,
 scheduled execution, notebook validation, and direct submission all construct their
 runtime from the same typed settings factory, including forwarder image, pull policies,
-pull-secret names, workload-security profile, per-kind ServiceAccount selection,
-namespace discovery, and bounded diagnostics. Under `restricted-v1`, proof identity
-includes that effective security contract, so legacy proof cannot authorize the
-restricted workload.
+pull-secret names, artifact retention, workload-security profile, per-kind
+ServiceAccount selection, namespace discovery, and bounded diagnostics. Under
+`restricted-v1`, proof identity includes that effective security contract, so legacy
+proof cannot authorize the restricted workload.
+
+With Kubernetes artifact retention enabled, proof identity also includes the normalized PVC claim,
+subdirectory, URI root, and forwarder mount path under both security profiles. Validation retains
+long enough to verify and report artifact metadata, then removes its validation-only bytes; ordinary
+scheduled Runs remain durable. Validate before submitting the first artifact job after installing or
+changing that storage mapping.
 
 Adopting projects can validate workers directly from project settings:
 
@@ -487,7 +494,9 @@ one has a mapped OCI worker image.
 The Runs & Artifacts panel reports the configured artifact volume/PVC root, file count,
 total bytes, metadata rows, and writable status. Admins can preview and execute artifact
 cleanup without moving bytes to object storage; Docker uses the `goblin-king-data`
-Compose volume and Helm uses the chart PVC.
+Compose volume and Helm uses the chart PVC. Kubernetes task bytes are validated and
+copied by the trusted result forwarder before its transient Job is deleted; a retention
+failure produces an explicit failed result without downloadable artifact metadata.
 
 The tester buttons labeled kill perform King-side cancellation. The hard-kill runtime
 buttons are separate admin controls and only target Docker containers or Kubernetes Jobs
@@ -740,6 +749,8 @@ formal cluster deployment without changing Docker Compose as the default local p
   node selectors, tolerations, and affinity.
 - Shared pod/container security contexts and image pull secrets.
 - Configurable PVC access modes, storage class, and size for SQLite/artifacts.
+- Durable Kubernetes task-artifact retention through a project-scoped PVC directory,
+  with actual byte/count limits, optional digest verification, and post-Job downloads.
 - Optional NetworkPolicy.
 - Ingress class, annotations, path type, and TLS blocks.
 - `api.existingSecret` for externally managed bootstrap credentials.
@@ -758,6 +769,16 @@ helm template goblin-king charts/goblin-king \
 External secret controllers, managed ingress details, storage classes, and registry
 credentials remain deployment-specific choices; the chart exposes neutral hooks for
 those systems instead of assuming one cloud.
+
+The default chart maps `persistence.artifactSubdirectory: artifacts` to
+`config.artifactRoot: /data/artifacts`. Keep those values aligned when using a custom
+PVC layout. The worker keeps an isolated `emptyDir`; only the trusted forwarder mounts
+the PVC artifact subpath. Under `restricted-v1`, the forwarder root remains read-only,
+the transient artifact source is mounted read-only, and only the result volume plus the
+narrow PVC subpath are writable. Retained directories are group-shared setgid `02770` and files are
+`0660`; keep the API volume group and restricted workload `fsGroup` aligned. See
+[Kubernetes Artifact Retention](docs/kubernetes-artifact-retention.md) for failure,
+security, upgrade, and reproducible PNG/ZIP proof details.
 
 For Docker Desktop Kubernetes, install a local ingress controller for port 80 traffic:
 
@@ -1140,6 +1161,8 @@ Goblin King provides:
   expectations, defaults, ceilings, and Docker/Kubernetes mapping.
 - [Causal Lifecycle Ordering](docs/causal-lifecycle-ordering.md): Durable event
   sequences, monotonic Run timestamps, and rollback-safe timeout behavior.
+- [Kubernetes Artifact Retention](docs/kubernetes-artifact-retention.md): PVC-backed
+  byte retention, validation, authorized downloads, cleanup, and live proof.
 - [Writable Docker Runtime Data](docs/writable-docker-runtime-data.md): Hardened
   read-only scheduler placement, shared run/artifact roots, and lease recovery.
 - [Release Checklist](docs/RELEASE_CHECKLIST.md): Internal wheel, Docker image, local

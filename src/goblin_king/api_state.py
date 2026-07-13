@@ -7,6 +7,7 @@ from threading import RLock
 
 from goblin_king.api_models import DiscoverySourcesResponse, DiscoveryStatusResponse
 from goblin_king.api_settings import ApiSettings
+from goblin_king.artifact_storage import prepare_shared_artifact_root
 from goblin_king.contracts import utc_now
 from goblin_king.events import EventBus
 from goblin_king.jsonio import read_json_file
@@ -38,7 +39,13 @@ class AppState:
         self._project_default_resources: dict = {}
         self.registry, self.workers = self._load_discovery_state()
         self.artifact_root = settings.artifact_root.resolve()
-        self.artifact_root.mkdir(parents=True, exist_ok=True)
+        shared_gid = None
+        if (
+            settings.kubernetes_runtime.artifact_retention is not None
+            and settings.kubernetes_runtime.workload_security_profile == "restricted-v1"
+        ):
+            shared_gid = settings.kubernetes_runtime.restricted_workload.fs_group
+        prepare_shared_artifact_root(self.artifact_root, shared_gid=shared_gid)
         self.event_bus = EventBus(store=self.store, redis_url=settings.redis_url)
         operator_policies = (
             ResourcePolicySet.from_path(settings.resource_policies)

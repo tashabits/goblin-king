@@ -80,7 +80,8 @@ The actual completed Pod proved:
 - both containers non-root, no escalation, not privileged, read-only root,
   `RuntimeDefault` seccomp, and `ALL` capabilities dropped;
 - worker resources `100m`/`1` CPU and `64Mi`/`512Mi` memory request/limit;
-- forwarder resources `10m`/`100m` CPU and `16Mi`/`64Mi` memory request/limit;
+- forwarder resources at this historical proof commit were `10m`/`100m` CPU and `16Mi`/`64Mi`
+  memory request/limit; the current `restricted-v1` retention-safe floor is `64Mi`/`128Mi`;
 - the forwarder mounted only `/goblin-result`;
 - worker image ID
   `ghcr.io/tashabits/goblin-king-example-echo@sha256:207ca3a6318ee111fdf992d5cbdcb88faf4a0776dd44970b5f94c00367856623`;

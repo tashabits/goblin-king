@@ -219,16 +219,27 @@ def test_api_kubernetes_notebook_validation_uses_short_job_id(monkeypatch) -> No
         def run(self, _definition, _entrypoint, _payload, context, **_kwargs):
             captured["job_id"] = context.metadata["job_id"]
             captured["kind"] = context.metadata["kind"]
+            captured["run_id"] = context.run_id
             return GoblinResult.ok(data={"ok": True})
 
     def fake_build_kubernetes_runtime(**kwargs):
         captured["settings"] = kwargs["settings"]
         return FakeKubernetesRuntime()
 
+    def fake_finalize(validation, cleanup_settings, context):
+        captured["cleanup_settings"] = cleanup_settings
+        captured["cleanup_run_id"] = context.run_id
+        return validation
+
     monkeypatch.setattr(
         api_module,
         "build_kubernetes_runtime",
         fake_build_kubernetes_runtime,
+    )
+    monkeypatch.setattr(
+        api_module,
+        "with_kubernetes_validation_cleanup",
+        fake_finalize,
     )
 
     settings = KubernetesRuntimeSettings(
@@ -248,6 +259,8 @@ def test_api_kubernetes_notebook_validation_uses_short_job_id(monkeypatch) -> No
     assert result.ok is True
     assert captured["kind"] == kind
     assert captured["settings"] is settings
+    assert captured["cleanup_settings"] is settings
+    assert captured["cleanup_run_id"] == captured["run_id"]
     assert result.image_digest == notebook_validation_identity(
         settings.validation_image_identity(record.image, record.kind),
         record.source_hash,

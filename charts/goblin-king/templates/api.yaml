@@ -48,6 +48,14 @@ spec:
             - name: GOBLIN_KING_REPOSITORY_URL
               value: {{ $repositoryUrl | quote }}
             {{- end }}
+            - name: GOBLIN_KING_K8S_ARTIFACT_URI_ROOT
+              value: {{ .Values.config.artifactRoot | quote }}
+            {{- if .Values.persistence.enabled }}
+            - name: GOBLIN_KING_K8S_ARTIFACT_PVC_CLAIM
+              value: {{ include "goblin-king.fullname" . }}-data
+            - name: GOBLIN_KING_K8S_ARTIFACT_VOLUME_SUBDIRECTORY
+              value: {{ .Values.persistence.artifactSubdirectory | quote }}
+            {{- end }}
             {{- if and .Values.config.jupyterhub.enabled .Values.config.jupyterhub.serviceTokenSecret.name }}
             - name: {{ .Values.config.jupyterhub.serviceTokenEnv }}
               valueFrom:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from goblin_king.contracts import GoblinContext
+from goblin_king.kubernetes_artifact_config import KubernetesArtifactRetention
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 from goblin_king.kubernetes_workload_security import (
     KubernetesWorkloadSecurityError,
@@ -103,12 +104,47 @@ def test_restricted_profile_hardens_pod_and_every_container() -> None:
         "limits": {"cpu": "1", "memory": "256Mi"},
     }
     assert forwarder["resources"] == {
-        "requests": {"cpu": "10m", "memory": "16Mi"},
-        "limits": {"cpu": "100m", "memory": "64Mi"},
+        "requests": {"cpu": "10m", "memory": "64Mi"},
+        "limits": {"cpu": "100m", "memory": "128Mi"},
     }
     assert forwarder["volumeMounts"] == [
         {"name": "result", "mountPath": "/goblin-result"}
     ]
+
+
+def test_restricted_profile_hardens_retention_mounts_after_composition() -> None:
+    settings = KubernetesRuntimeSettings(
+        workload_security_profile="restricted-v1",
+        artifact_retention=KubernetesArtifactRetention(
+            claim_name="release-data",
+            volume_subdirectory="artifacts",
+            uri_root="/data/artifacts",
+        ),
+    )
+    policy = ResourcePolicy.model_validate(
+        {"filesystem": {"read_only_root": True}}
+    )
+
+    pod_spec = _manifest(settings, resource_policy=policy)["spec"]["template"]["spec"]
+    worker, forwarder = pod_spec["containers"]
+
+    assert forwarder["securityContext"]["readOnlyRootFilesystem"] is True
+    assert forwarder["volumeMounts"] == [
+        {"name": "result", "mountPath": "/goblin-result"},
+        {"name": "artifacts", "mountPath": "/artifacts", "readOnly": True},
+        {
+            "name": "retained-artifacts",
+            "mountPath": "/goblin-retained-artifacts",
+            "subPath": "artifacts",
+        },
+    ]
+    assert "retained-artifacts" not in {
+        mount["name"] for mount in worker["volumeMounts"]
+    }
+    assert {
+        "name": "retained-artifacts",
+        "persistentVolumeClaim": {"claimName": "release-data"},
+    } in pod_spec["volumes"]
 
 
 def test_service_account_token_is_opt_in_for_one_declared_kind() -> None:
@@ -192,6 +228,19 @@ def test_validation_identity_changes_only_for_restricted_contract() -> None:
             },
         }
     )
+    former_forwarder_floor = KubernetesRuntimeSettings.model_validate(
+        {
+            "workload_security_profile": "restricted-v1",
+            "restricted_workload": {
+                "result_forwarder_resources": {
+                    "cpu_request": "10m",
+                    "cpu_limit": "100m",
+                    "memory_request": "16Mi",
+                    "memory_limit": "64Mi",
+                }
+            },
+        }
+    )
 
     assert legacy.validation_image_identity(image, "example.echo") == f"kubernetes:{image}"
     assert restricted.validation_image_identity(
@@ -199,6 +248,60 @@ def test_validation_identity_changes_only_for_restricted_contract() -> None:
     ) != privileged_kind.validation_image_identity(image, "example.echo")
     assert restricted.validation_image_identity(image, "example.echo").startswith(
         f"kubernetes:{image}:workload-security:"
+    )
+    assert restricted.validation_image_identity(image, "example.echo") != (
+        former_forwarder_floor.validation_image_identity(image, "example.echo")
+    )
+
+
+def test_restricted_identity_binds_normalized_artifact_retention() -> None:
+    image = "registry.example/echo@sha256:" + "a" * 64
+    base = KubernetesRuntimeSettings(workload_security_profile="restricted-v1")
+    first = KubernetesRuntimeSettings(
+        workload_security_profile="restricted-v1",
+        artifact_retention=KubernetesArtifactRetention(
+            claim_name="artifact-pvc",
+            volume_subdirectory="artifacts/./retained",
+            uri_root="/data/artifacts/./retained",
+        ),
+    )
+    normalized = KubernetesRuntimeSettings(
+        workload_security_profile="restricted-v1",
+        artifact_retention=KubernetesArtifactRetention(
+            claim_name="artifact-pvc",
+            volume_subdirectory="artifacts/retained",
+            uri_root="/data/artifacts/retained",
+        ),
+    )
+    changed_claim = normalized.model_copy(
+        update={
+            "artifact_retention": KubernetesArtifactRetention(
+                claim_name="other-pvc",
+                volume_subdirectory="artifacts/retained",
+                uri_root="/data/artifacts/retained",
+            )
+        }
+    )
+
+    base_identity = base.validation_image_identity(image, "example.echo")
+    first_identity = first.validation_image_identity(image, "example.echo")
+    assert first_identity != base_identity
+    assert first_identity == normalized.validation_image_identity(image, "example.echo")
+    assert first_identity != changed_claim.validation_image_identity(image, "example.echo")
+
+    legacy = KubernetesRuntimeSettings(workload_security_profile="legacy")
+    legacy_retained = first.model_copy(update={"workload_security_profile": "legacy"})
+    legacy_changed = changed_claim.model_copy(update={"workload_security_profile": "legacy"})
+    assert legacy.validation_image_identity(image, "example.echo") == f"kubernetes:{image}"
+    assert legacy_retained.validation_image_identity(image, "example.echo") != (
+        legacy.validation_image_identity(image, "example.echo")
+    )
+    assert legacy_retained.validation_image_identity(image, "example.echo") == (
+        normalized.model_copy(update={"workload_security_profile": "legacy"})
+        .validation_image_identity(image, "example.echo")
+    )
+    assert legacy_retained.validation_image_identity(image, "example.echo") != (
+        legacy_changed.validation_image_identity(image, "example.echo")
     )
 
 

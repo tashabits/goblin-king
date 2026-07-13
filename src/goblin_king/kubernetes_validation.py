@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from goblin_king.contracts import GoblinDefinition, utc_now
+from goblin_king.contracts import GoblinContext, GoblinDefinition, utc_now
 from goblin_king.events import EventBus
+from goblin_king.kubernetes_artifact_config import ArtifactRetentionError
+from goblin_king.kubernetes_artifacts import cleanup_retained_run
 from goblin_king.kubernetes_runtime import KubernetesRuntime
 from goblin_king.kubernetes_runtime_factory import build_kubernetes_runtime
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
@@ -112,7 +114,7 @@ def _validate_one_with_kubernetes(
             timeout_seconds=timeout_seconds,
         )
     except Exception as error:  # cluster clients and test adapters may raise directly
-        return WorkerValidationResult(
+        validation = WorkerValidationResult(
             kind=definition.kind,
             ok=False,
             image=worker.image,
@@ -121,6 +123,7 @@ def _validate_one_with_kubernetes(
             error=f"Kubernetes validation failed: {error}",
             checks=checks,
         )
+        return with_kubernetes_validation_cleanup(validation, runtime_settings, context)
 
     if observation.job_created:
         checks.append("kubernetes-job")
@@ -138,22 +141,59 @@ def _validate_one_with_kubernetes(
         "logs": observation.logs,
     }
     if not observation.result_envelope_valid:
-        return WorkerValidationResult(
+        validation = WorkerValidationResult(
             ok=False,
             error=result.error or "worker did not produce a valid result envelope",
             **common,
         )
+    else:
+        checks.append("result-envelope")
+        if result.metrics:
+            checks.append("metrics")
+        if result.handoff:
+            checks.append("handoff")
+        checks.append("artifact-metadata")
+        if require_success and result.status != "success":
+            validation = WorkerValidationResult(
+                ok=False,
+                error=result.error or "worker returned failed status",
+                **common,
+            )
+        else:
+            validation = WorkerValidationResult(ok=True, **common)
+    return with_kubernetes_validation_cleanup(validation, runtime_settings, context)
 
-    checks.append("result-envelope")
-    if result.metrics:
-        checks.append("metrics")
-    if result.handoff:
-        checks.append("handoff")
-    checks.append("artifact-metadata")
-    if require_success and result.status != "success":
-        return WorkerValidationResult(
-            ok=False,
-            error=result.error or "worker returned failed status",
-            **common,
-        )
-    return WorkerValidationResult(ok=True, **common)
+
+def cleanup_kubernetes_validation_run(
+    settings: KubernetesRuntimeSettings,
+    context: GoblinContext,
+) -> str | None:
+    """Remove retained bytes for a validation-only Run that has no durable Run owner."""
+    retention = settings.artifact_retention
+    if retention is None:
+        return None
+    raw_project_id = context.metadata.get("project_id")
+    project_id = str(raw_project_id) if raw_project_id else None
+    try:
+        cleanup_retained_run(retention.uri_root, project_id, context.run_id)
+    except (ArtifactRetentionError, OSError) as error:
+        return f"Kubernetes validation artifact cleanup failed: {error}"
+    return None
+
+
+def with_kubernetes_validation_cleanup(
+    validation: WorkerValidationResult,
+    settings: KubernetesRuntimeSettings,
+    context: GoblinContext,
+) -> WorkerValidationResult:
+    """Fail validation visibly when its retained bytes cannot be removed."""
+    cleanup_error = cleanup_kubernetes_validation_run(settings, context)
+    if cleanup_error is None:
+        return validation
+    prior_error = f"{validation.error}; " if validation.error else ""
+    return validation.model_copy(
+        update={
+            "ok": False,
+            "error": f"{prior_error}{cleanup_error}",
+        }
+    )

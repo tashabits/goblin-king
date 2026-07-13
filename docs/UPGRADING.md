@@ -53,6 +53,12 @@ inspection. A configured false read-only-root policy is rejected as a conflict. 
 [Kubernetes Workload Security](kubernetes-workload-security.md) before enabling per-kind
 ServiceAccounts.
 
+The versioned restricted forwarder memory default increases from a 16 MiB request/64 MiB limit to a
+64 MiB request/128 MiB limit. The packaged retention forwarder exceeded the old limit during live
+proof and completed at the new floor. Legacy Pods and worker-resource defaults are unchanged.
+Restricted validation identities include these resources, so revalidate each affected kind after
+upgrading.
+
 ## Generic Kubernetes Validation Upgrade
 
 This release adds an attainable first-proof path for generic registry workers. No
@@ -101,6 +107,45 @@ historical terminal Runs whose finish precedes their start. See
 No Job status, Run status, constructor requirement, or result-envelope shape changes. Existing
 EventRecord construction and the historical `SQLiteStore.save_event()` return contract remain
 valid. Redis Stream consumers should deduplicate by `sequence`; pub/sub remains best-effort.
+
+## Kubernetes Artifact Retention
+
+The Helm chart now passes its data-PVC claim and artifact mapping to Kubernetes result
+forwarders. There is no SQLite migration and Docker behavior is unchanged. Existing
+artifact metadata whose bytes were already lost is not reconstructed.
+
+The default mapping is `persistence.artifactSubdirectory: artifacts` and
+`config.artifactRoot: /data/artifacts`. Deployments with a custom artifact root must set
+the PVC subdirectory to the corresponding path below the API's `/data` mount and ensure
+that directory exists before artifact Jobs start. Custom non-chart schedulers configure
+`GOBLIN_KING_K8S_ARTIFACT_PVC_CLAIM`,
+`GOBLIN_KING_K8S_ARTIFACT_VOLUME_SUBDIRECTORY`, and
+`GOBLIN_KING_K8S_ARTIFACT_URI_ROOT`.
+
+`KubernetesRuntime` has one optional, defaulted artifact-retention constructor argument;
+existing callers do not change. `GoblinResult` and `ArtifactRecord` shapes are unchanged.
+Successfully retained results add actual `artifact.<name>.bytes`,
+`artifact.<name>.sha256`, `artifact.retained.files`, and `artifact.retained.bytes`
+metrics. When a Kubernetes result declares artifacts but retention is not configured or
+cannot complete, the result is failed explicitly and artifact entries are omitted.
+
+Custom forwarder images retain the earlier inline Python-plus-Redis command contract while
+artifact retention is disabled. Enabling PVC retention switches the sidecar to the packaged
+forwarder module, so a separate forwarder image must contain the same Goblin King version as the
+control plane before the PVC settings are enabled.
+
+Revalidate workers after enabling retention or changing the claim, volume subdirectory, URI root,
+or forwarder mount path. Those normalized values are part of the Kubernetes scheduler identity for
+both legacy and restricted profiles. The no-retention legacy identity remains unchanged.
+
+The artifact root and retained directories must be group-accessible to the forwarder's `fsGroup`.
+The API prepares them as setgid `02770` with retained files `0660`. If the API runs non-root, arrange
+the same group and directory mode through the storage class, kubelet `fsGroup`, or an initializer
+before upgrade; an already-correct root is accepted without privileged ownership changes.
+
+The chart's default `ReadWriteOnce` PVC is appropriate for the documented single-node
+local cluster. Review access modes before a multi-node upgrade; use `ReadWriteMany` or an
+equivalent backend when API and worker Pods may run on different nodes.
 
 ## Compatibility Fixtures
 

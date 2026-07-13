@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlsplit
+from urllib.request import url2pathname
 
 from goblin_king.api_models import ArtifactCleanupRequest
 from goblin_king.contracts import ArtifactRecord
@@ -14,7 +16,10 @@ from goblin_king.store import SQLiteStore
 def artifact_file_path(root: Path, artifact: ArtifactRecord) -> Path | None:
     """Resolve a file artifact only when it stays inside the configured artifact root."""
     if artifact.uri.startswith("file://"):
-        candidate = Path(artifact.uri.removeprefix("file://"))
+        parsed = urlsplit(artifact.uri)
+        if parsed.netloc not in {"", "localhost"}:
+            return None
+        candidate = Path(url2pathname(unquote(parsed.path)))
     elif "://" in artifact.uri:
         return None
     else:
@@ -23,7 +28,7 @@ def artifact_file_path(root: Path, artifact: ArtifactRecord) -> Path | None:
         candidate = root / candidate
     try:
         resolved = candidate.resolve()
-        resolved.relative_to(root)
+        resolved.relative_to(root.resolve())
     except ValueError:
         return None
     return resolved

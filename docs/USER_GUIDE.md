@@ -150,6 +150,11 @@ curl -X POST http://127.0.0.1:8000/admin/artifacts/cleanup \
 
 Docker Compose stores artifact bytes in the `goblin-king-data` volume under
 `.goblin-king/artifacts`; Helm stores them on the chart PVC at `/data/artifacts`.
+For Kubernetes tasks, the worker writes only to a transient `/artifacts` `emptyDir`.
+The trusted result forwarder validates and atomically copies declared files into the
+PVC before publishing the final result and before Job deletion. Failed or incomplete
+retention yields a failed result with no artifact entries, so metadata never claims
+missing bytes. See [Kubernetes Artifact Retention](kubernetes-artifact-retention.md).
 
 ## Hard-Kill Runtime Objects
 
@@ -349,6 +354,22 @@ Do not omit the resource-policy change: an explicit read-write root conflicts wi
 restricted profile and is intentionally rejected. See
 [Kubernetes Workload Security](kubernetes-workload-security.md) for UID/GID, forwarder
 resources, per-kind ServiceAccounts, validation identity, and the adoption checklist.
+
+The default persistent artifact mapping is:
+
+```yaml
+persistence:
+  enabled: true
+  artifactSubdirectory: artifacts
+config:
+  artifactRoot: /data/artifacts
+```
+
+Keep the PVC subdirectory and API-visible root aligned. Artifact-producing Kubernetes
+Jobs fail explicitly when persistent retention is not configured; artifact-free Jobs
+remain compatible. For multi-node clusters, use storage that supports simultaneous
+attachment by the API and worker Pods, normally `ReadWriteMany`, or provide equivalent
+scheduling/storage guarantees.
 
 Disable ingress when another deployment layer owns routing:
 

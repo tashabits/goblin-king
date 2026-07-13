@@ -16,6 +16,7 @@ from goblin_king.events import (
     EventBus,
     worker_heartbeat_key,
 )
+from goblin_king.kubernetes_artifact_config import KubernetesArtifactRetention
 from goblin_king.kubernetes_job_manifest import build_kubernetes_job_manifest
 from goblin_king.kubernetes_placement import placement_metadata
 from goblin_king.kubernetes_pod_diagnostics import (
@@ -24,6 +25,7 @@ from goblin_king.kubernetes_pod_diagnostics import (
     find_image_pull_failure,
     read_kubernetes_worker_log_excerpt,
 )
+from goblin_king.kubernetes_result_keys import forwarded_result_key, worker_result_key
 from goblin_king.kubernetes_runtime_settings import (
     DEFAULT_KUBERNETES_IMAGE_PULL_POLICY,
     DEFAULT_RESULT_FORWARDER_IMAGE,
@@ -55,16 +57,22 @@ class KubernetesRuntime:
         settings: KubernetesRuntimeSettings | None = None,
         result_forwarder_image_pull_policy: str | None = None,
         workload_image_pull_secret_names: Sequence[str] = (),
+        artifact_retention: KubernetesArtifactRetention | None = None,
     ) -> None:
         self.workers = workers
         self.redis_url = redis_url
         self.namespace = namespace or current_kubernetes_namespace()
-        self.settings = settings or KubernetesRuntimeSettings.from_legacy_options(
-            result_forwarder_image=result_forwarder_image,
-            image_pull_policy=image_pull_policy,
-            result_forwarder_image_pull_policy=result_forwarder_image_pull_policy,
-            workload_image_pull_secret_names=workload_image_pull_secret_names,
-        )
+        if settings is None:
+            settings = KubernetesRuntimeSettings.from_legacy_options(
+                result_forwarder_image=result_forwarder_image,
+                image_pull_policy=image_pull_policy,
+                result_forwarder_image_pull_policy=result_forwarder_image_pull_policy,
+                workload_image_pull_secret_names=workload_image_pull_secret_names,
+                artifact_retention=artifact_retention,
+            )
+        elif artifact_retention is not None:
+            settings = settings.model_copy(update={"artifact_retention": artifact_retention})
+        self.settings = settings
         # Keep the established attributes available to callers that inspect the adapter.
         self.image_pull_policy = self.settings.worker_image_pull_policy
         self.result_forwarder_image = self.settings.result_forwarder_image
@@ -74,6 +82,7 @@ class KubernetesRuntime:
         self.workload_image_pull_secret_names = (
             self.settings.workload_image_pull_secret_names
         )
+        self.artifact_retention = self.settings.artifact_retention
         self.event_bus = event_bus
         self.heartbeat_interval_seconds = heartbeat_interval_seconds
         self.poll_interval_seconds = poll_interval_seconds
@@ -262,6 +271,21 @@ class KubernetesRuntime:
                 )
             if getattr(job.status, "failed", 0):
                 logs = self._worker_logs(core, name)
+                forwarded = self._load_result_observed(run_id)
+                if forwarded.result_received:
+                    if forwarded.result.status == "failed":
+                        return forwarded
+                    return KubernetesRunObservation(
+                        result=GoblinResult.failed(
+                            error=f"{name} failed after publishing a result: {logs}",
+                            data=forwarded.result.data,
+                            artifacts=forwarded.result.artifacts,
+                            metrics=forwarded.result.metrics,
+                            handoff=forwarded.result.handoff,
+                        ),
+                        result_received=True,
+                        result_envelope_valid=forwarded.result_envelope_valid,
+                    )
                 return KubernetesRunObservation(
                     result=GoblinResult.failed(error=f"{name} failed: {logs}")
                 )
@@ -289,8 +313,13 @@ class KubernetesRuntime:
 
     def _load_result(self, run_id: str) -> GoblinResult | None:
         """Load a Kubernetes worker result from Redis."""
+        key = (
+            forwarded_result_key(run_id)
+            if self.artifact_retention is not None
+            else worker_result_key(run_id)
+        )
         try:
-            raw = Redis.from_url(self.redis_url).get(f"goblin-king:results:{run_id}")
+            raw = Redis.from_url(self.redis_url).get(key)
         except RedisError:
             return None
         if raw is None:

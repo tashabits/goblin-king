@@ -5,10 +5,12 @@ from types import SimpleNamespace
 
 from goblin_king import kubernetes_runtime as kubernetes_runtime_module
 from goblin_king.contracts import GoblinContext, GoblinDefinition, GoblinResult
+from goblin_king.kubernetes_artifact_config import KubernetesArtifactRetention
 from goblin_king.kubernetes_pod_diagnostics import (
     DEFAULT_KUBERNETES_LOG_CAPTURE_BYTES,
     KubernetesRunObservation,
 )
+from goblin_king.kubernetes_result_keys import forwarded_result_key, worker_result_key
 from goblin_king.registry import GoblinRegistry
 from goblin_king.resource_policies import ResourcePolicy
 from goblin_king.runtime import (
@@ -105,6 +107,73 @@ def test_kubernetes_job_includes_result_forwarder() -> None:
         "env"
     ]
     assert {"name": "result", "mountPath": "/goblin-result"} in forwarder["volumeMounts"]
+    assert {mount["name"] for mount in forwarder["volumeMounts"]} == {"result"}
+
+
+def test_kubernetes_job_retains_artifacts_on_operator_pvc() -> None:
+    """Mount durable storage only into the trusted forwarder with effective policy limits."""
+    workers = WorkerImageMap(
+        {"example.artifact": WorkerImageDefinition(context=".", image="artifact:local")},
+        root=".",
+    )
+    runtime = KubernetesRuntime(
+        workers=workers,
+        redis_url="redis://redis:6379/0",
+        artifact_retention=KubernetesArtifactRetention(
+            claim_name="release-data",
+            volume_subdirectory="artifacts",
+            uri_root="/data/artifacts",
+        ),
+    )
+    context = GoblinContext(
+        run_id="run-artifact",
+        artifact_root=".goblin-king/artifacts/run-artifact",
+        metadata={"job_id": "job-artifact", "project_id": "project-1"},
+    )
+    policy = ResourcePolicy.model_validate(
+        {"filesystem": {"artifact_max_files": 2, "artifact_max_bytes": 4096}}
+    )
+
+    manifest = runtime._job_manifest(
+        name="gk-example-artifact-run-artifact",
+        config_name="gk-example-artifact-run-artifact-input",
+        image="artifact:local",
+        context=context,
+        worker_id="k8s-worker-run-artifact",
+        timeout_seconds=30,
+        resource_policy=policy,
+    )
+
+    pod_spec = manifest["spec"]["template"]["spec"]
+    worker, forwarder = pod_spec["containers"]
+    assert forwarder["command"] == [
+        "python",
+        "-m",
+        "goblin_king.kubernetes_result_forwarder",
+    ]
+    assert "retained-artifacts" not in {
+        volume_mount["name"] for volume_mount in worker["volumeMounts"]
+    }
+    assert {
+        "name": "retained-artifacts",
+        "mountPath": "/goblin-retained-artifacts",
+        "subPath": "artifacts",
+    } in forwarder["volumeMounts"]
+    assert {
+        "name": "retained-artifacts",
+        "persistentVolumeClaim": {"claimName": "release-data"},
+    } in pod_spec["volumes"]
+    assert {
+        "name": "GOBLIN_ARTIFACT_DESTINATION_ROOT",
+        "value": "/goblin-retained-artifacts",
+    } in forwarder["env"]
+    assert {
+        "name": "GOBLIN_KING_K8S_ARTIFACT_URI_ROOT",
+        "value": "/data/artifacts",
+    } in forwarder["env"]
+    assert {"name": "GOBLIN_ARTIFACT_PROJECT_ID", "value": "project-1"} in forwarder["env"]
+    assert {"name": "GOBLIN_ARTIFACT_MAX_FILES", "value": "2"} in forwarder["env"]
+    assert {"name": "GOBLIN_ARTIFACT_MAX_BYTES", "value": "4096"} in forwarder["env"]
 
 
 def test_kubernetes_observed_run_captures_bounded_logs_before_cleanup(monkeypatch) -> None:
@@ -264,6 +333,147 @@ def test_kubernetes_observed_run_captures_logs_when_wait_fails(monkeypatch) -> N
         "worker": "worker failure log",
         "result-forwarder": "result-forwarder failure log",
     }
+
+
+def test_observed_failed_job_retains_forwarded_artifacts_before_cleanup(monkeypatch) -> None:
+    """Capture a final retained envelope and Pod diagnostics before deleting the Job."""
+    events: list[str] = []
+    pod = SimpleNamespace(
+        metadata=SimpleNamespace(name="retained-failure-pod"),
+        status=SimpleNamespace(
+            container_statuses=[
+                SimpleNamespace(
+                    name="worker",
+                    state=SimpleNamespace(terminated=SimpleNamespace(exit_code=2)),
+                )
+            ]
+        ),
+    )
+
+    class FailedBatch:
+        @staticmethod
+        def create_namespaced_job(**_kwargs):
+            return None
+
+        @staticmethod
+        def read_namespaced_job(**_kwargs):
+            return SimpleNamespace(status=SimpleNamespace(succeeded=0, failed=1))
+
+        @staticmethod
+        def delete_namespaced_job(**_kwargs):
+            events.append("delete-job")
+
+    class DiagnosticCore:
+        @staticmethod
+        def create_namespaced_config_map(**_kwargs):
+            return None
+
+        @staticmethod
+        def list_namespaced_pod(**_kwargs):
+            return SimpleNamespace(items=[pod])
+
+        @staticmethod
+        def read_namespaced_pod_log(*, container, **_kwargs):
+            events.append(f"log-{container}")
+            return f"{container} failed"
+
+        @staticmethod
+        def delete_namespaced_config_map(**_kwargs):
+            events.append("delete-config")
+
+    runtime = KubernetesRuntime(
+        workers=WorkerImageMap.from_definitions(
+            {
+                "example.artifact": WorkerImageDefinition(
+                    context=".", image="artifact:local"
+                )
+            }
+        ),
+        namespace="proof",
+        poll_interval_seconds=0,
+    )
+    monkeypatch.setattr(
+        kubernetes_runtime_module,
+        "kubernetes_clients",
+        lambda: (FailedBatch(), DiagnosticCore()),
+    )
+    forwarded = GoblinResult.ok(
+        data={"worker_result": "written"},
+        artifacts=[
+            {
+                "name": "diagnostic.zip",
+                "uri": "file:///data/artifacts/retained.zip",
+                "media_type": "application/zip",
+            }
+        ],
+        metrics={"artifact.diagnostic.zip.sha256": "a" * 64},
+    )
+
+    def load_forwarded(_run_id: str) -> KubernetesRunObservation:
+        events.append("forwarded-result")
+        return KubernetesRunObservation(
+            result=forwarded,
+            result_received=True,
+            result_envelope_valid=True,
+        )
+
+    monkeypatch.setattr(runtime, "_load_result_observed", load_forwarded)
+
+    observation = runtime.run_observed(
+        GoblinDefinition(
+            kind="example.artifact",
+            display_name="Artifact",
+            module="container.only",
+        ),
+        None,
+        {},
+        GoblinContext(
+            run_id="run-retained-failure",
+            artifact_root=".goblin-king/artifacts/run-retained-failure",
+            metadata={"job_id": "job-retained-failure"},
+        ),
+    )
+
+    assert observation.result.status == "failed"
+    assert observation.result.artifacts == forwarded.artifacts
+    assert observation.result.metrics == forwarded.metrics
+    assert observation.job_created is True
+    assert observation.result_received is True
+    assert observation.result_envelope_valid is True
+    assert observation.exit_code == 2
+    assert observation.logs == {
+        "worker": "worker failed",
+        "result-forwarder": "result-forwarder failed",
+    }
+    assert events.index("forwarded-result") < events.index("log-result-forwarder")
+    assert events.index("log-result-forwarder") < events.index("delete-job")
+
+
+def test_kubernetes_run_keeps_result_only_compatibility(monkeypatch) -> None:
+    """Keep the established run method returning only a GoblinResult envelope."""
+    runtime = KubernetesRuntime(
+        workers=WorkerImageMap.from_definitions(
+            {"example.echo": WorkerImageDefinition(context=".", image="echo:local")}
+        )
+    )
+    expected = GoblinResult.ok(data={"compatible": True})
+    captured: dict[str, object] = {}
+
+    def run_observed(*_args, **kwargs) -> KubernetesRunObservation:
+        captured.update(kwargs)
+        return KubernetesRunObservation(result=expected)
+
+    monkeypatch.setattr(runtime, "run_observed", run_observed)
+
+    result = runtime.run(
+        GoblinDefinition(kind="example.echo", display_name="Echo", module="unused"),
+        None,
+        {},
+        GoblinContext(run_id="run-compatible", artifact_root="artifacts"),
+    )
+
+    assert result is expected
+    assert captured["_capture_diagnostics"] is False
 
 
 def test_kubernetes_job_omits_placement_fields_without_metadata() -> None:
@@ -589,3 +799,82 @@ def test_kubernetes_job_includes_resource_policy_fields() -> None:
             '"memory":{"limit":"512Mi","request":"64Mi"}}'
         ),
     } in worker["env"]
+
+
+def test_failed_kubernetes_job_preserves_only_forwarded_retained_artifacts(
+    monkeypatch,
+) -> None:
+    """Keep durable diagnostic artifacts when a worker exits nonzero after its result."""
+
+    class FailedBatch:
+        def read_namespaced_job(self, **_kwargs):
+            return type("Job", (), {"status": type("Status", (), {"failed": 1})()})()
+
+    workers = WorkerImageMap(
+        {"example.artifact": WorkerImageDefinition(context=".", image="artifact:local")},
+        root=".",
+    )
+    runtime = KubernetesRuntime(workers=workers, poll_interval_seconds=0)
+    forwarded = GoblinResult.ok(
+        data={"worker_result": "written"},
+        artifacts=[
+            {
+                "name": "diagnostic.zip",
+                "uri": "file:///data/artifacts/retained.zip",
+                "media_type": "application/zip",
+            }
+        ],
+        metrics={"artifact.diagnostic.zip.sha256": "a" * 64},
+    )
+    monkeypatch.setattr(runtime, "_load_result", lambda _run_id: forwarded)
+    monkeypatch.setattr(runtime, "_worker_logs", lambda _core, _name: "exit code 2")
+
+    result = runtime._wait_for_result(
+        batch=FailedBatch(),
+        core=object(),
+        name="failed-artifact-job",
+        run_id="run-failed-artifact",
+        timeout_seconds=1,
+    )
+
+    assert result.status == "failed"
+    assert result.error == "failed-artifact-job failed after publishing a result: exit code 2"
+    assert result.data == forwarded.data
+    assert result.artifacts == forwarded.artifacts
+    assert result.metrics == forwarded.metrics
+
+
+def test_retention_runtime_waits_for_forwarder_owned_result_key(monkeypatch) -> None:
+    """Ignore the worker's early Redis result until retention publishes its final envelope."""
+    run_id = "run-forwarder-order"
+    worker_result = GoblinResult.ok(data={"source": "worker"})
+    retained_result = GoblinResult.ok(data={"source": "forwarder"})
+    values = {worker_result_key(run_id): worker_result.model_dump_json()}
+    requested: list[str] = []
+
+    class FakeRedis:
+        @staticmethod
+        def get(key: str):
+            requested.append(key)
+            return values.get(key)
+
+    monkeypatch.setattr(
+        "goblin_king.kubernetes_runtime.Redis.from_url",
+        lambda _url: FakeRedis(),
+    )
+    runtime = KubernetesRuntime(
+        workers=WorkerImageMap(
+            {"example.artifact": WorkerImageDefinition(context=".", image="artifact:local")},
+            root=".",
+        ),
+        artifact_retention=KubernetesArtifactRetention(claim_name="artifact-pvc"),
+    )
+
+    assert runtime._load_result(run_id) is None
+    assert requested == [forwarded_result_key(run_id)]
+
+    values[forwarded_result_key(run_id)] = retained_result.model_dump_json()
+    loaded = runtime._load_result(run_id)
+
+    assert loaded is not None
+    assert loaded.data == {"source": "forwarder"}

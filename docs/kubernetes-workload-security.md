@@ -21,13 +21,23 @@ result envelopes, and worker behavior remain unchanged.
   `allowPrivilegeEscalation: false`, `privileged: false`, read-only root,
   `RuntimeDefault` seccomp, and all Linux capabilities dropped;
 - complete CPU and memory requests/limits for both containers;
-- only the result volume mounted writable in the result forwarder;
+- only the result volume mounted writable in the result forwarder when retention is disabled;
+- when retention is enabled, the forwarder additionally receives the transient artifact source
+  read-only and only the configured PVC artifact subpath writable, while the worker never receives
+  the PVC;
 - no arbitrary Pod fragment, credential value, command, volume, capability, or security
   context accepted from configuration.
 
 The default restricted IDs are `65532:65532` with `fsGroup: 65532`. Worker resources
 default to `100m`/`1` CPU and `64Mi`/`512Mi` memory request/limit. Forwarder resources
-default to `10m`/`100m` CPU and `16Mi`/`64Mi` memory.
+default to `10m`/`100m` CPU and `64Mi`/`128Mi` memory. The forwarder memory floor is
+versioned with `restricted-v1`: the packaged retention module reproducibly exceeded the former
+64 MiB ceiling, while the same Pod completed at a 64 MiB request and 128 MiB limit.
+
+Mount composition happens before the restricted security profile is applied. A retention-enabled
+forwarder therefore keeps `readOnlyRootFilesystem: true` while writing only through its result
+volume and narrow PVC subpath; `/artifacts` remains a read-only source mount. The legacy profile
+with retention disabled keeps the established inline forwarder command and original mount shape.
 
 ## Helm Migration
 
@@ -49,8 +59,8 @@ scheduler:
       resultForwarderResources:
         cpuRequest: 10m
         cpuLimit: 100m
-        memoryRequest: 16Mi
-        memoryLimit: 64Mi
+        memoryRequest: 64Mi
+        memoryLimit: 128Mi
       workerServiceAccounts: {}
 
 resourcePolicies:
@@ -99,8 +109,8 @@ A direct deployment can use the same partial JSON:
     "result_forwarder_resources": {
       "cpu_request": "10m",
       "cpu_limit": "100m",
-      "memory_request": "16Mi",
-      "memory_limit": "64Mi"
+      "memory_request": "64Mi",
+      "memory_limit": "128Mi"
     },
     "worker_service_account_names": {}
   }
@@ -147,10 +157,16 @@ stale. Durable validation records expose the effective fields under
 `effective_policy.kubernetes_workload_security` without changing the validation result
 or Run envelope.
 
+Whenever artifact retention is enabled, both legacy and restricted scheduler identities also hash
+the normalized PVC claim, subdirectory, URI root, and forwarder mount path. Changing that storage
+boundary makes prior proof stale. With retention disabled, the legacy identity remains exactly
+`kubernetes:<image>` for backward compatibility.
+
 ## Adoption Checklist
 
 1. Confirm the worker and forwarder images can run as the configured non-root IDs.
-2. Confirm they write only to mounted result/artifact paths.
+2. Confirm they write only to mounted result/artifact paths and that the artifact root is group-owned
+   by the configured `fsGroup` with directory mode `02770`.
 3. Set resource-policy `read_only_root: true` and keep CPU/memory within ceilings.
 4. Render Helm and inspect the runtime settings JSON.
 5. Validate each worker again because the restricted identity differs from legacy.
