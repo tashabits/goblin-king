@@ -140,5 +140,31 @@ completed both containers with exit zero in about five seconds. It retained a 68
 162-byte ZIP with directory/file modes `02770`/`0660` and UID/GID `65532:65532`. This measured floor
 is now the `restricted-v1` default; worker resources and legacy Pod shape remain unchanged.
 
-The complete automated acceptance script must still be rerun against an image containing this
-resource correction. That final JSON receipt is not inferred from the diagnostic Pods.
+## Final Automated Acceptance
+
+The complete acceptance passed on clean commit `3b35be4` in a freshly recreated namespace and
+database. The exact control-plane/result-forwarder image was
+`ghcr.io/tashabits/goblin-king@sha256:cd5f42618aa3788fb9658aea8cec39963a037de8f9c946154f566d28a21aac77`;
+the exact artifact-worker image remained
+`ghcr.io/tashabits/goblin-king-example-artifact@sha256:8948af7487eb86adc194d5a2cfef539742d6619d941aba95712fb462169a6df3`.
+
+Authenticated validation passed first and persisted identity
+`kubernetes:ghcr.io/tashabits/goblin-king-example-artifact@sha256:8948af7487eb86adc194d5a2cfef539742d6619d941aba95712fb462169a6df3:workload-security:de56f23ca5aa1f208c4429adf7af1568455b281e212fff2e765f25fa0406d5e9`.
+The effective policy recorded `restricted-v1`, no automatic or projected worker token, complete
+container security, worker memory `64Mi`/`512Mi`, and forwarder memory `64Mi`/`128Mi`. Validation
+returned PNG/ZIP metadata and left no validation-owned directory or file before normal scheduling.
+
+Normal job `18237e29-0371-493c-b45c-305874f91840` produced Run
+`936e7602-c08b-4d36-85ff-1a6e7bc74431`. Both transient Job and input ConfigMap were gone before the
+acceptance returned. Authorized downloads produced:
+
+- `artifact-proof.png`: SHA-256
+  `431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460`;
+- `artifact-proof.zip`: SHA-256
+  `aa4f0b02a8a9778b438b8feb9fd6537df83061cdbae7ed3fa984958c730aa7aa`.
+
+Policy cleanup selected both files and all 230 retained bytes, deleted them, and both download
+routes then returned `404`. The API, scheduler, and Redis deployments remained ready with zero
+restarts. The API ran as UID/GID `10001:10001` with supplementary group `65532`; the retained root
+remained setgid/group-writable for `65532`. This closes the diagnostic limitation above with a real
+validation-first, cross-identity, cleanup-complete cluster receipt.

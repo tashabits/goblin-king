@@ -116,7 +116,8 @@ def test_kubernetes_artifact_retention_is_documented_with_honest_proof_limits() 
     assert "assert_artifact_root_empty" in acceptance
     assert '"-mindepth"' in acceptance
     assert "validation_identity" in acceptance
-    assert "complete automated acceptance script must still be rerun" in proof
+    assert "## Final Automated Acceptance" in proof
+    assert "validation-first, cross-identity, cleanup-complete cluster receipt" in proof
     assert "Kubernetes Artifact Retention" in upgrade
     assert "Kubernetes Artifact Boundary" in security
 
