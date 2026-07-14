@@ -53,6 +53,12 @@ For a scheduler attempt:
 5. `Run.finished_at` is placed after its start and the latest worker event.
 6. The terminal or retry event is placed after `Run.finished_at`.
 
+Once a Docker runtime emits `worker.started`, it emits exactly one terminal worker
+lifecycle event for that attempt. A result rejected by the effective artifact policy
+ends with `worker.failed`; its payload retains the goblin `kind`, uses
+`phase: artifact_policy`, and includes the policy error. The returned failed
+`GoblinResult` remains the existing public shape.
+
 New `RunRecord` values reject `finished_at < started_at`. Scheduler success, failure,
 validation rejection, timeout, retry, and unexpected adapter failure all use the same
 causal timestamp helpers. Cancelling queued work creates no Run. When cancellation wins while a
