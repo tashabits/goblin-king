@@ -13,6 +13,7 @@ from redis import Redis
 from goblin_king.contracts import GoblinDefinition
 from goblin_king.events import EventBus
 from goblin_king.registry import GoblinRegistry
+from goblin_king.resource_policies import ResourcePolicy
 from goblin_king.runtime import DockerRuntime, new_run_context
 from goblin_king.store import SQLiteStore
 from goblin_king.validation import validate_workers
@@ -71,6 +72,16 @@ def example_worker_image(redis_container: str) -> str:
     runtime = DockerRuntime(workers=worker_map, redis_url=REDIS_URL)
     runtime.build_image("example.echo")
     return worker_map.get("example.echo").image
+
+
+@pytest.fixture(scope="session")
+def example_artifact_worker_image(redis_container: str) -> str:
+    """Build the self-contained example.artifact worker image with Docker."""
+    del redis_container
+    worker_map = WorkerImageMap.from_path("goblin-images.json")
+    runtime = DockerRuntime(workers=worker_map, redis_url=REDIS_URL)
+    runtime.build_image("example.artifact")
+    return worker_map.get("example.artifact").image
 
 
 def test_docker_runtime_executes_example_worker(
@@ -201,6 +212,63 @@ def test_docker_runtime_records_worker_heartbeats(
     assert heartbeats[0].run_id == context.run_id
     assert "worker.started" in event_types
     assert "worker.completed" in event_types
+
+
+def test_docker_runtime_artifact_policy_rejection_emits_terminal_failure(
+    tmp_path: Path,
+    redis_container: str,
+    example_artifact_worker_image: str,
+) -> None:
+    """Prove a real artifact worker pairs its start with terminal policy failure."""
+    del redis_container, example_artifact_worker_image
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    event_bus = EventBus(store=store, redis_url=REDIS_URL)
+    worker_map = WorkerImageMap.from_path("goblin-images.json")
+    runtime = DockerRuntime(
+        workers=worker_map,
+        redis_url=REDIS_URL,
+        run_root=tmp_path / "runs",
+        event_bus=event_bus,
+    )
+    context = new_run_context("job-artifact-policy", "example.artifact")
+    context = context.model_copy(update={"artifact_root": str(tmp_path / "artifacts")})
+    definition = GoblinDefinition(
+        kind="example.artifact",
+        display_name="Artifact",
+        module="unused.by.docker",
+    )
+
+    result = runtime.run(
+        definition,
+        None,
+        {"body": "policy proof"},
+        context,
+        resource_policy=ResourcePolicy(filesystem={"artifact_max_files": 0}),
+    )
+
+    assert result.status == "failed"
+    assert result.error == "artifact file count exceeds policy: 1 > 0"
+    lifecycle_events = [
+        event
+        for event in store.list_events()
+        if event.event_type
+        in {
+            "worker.started",
+            "worker.completed",
+            "worker.failed",
+            "worker.timed_out",
+            "worker.no_result",
+        }
+    ]
+    assert [event.event_type for event in lifecycle_events] == [
+        "worker.started",
+        "worker.failed",
+    ]
+    assert lifecycle_events[-1].payload == {
+        "kind": "example.artifact",
+        "phase": "artifact_policy",
+        "error": result.error,
+    }
 
 
 def test_worker_validation_reports_missing_result_json(

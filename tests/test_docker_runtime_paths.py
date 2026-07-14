@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from goblin_king.contracts import GoblinDefinition
+from goblin_king.contracts import GoblinDefinition, GoblinResult
 from goblin_king.docker_runtime_paths import (
     DEFAULT_DOCKER_RUN_ROOT,
     DockerRuntimePathError,
@@ -15,6 +16,7 @@ from goblin_king.docker_runtime_paths import (
     resolve_docker_run_root,
 )
 from goblin_king.events import EventBus
+from goblin_king.resource_policies import ResourcePolicy
 from goblin_king.runtime import DockerRuntime, new_run_context
 from goblin_king.store import SQLiteStore
 from goblin_king.workers import WorkerImageDefinition, WorkerImageMap
@@ -136,3 +138,100 @@ def test_runtime_launch_failure_records_terminal_worker_event(
     events = store.list_events()
     assert [event.event_type for event in events] == ["worker.started", "worker.failed"]
     assert events[-1].payload["phase"] == "launch"
+
+
+@pytest.mark.parametrize(
+    ("filesystem_policy", "artifacts", "metrics", "expected_error"),
+    [
+        (
+            {"artifact_max_files": 1},
+            [
+                {"name": "one.txt", "uri": "one.txt"},
+                {"name": "two.txt", "uri": "two.txt"},
+            ],
+            {},
+            "artifact file count exceeds policy: 2 > 1",
+        ),
+        (
+            {"artifact_max_bytes": 4},
+            [{"name": "large.txt", "uri": "large.txt"}],
+            {"artifact.large.txt.bytes": 5},
+            "artifact bytes exceed policy: 5 > 4",
+        ),
+    ],
+)
+def test_artifact_policy_rejection_records_terminal_worker_event(
+    tmp_path: Path,
+    monkeypatch,
+    filesystem_policy: dict[str, int],
+    artifacts: list[dict[str, str]],
+    metrics: dict[str, int],
+    expected_error: str,
+) -> None:
+    """Pair a started worker event with failure when artifact policy rejects its result."""
+    kind = "example.artifact-policy"
+    workers = WorkerImageMap.from_definitions(
+        {
+            kind: WorkerImageDefinition(
+                context=tmp_path,
+                image="artifact-policy:local",
+            )
+        },
+        root=tmp_path,
+    )
+    store = SQLiteStore(tmp_path / "events.sqlite3")
+    event_bus = EventBus(store=store)
+    monkeypatch.setattr(event_bus, "_publish", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(event_bus, "_append_stream", lambda *_args, **_kwargs: None)
+    runtime = DockerRuntime(
+        workers=workers,
+        run_root=tmp_path / "data" / "runs",
+        event_bus=event_bus,
+    )
+    worker_result = GoblinResult.ok(
+        data={"preserved": True},
+        artifacts=artifacts,
+        metrics=metrics,
+    )
+    monkeypatch.setattr(
+        "goblin_king.runtime.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    monkeypatch.setattr(runtime, "_record_worker_heartbeats", lambda *_args: None)
+    monkeypatch.setattr(runtime, "_load_result", lambda *_args: worker_result)
+
+    result = runtime.run(
+        GoblinDefinition(
+            kind=kind,
+            display_name="Artifact policy",
+            module="container.only",
+        ),
+        None,
+        {},
+        new_run_context("job-1", kind),
+        resource_policy=ResourcePolicy(filesystem=filesystem_policy),
+    )
+
+    assert result == GoblinResult.failed(error=expected_error, data={"preserved": True})
+    events = store.list_events()
+    lifecycle_events = [
+        event
+        for event in events
+        if event.event_type
+        in {
+            "worker.started",
+            "worker.completed",
+            "worker.failed",
+            "worker.timed_out",
+            "worker.no_result",
+        }
+    ]
+    assert [event.event_type for event in lifecycle_events] == [
+        "worker.started",
+        "worker.failed",
+    ]
+    assert lifecycle_events[-1].payload == {
+        "kind": kind,
+        "phase": "artifact_policy",
+        "error": expected_error,
+    }

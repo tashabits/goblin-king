@@ -227,6 +227,16 @@ class DockerRuntime:
                 Path(context.artifact_root),
             )
             if artifact_error is not None:
+                self._emit_worker_event(
+                    "worker.failed",
+                    context,
+                    worker_id,
+                    {
+                        "kind": definition.kind,
+                        "phase": "artifact_policy",
+                        "error": artifact_error,
+                    },
+                )
                 return GoblinResult.failed(error=artifact_error, data=result.data)
             self._emit_worker_event(
                 "worker.completed",
