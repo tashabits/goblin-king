@@ -170,6 +170,14 @@ config:
   notebookFunctionImage: goblin-king-notebook-python-function:local
   notebookServiceImage: goblin-king-notebook-asgi-service:local
   notebookServiceRuntime: auto
+  serviceWebSocket:
+    maxMessageBytes: 1048576
+    maxQueueMessages: 16
+    writeLimitBytes: 32768
+    openTimeoutSeconds: 10
+    idleTimeoutSeconds: 300
+    closeTimeoutSeconds: 10
+    drainTimeoutSeconds: 30
   oidc:
     enabled: false
     issuer: ""

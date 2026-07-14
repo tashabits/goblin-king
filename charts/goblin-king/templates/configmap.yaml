@@ -15,6 +15,15 @@ data:
       "notebook_function_image": "{{ .Values.config.notebookFunctionImage }}",
       "notebook_service_image": "{{ .Values.config.notebookServiceImage }}",
       "notebook_service_runtime": "{{ .Values.config.notebookServiceRuntime }}",
+      "service_websocket_proxy": {
+        "max_message_bytes": {{ .Values.config.serviceWebSocket.maxMessageBytes }},
+        "max_queue_messages": {{ .Values.config.serviceWebSocket.maxQueueMessages }},
+        "write_limit_bytes": {{ .Values.config.serviceWebSocket.writeLimitBytes }},
+        "open_timeout_seconds": {{ .Values.config.serviceWebSocket.openTimeoutSeconds }},
+        "idle_timeout_seconds": {{ .Values.config.serviceWebSocket.idleTimeoutSeconds }},
+        "close_timeout_seconds": {{ .Values.config.serviceWebSocket.closeTimeoutSeconds }},
+        "drain_timeout_seconds": {{ .Values.config.serviceWebSocket.drainTimeoutSeconds }}
+      },
       "bootstrap_admin_token": "{{ .Values.api.bootstrapAdminToken }}",
       "repository": {
         "enabled": {{ .Values.repository.enabled }},

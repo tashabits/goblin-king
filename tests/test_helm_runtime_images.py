@@ -133,6 +133,35 @@ def test_restricted_workload_settings_render_for_api_and_scheduler() -> None:
     assert _api_config(documents)["kubernetes_runtime"]["restricted_workload"] == restricted
 
 
+def test_managed_service_websocket_limits_render_without_host_runtime_authority() -> None:
+    """Render the same bounded relay policy without exposing a host runtime socket."""
+    documents = _helm_documents(
+        "--set",
+        "config.serviceWebSocket.maxMessageBytes=2048",
+        "--set",
+        "config.serviceWebSocket.maxQueueMessages=3",
+        "--set",
+        "config.serviceWebSocket.writeLimitBytes=4096",
+        "--set",
+        "config.serviceWebSocket.idleTimeoutSeconds=45",
+        "--set",
+        "config.serviceWebSocket.drainTimeoutSeconds=12",
+    )
+    settings = _api_config(documents)["service_websocket_proxy"]
+    api_pod = _deployment(documents, "api")["spec"]["template"]["spec"]
+
+    assert settings == {
+        "max_message_bytes": 2048,
+        "max_queue_messages": 3,
+        "write_limit_bytes": 4096,
+        "open_timeout_seconds": 10,
+        "idle_timeout_seconds": 45,
+        "close_timeout_seconds": 10,
+        "drain_timeout_seconds": 12,
+    }
+    assert "/var/run/docker.sock" not in json.dumps(api_pod)
+
+
 def _helm_documents(*arguments: str) -> list[dict]:
     completed = subprocess.run(
         ["helm", "template", "issue146", "charts/goblin-king", *arguments],
