@@ -18,6 +18,40 @@ from goblin_king.runtime_helpers import current_kubernetes_namespace, kubernetes
 
 RUNNER_SOURCE_PATH = "/goblin-service/source.py"
 RUNNER_REQUIREMENTS_PATH = "/goblin-service/requirements.txt"
+KUBERNETES_RUNTIME_PATH = "/tmp/goblin-service-runtime"
+
+
+def _kubernetes_service_resources() -> dict[str, dict[str, str]]:
+    """Return the fixed resource envelope for notebook-authored services."""
+    return {
+        "requests": {"cpu": "100m", "memory": "64Mi"},
+        "limits": {"cpu": "1", "memory": "512Mi"},
+    }
+
+
+def _kubernetes_service_security_context() -> dict[str, object]:
+    """Return the non-negotiable container security boundary."""
+    return {
+        "allowPrivilegeEscalation": False,
+        "capabilities": {"drop": ["ALL"]},
+        "privileged": False,
+        "readOnlyRootFilesystem": True,
+        "runAsNonRoot": True,
+        "runAsUser": 65532,
+        "runAsGroup": 65532,
+    }
+
+
+def _kubernetes_service_pod_security_context() -> dict[str, object]:
+    """Return the non-root pod identity and default syscall profile."""
+    return {
+        "runAsNonRoot": True,
+        "runAsUser": 65532,
+        "runAsGroup": 65532,
+        "fsGroup": 65532,
+        "fsGroupChangePolicy": "OnRootMismatch",
+        "seccompProfile": {"type": "RuntimeDefault"},
+    }
 
 
 class NotebookServiceRuntimeError(RuntimeError):
@@ -377,6 +411,8 @@ class NotebookServiceRuntimeManager:
                 "template": {
                     "metadata": {"labels": labels},
                     "spec": {
+                        "automountServiceAccountToken": False,
+                        "securityContext": _kubernetes_service_pod_security_context(),
                         "containers": [
                             {
                                 "name": "service",
@@ -397,17 +433,36 @@ class NotebookServiceRuntimeManager:
                                         "value": RUNNER_REQUIREMENTS_PATH,
                                     },
                                     {"name": "PORT", "value": str(record.port)},
+                                    {"name": "HOME", "value": "/tmp"},
+                                    {
+                                        "name": "PIP_TARGET",
+                                        "value": KUBERNETES_RUNTIME_PATH,
+                                    },
+                                    {
+                                        "name": "PYTHONPATH",
+                                        "value": KUBERNETES_RUNTIME_PATH,
+                                    },
+                                    {"name": "PYTHONDONTWRITEBYTECODE", "value": "1"},
                                 ],
+                                "resources": _kubernetes_service_resources(),
+                                "securityContext": (_kubernetes_service_security_context()),
                                 "volumeMounts": [
                                     {
                                         "name": "bundle",
                                         "mountPath": "/goblin-service",
                                         "readOnly": True,
-                                    }
+                                    },
+                                    {"name": "runtime", "mountPath": "/tmp"},
                                 ],
                             }
                         ],
-                        "volumes": [{"name": "bundle", "configMap": {"name": name}}],
+                        "volumes": [
+                            {"name": "bundle", "configMap": {"name": name}},
+                            {
+                                "name": "runtime",
+                                "emptyDir": {"sizeLimit": "512Mi"},
+                            },
+                        ],
                     },
                 },
             },

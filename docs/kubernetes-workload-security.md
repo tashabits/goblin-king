@@ -176,3 +176,26 @@ boundary makes prior proof stale. With retention disabled, the legacy identity r
 
 See [issue #148 proof](proofs/issue-148-kubernetes-workload-security.md) for the exact
 automated and live-cluster evidence.
+
+## Notebook-Authored Service Pods
+
+Notebook-authored ASGI services use a fixed restricted manifest independently of the
+scheduler Job profile. Their generated Kubernetes Deployment keeps the existing labels,
+ConfigMap bundle, Service, runtime selection, and lifecycle API while applying these
+non-negotiable defaults:
+
+- automatic ServiceAccount-token mounting is disabled;
+- the pod runs as UID/GID and `fsGroup` 65532 with `RuntimeDefault` seccomp;
+- the service container cannot escalate privileges, is explicitly unprivileged, drops
+  every Linux capability, and uses a read-only root filesystem;
+- CPU/memory requests are `100m`/`64Mi` and limits are `1`/`512Mi`;
+- the source bundle remains read-only; and
+- one size-limited `emptyDir` is mounted at `/tmp` for dependency installation and
+  application scratch data.
+
+The runner installs declared Python requirements into
+`/tmp/goblin-service-runtime`, and `PYTHONPATH` points to that location. Existing
+service source and dependency declarations therefore retain their established loading
+contract without requiring writes to the image filesystem. Application code that needs
+scratch space must use `/tmp`; it does not receive a ServiceAccount credential or an
+arbitrary volume escape hatch.

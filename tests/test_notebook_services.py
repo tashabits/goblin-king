@@ -73,8 +73,8 @@ def test_docker_runtime_command_uses_volume_network_and_no_socket(
     assert source_env.endswith(f"notebook-services/{runtime_name}/source.py")
 
 
-def test_kubernetes_runtime_manifests_use_managed_labels_and_configmap() -> None:
-    """Verify Kubernetes resources use expected labels, image, ports, and mounts."""
+def test_kubernetes_runtime_manifests_are_bounded_and_hardened() -> None:
+    """Verify generated service Pods retain the restricted workload boundary."""
     record = _record()
     manager = NotebookServiceRuntimeManager(
         image="registry.example/goblin-king-notebook-asgi-service:tag",
@@ -88,15 +88,45 @@ def test_kubernetes_runtime_manifests_use_managed_labels_and_configmap() -> None
     service = manager._service_manifest(record, name)
 
     labels = deployment["metadata"]["labels"]
-    container = deployment["spec"]["template"]["spec"]["containers"][0]
+    pod = deployment["spec"]["template"]["spec"]
+    container = pod["containers"][0]
     assert labels["goblin-king.io/notebook-service"] == "true"
     assert labels["goblin-king.io/notebook-service-name"] == name
     assert container["image"] == "registry.example/goblin-king-notebook-asgi-service:tag"
     assert container["imagePullPolicy"] == "Never"
     assert container["ports"] == [{"containerPort": 8080}]
     assert {"name": "PORT", "value": "8080"} in container["env"]
+    assert pod["automountServiceAccountToken"] is False
+    assert pod["securityContext"] == {
+        "runAsNonRoot": True,
+        "runAsUser": 65532,
+        "runAsGroup": 65532,
+        "fsGroup": 65532,
+        "fsGroupChangePolicy": "OnRootMismatch",
+        "seccompProfile": {"type": "RuntimeDefault"},
+    }
+    assert container["securityContext"] == {
+        "allowPrivilegeEscalation": False,
+        "capabilities": {"drop": ["ALL"]},
+        "privileged": False,
+        "readOnlyRootFilesystem": True,
+        "runAsNonRoot": True,
+        "runAsUser": 65532,
+        "runAsGroup": 65532,
+    }
+    assert container["resources"] == {
+        "requests": {"cpu": "100m", "memory": "64Mi"},
+        "limits": {"cpu": "1", "memory": "512Mi"},
+    }
     assert container["volumeMounts"] == [
-        {"name": "bundle", "mountPath": "/goblin-service", "readOnly": True}
+        {"name": "bundle", "mountPath": "/goblin-service", "readOnly": True},
+        {"name": "runtime", "mountPath": "/tmp"},
     ]
+    assert pod["volumes"] == [
+        {"name": "bundle", "configMap": {"name": name}},
+        {"name": "runtime", "emptyDir": {"sizeLimit": "512Mi"}},
+    ]
+    assert {"name": "PIP_TARGET", "value": "/tmp/goblin-service-runtime"} in container["env"]
+    assert {"name": "PYTHONPATH", "value": "/tmp/goblin-service-runtime"} in container["env"]
     assert service["spec"]["selector"] == {"goblin-king.io/notebook-service-name": name}
     assert service["spec"]["ports"] == [{"name": "http", "port": 8080, "targetPort": 8080}]
