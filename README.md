@@ -851,6 +851,12 @@ services through:
 /services/long-running/<service-id>/proxy/...
 ```
 
+Ready registered and published services can also accept an authenticated WebSocket
+upgrade at the same proxy path. The relay preserves text/binary messages and valid close
+codes while applying bounded queues, message limits, idle timeouts, project scope,
+credential stripping, and readiness-gated rolling replacement. See
+[Managed-Service WebSocket Proxy](docs/managed-service-websockets.md).
+
 For same-cluster Kubernetes, the chart accepts `config.jupyterhub.*` settings and
 `make jupyterhub-stack-up` installs a default zero-to-jupyterhub proof stack with an
 authenticated workbook. The default Hub values include notebook-pod egress to the
@@ -1159,6 +1165,8 @@ Goblin King provides:
   command for image builds, result envelopes, and artifacts.
 - [Goblin Resource Policies](docs/goblin-resource-policies.md): Per-goblin resource
   expectations, defaults, ceilings, and Docker/Kubernetes mapping.
+- [Managed-Service WebSocket Proxy](docs/managed-service-websockets.md): Authenticated,
+  readiness-gated duplex service routing, limits, rolling drain, and deployment proof.
 - [Causal Lifecycle Ordering](docs/causal-lifecycle-ordering.md): Durable event
   sequences, monotonic Run timestamps, and rollback-safe timeout behavior.
 - [Kubernetes Artifact Retention](docs/kubernetes-artifact-retention.md): PVC-backed

@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import json
 import threading
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from websockets.exceptions import ConnectionClosed
+from websockets.sync.server import serve
 
 from goblin_king.api import create_app
+from goblin_king.api_models import LongServiceProbeResponse
 from goblin_king.api_settings import ApiSettings
 from goblin_king.contracts import utc_now
 from goblin_king.notebook_services import NotebookServiceRuntimeProof
@@ -129,6 +136,7 @@ class _FakeRepositoryServiceManager:
         self.base_url = base_url
         self.validated: list[str] = []
         self.started: list[str] = []
+        self.started_names: list[str] = []
         self.stopped: list[tuple[str, str]] = []
 
     def validate(self, record: Any, *, timeout_seconds: float) -> NotebookServiceRuntimeProof:
@@ -140,11 +148,18 @@ class _FakeRepositoryServiceManager:
             probe={"ok": True, "timeout_seconds": timeout_seconds},
         )
 
-    def start(self, record: Any, *, timeout_seconds: float) -> NotebookServiceRuntimeProof:
+    def start(
+        self,
+        record: Any,
+        *,
+        name: str | None = None,
+        timeout_seconds: float,
+    ) -> NotebookServiceRuntimeProof:
         self.started.append(record.kind)
+        self.started_names.append(name or "repo-service-runtime")
         return NotebookServiceRuntimeProof(
             backend="kubernetes",
-            name="repo-service-runtime",
+            name=name or "repo-service-runtime",
             base_url=self.base_url,
             probe={"ok": True, "timeout_seconds": timeout_seconds},
         )
@@ -160,6 +175,94 @@ class _FakeRepositoryServiceManager:
 
     def stop_by_backend(self, backend: str, name: str) -> None:
         self.stopped.append((backend, name))
+
+
+@contextmanager
+def _repository_websocket_server(seen: list[str]) -> Iterator[str]:
+    def handler(connection: Any) -> None:
+        seen.append(connection.request.path)
+        try:
+            for payload in connection:
+                connection.send(payload)
+        except ConnectionClosed:
+            return
+
+    server = serve(handler, "127.0.0.1", 0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.socket.getsockname()[1]}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+
+def _ready_probe(state: Any, service: Any) -> LongServiceProbeResponse:
+    response = {"status_code": 200, "headers": {}, "json": {"ok": True}}
+    updated = state.store.update_long_service_probe(
+        service.id,
+        status="running",
+        last_probe_at=utc_now(),
+        last_probe_json=response,
+    )
+    assert updated is not None
+    return LongServiceProbeResponse(
+        service=updated,
+        request={"method": "GET", "url": f"{service.base_url}/hello"},
+        response=response,
+    )
+
+
+def _publish_repository_service(
+    client: TestClient,
+    token: str,
+    name: str,
+) -> dict[str, Any]:
+    submitted = client.post(
+        "/repository/entries",
+        headers=_bearer(token),
+        json={
+            "name": name,
+            "type": "notebook_service",
+            "source": "from fastapi import FastAPI\napp = FastAPI()\n",
+            "app_name": "app",
+            "requirements": ["fastapi>=0.115,<1"],
+            "probe_path": "/hello",
+        },
+    )
+    assert submitted.status_code == 200
+    entry = submitted.json()["entry"]
+    validated = client.post(
+        f"/repository/entries/{entry['id']}/validate",
+        headers=_bearer(token),
+        json={"timeout_seconds": 10},
+    )
+    assert validated.status_code == 200
+    client.post(
+        f"/repository/entries/{entry['id']}/request-review",
+        headers=_bearer(token),
+        json={},
+    )
+    client.post(
+        f"/repository/entries/{entry['id']}/approve",
+        headers=auth_headers(),
+        json={},
+    )
+    published = client.post(
+        f"/repository/entries/{entry['id']}/publish",
+        headers=auth_headers(),
+        json={},
+    )
+    assert published.status_code == 200
+    return published.json()
+
+
+def _wait_for(predicate: Any) -> None:
+    for _ in range(100):
+        if predicate():
+            return
+        time.sleep(0.01)
+    raise AssertionError("condition did not become true")
 
 
 def test_repository_submit_validate_review_and_publish_function(
@@ -738,7 +841,7 @@ def test_published_repository_service_lifecycle_and_proxy_by_name(
     assert stopped_record.active_service_id is None
     assert manager.validated == [started.json()["version"]["kind"]]
     assert manager.started == [started.json()["version"]["kind"]]
-    assert manager.stopped == [("kubernetes", "repo-service-runtime")]
+    assert manager.stopped == [("kubernetes", started.json()["runtime"]["name"])]
     repository_actions = [
         log.action for log in store.list_audit_logs() if log.action.startswith("repository.")
     ]
@@ -753,6 +856,141 @@ def test_published_repository_service_lifecycle_and_proxy_by_name(
         "repository.probe",
         "repository.stop",
     ]
+
+
+def test_repository_websocket_replacement_drains_old_connection(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """Keep the old relay alive while new connections use a ready promoted runtime."""
+    seen: list[str] = []
+    with _repository_websocket_server(seen) as base_url:
+        manager = _FakeRepositoryServiceManager(base_url=base_url)
+        monkeypatch.setattr(
+            "goblin_king.api._notebook_service_runtime_manager",
+            lambda _state: manager,
+        )
+        monkeypatch.setattr("goblin_king.api._probe_long_service_record", _ready_probe)
+        client, store = build_repository_api_client(tmp_path)
+        project, token = _project_token(
+            client,
+            email="rolling@example.test",
+            display_name="Rolling User",
+            project_name="Rolling Project",
+        )
+        _publish_repository_service(client, token, "rolling.service")
+        first = client.post(
+            "/repository/services/rolling.service/start",
+            headers=_bearer(token),
+            json={"timeout_seconds": 10},
+        )
+        first_service_id = first.json()["service"]["id"]
+        first_runtime_name = first.json()["runtime"]["name"]
+
+        with client.websocket_connect(
+            "/repository/services/rolling.service/proxy/room"
+            f"?token={token}&project_id={project['id']}&version=1&channel=old"
+        ) as old_connection:
+            old_connection.send_text("before")
+            assert old_connection.receive_text() == "before"
+
+            second = client.post(
+                "/repository/services/rolling.service/start",
+                headers=_bearer(token),
+                json={"timeout_seconds": 10},
+            )
+            second_service_id = second.json()["service"]["id"]
+            assert second.status_code == 200
+            assert second_service_id != first_service_id
+            assert manager.stopped == []
+            assert store.get_long_service(first_service_id).status == "stopped"  # type: ignore[union-attr]
+            active = store.get_notebook_service(second.json()["notebook_service"]["kind"])
+            assert active is not None
+            assert active.active_service_id == second_service_id
+
+            old_connection.send_text("during-drain")
+            assert old_connection.receive_text() == "during-drain"
+            with client.websocket_connect(
+                f"/repository/services/rolling.service/proxy/new?token={token}"
+            ) as new_connection:
+                new_connection.send_text("new-route")
+                assert new_connection.receive_text() == "new-route"
+                new_connection.close()
+            old_connection.close()
+
+        _wait_for(lambda: ("kubernetes", first_runtime_name) in manager.stopped)
+
+    assert seen == [
+        "/room?channel=old",
+        "/new",
+    ]
+
+
+def test_repository_websocket_readiness_failure_retains_last_known_good(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    """Leave the prior route active when a replacement candidate fails readiness."""
+    seen: list[str] = []
+    probe_calls = 0
+
+    def probe_candidate(state: Any, service: Any) -> LongServiceProbeResponse:
+        nonlocal probe_calls
+        probe_calls += 1
+        if probe_calls == 2:
+            state.store.update_long_service_probe(
+                service.id,
+                status="failed",
+                last_probe_at=utc_now(),
+                last_probe_json={"status_code": 503, "json": None},
+            )
+            raise HTTPException(status_code=502, detail="candidate is not ready")
+        return _ready_probe(state, service)
+
+    with _repository_websocket_server(seen) as base_url:
+        manager = _FakeRepositoryServiceManager(base_url=base_url)
+        monkeypatch.setattr(
+            "goblin_king.api._notebook_service_runtime_manager",
+            lambda _state: manager,
+        )
+        monkeypatch.setattr("goblin_king.api._probe_long_service_record", probe_candidate)
+        client, store = build_repository_api_client(tmp_path)
+        _, token = _project_token(
+            client,
+            email="fallback@example.test",
+            display_name="Fallback User",
+            project_name="Fallback Project",
+        )
+        _publish_repository_service(client, token, "fallback.service")
+        first = client.post(
+            "/repository/services/fallback.service/start",
+            headers=_bearer(token),
+            json={"timeout_seconds": 10},
+        )
+        first_service_id = first.json()["service"]["id"]
+
+        replacement = client.post(
+            "/repository/services/fallback.service/start",
+            headers=_bearer(token),
+            json={"timeout_seconds": 10},
+        )
+
+        assert replacement.status_code == 502
+        record = store.get_notebook_service(first.json()["notebook_service"]["kind"])
+        assert record is not None
+        assert record.active_service_id == first_service_id
+        assert store.get_long_service(first_service_id).status == "running"  # type: ignore[union-attr]
+        assert manager.stopped == [("kubernetes", manager.started_names[-1])]
+        assert manager.started_names[-1] != manager.started_names[0]
+
+        with client.websocket_connect(
+            f"/repository/services/fallback.service/proxy?token={token}"
+        ) as connection:
+            connection.send_text("last-known-good")
+            assert connection.receive_text() == "last-known-good"
+            connection.close()
+
+    assert seen == ["/"]
 
 
 def test_repository_list_search_filters_status_type_and_tag_text(

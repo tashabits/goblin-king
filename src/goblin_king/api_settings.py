@@ -59,6 +59,18 @@ class RepositorySettings(BaseModel):
     url: str | None = None
 
 
+class ServiceWebSocketProxySettings(BaseModel):
+    """Bound managed-service WebSocket relay and replacement-drain limits."""
+
+    max_message_bytes: int = Field(default=1024 * 1024, gt=0, le=64 * 1024 * 1024)
+    max_queue_messages: int = Field(default=16, gt=0, le=1024)
+    write_limit_bytes: int = Field(default=32 * 1024, gt=0, le=16 * 1024 * 1024)
+    open_timeout_seconds: float = Field(default=10.0, gt=0, le=300.0)
+    idle_timeout_seconds: float = Field(default=300.0, gt=0, le=86400.0)
+    close_timeout_seconds: float = Field(default=10.0, gt=0, le=300.0)
+    drain_timeout_seconds: float = Field(default=30.0, gt=0, le=3600.0)
+
+
 class ApiSettings(BaseModel):
     """Resolve settings needed by the API app and its dependencies."""
 
@@ -79,6 +91,9 @@ class ApiSettings(BaseModel):
     oidc: OidcSettings = Field(default_factory=OidcSettings)
     jupyterhub: JupyterHubSettings = Field(default_factory=JupyterHubSettings)
     repository: RepositorySettings = Field(default_factory=RepositorySettings)
+    service_websocket_proxy: ServiceWebSocketProxySettings = Field(
+        default_factory=ServiceWebSocketProxySettings
+    )
     kubernetes_runtime: KubernetesRuntimeSettings = Field(
         default_factory=KubernetesRuntimeSettings
     )

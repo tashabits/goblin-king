@@ -24,5 +24,14 @@
   "repository": {
     "enabled": false,
     "url": null
+  },
+  "service_websocket_proxy": {
+    "max_message_bytes": 1048576,
+    "max_queue_messages": 16,
+    "write_limit_bytes": 32768,
+    "open_timeout_seconds": 10,
+    "idle_timeout_seconds": 300,
+    "close_timeout_seconds": 10,
+    "drain_timeout_seconds": 30
   }
 }

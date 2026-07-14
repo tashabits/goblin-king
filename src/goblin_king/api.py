@@ -103,6 +103,12 @@ from goblin_king.api_schedules import (
     validate_cron,
     validate_timezone,
 )
+from goblin_king.api_service_websockets import (
+    authenticate_service_websocket,
+    authorize_service_websocket,
+    proxy_service_websocket,
+    service_websocket_ready,
+)
 from goblin_king.api_settings import ApiSettings
 from goblin_king.api_state import AppState
 from goblin_king.auth import (
@@ -154,6 +160,7 @@ from goblin_king.metadata import goblin_job_metadata
 from goblin_king.notebook_services import (
     NotebookServiceRuntimeError,
     NotebookServiceRuntimeManager,
+    notebook_service_runtime_name,
     notebook_service_source_hash,
 )
 from goblin_king.notebooks import (
@@ -168,6 +175,8 @@ from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.resource_policies import ResourcePolicyError
 from goblin_king.runtime import new_run_context
 from goblin_king.scheduler import next_run_after
+from goblin_king.service_websocket_drain import WebSocketDrainRegistry
+from goblin_king.service_websocket_proxy import close_websocket
 from goblin_king.termination import terminate_runtime
 from goblin_king.validation import (
     WorkerValidationResult,
@@ -490,6 +499,66 @@ def _stop_existing_notebook_service_runtime(
         )
 
 
+async def _retire_replaced_notebook_service(
+    state: AppState,
+    manager: NotebookServiceRuntimeManager,
+    record: NotebookServiceRecord,
+    service: LongServiceRecord,
+    replacement: LongServiceRecord,
+    principal: Principal,
+    *,
+    action: str,
+    resource_type: str,
+    resource_id: str,
+) -> None:
+    """Stop one drained runtime without clearing a newer active-service pointer."""
+    error: str | None = None
+    try:
+        if record.runtime_backend and record.runtime_name:
+            await asyncio.to_thread(
+                manager.stop_by_backend,
+                record.runtime_backend,
+                record.runtime_name,
+            )
+        current = state.store.get_notebook_service(record.kind)
+        if current is not None and current.active_service_id == service.id:
+            state.store.update_notebook_service_runtime(
+                current.kind,
+                runtime_status="stopped",
+                runtime_backend=None,
+                runtime_name=None,
+                active_service_id=None,
+                updated_at=utc_now(),
+            )
+    except Exception as caught:  # pragma: no cover - backend-specific defensive boundary
+        error = str(caught)
+    outcome = "success" if error is None else "failed"
+    detail = {
+        "service_id": service.id,
+        "replacement_service_id": replacement.id,
+        "runtime_backend": record.runtime_backend,
+        "runtime_name": record.runtime_name,
+        "error": error,
+    }
+    audit(
+        state.store,
+        action=action,
+        outcome=outcome,
+        principal=principal,
+        project_id=service.project_id,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        detail=detail,
+    )
+    state.event_bus.emit(
+        "service.websocket_drain_completed",
+        source="api",
+        project_id=service.project_id,
+        worker_id=service.id,
+        payload={"kind": service.kind, "outcome": outcome, **detail},
+    )
+
+
 def create_app(settings: ApiSettings | None = None) -> FastAPI:
     """Create the FastAPI app with loaded Goblin King dependencies."""
     state = AppState(settings or ApiSettings.from_path("goblin-king-api.json"))
@@ -499,6 +568,10 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         responses={401: {"model": ErrorEnvelope}, 403: {"model": ErrorEnvelope}},
     )
     app.state.goblin_king = state
+    websocket_drains = WebSocketDrainRegistry(
+        drain_timeout_seconds=state.settings.service_websocket_proxy.drain_timeout_seconds
+    )
+    app.state.service_websocket_drains = websocket_drains
 
     def require_principal(
         request: Request,
@@ -1232,6 +1305,41 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             action="service.proxy",
             resource_type="long_service",
             resource_id=service.id,
+        )
+
+    @app.websocket("/services/long-running/{service_id}/proxy")
+    @app.websocket("/services/long-running/{service_id}/proxy/{path:path}")
+    async def proxy_long_running_service_websocket(
+        websocket: WebSocket,
+        service_id: str,
+        path: str = "",
+    ) -> None:
+        """Relay authenticated bounded WebSocket frames to a ready registered service."""
+        principal = await authenticate_service_websocket(state, websocket)
+        if principal is None:
+            return
+        service = state.store.get_long_service(service_id)
+        if service is None:
+            await close_websocket(websocket, 1008, "managed service is unavailable")
+            return
+        if not await authorize_service_websocket(
+            state,
+            websocket,
+            principal,
+            service.project_id,
+        ):
+            return
+        await proxy_service_websocket(
+            state,
+            websocket_drains,
+            websocket,
+            service=service,
+            path=path,
+            principal=principal,
+            action="service.websocket_proxy",
+            resource_type="long_service",
+            resource_id=service.id,
+            query_excluded={"token"},
         )
 
     async def _proxy_long_service_request(
@@ -2856,7 +2964,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         tags=["repository"],
         operation_id="startRepositoryService",
     )
-    def start_repository_service(
+    async def start_repository_service(
         name: str,
         request: RepositoryServiceStartRequest,
         principal: Principal = Depends(require_principal),
@@ -2871,10 +2979,20 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             version=request.version,
         )
         record = _repository_service_record(entry, version_record)
+        previous = _last_known_good_repository_service(entry)
         manager = _notebook_service_runtime_manager(state)
-        _stop_existing_notebook_service_runtime(state, manager, record)
+        candidate_name = notebook_service_runtime_name(
+            record.kind,
+            record.source_hash,
+            suffix=f"route-{uuid4().hex[:8]}",
+        )
         try:
-            runtime_proof = manager.start(record, timeout_seconds=request.timeout_seconds)
+            runtime_proof = await asyncio.to_thread(
+                manager.start,
+                record,
+                name=candidate_name,
+                timeout_seconds=request.timeout_seconds,
+            )
         except NotebookServiceRuntimeError as error:
             audit(
                 state.store,
@@ -2895,12 +3013,36 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             image=record.image,
             base_url=runtime_proof.base_url,
             probe_path=record.probe_path,
-            status="running",
+            status="registered",
             created_at=utc_now(),
             created_by=principal.user_id,
             last_probe_json=runtime_proof.probe,
         )
         state.store.save_long_service(service)
+        try:
+            probe = await asyncio.to_thread(_probe_long_service_record, state, service)
+        except HTTPException as error:
+            await asyncio.to_thread(
+                manager.stop_by_backend,
+                runtime_proof.backend,
+                runtime_proof.name,
+            )
+            audit(
+                state.store,
+                action="repository.start",
+                outcome="readiness_failed",
+                principal=principal,
+                project_id=record.project_id,
+                resource_type="repository_entry",
+                resource_id=entry.id,
+                detail={
+                    "name": entry.name,
+                    "version": version_record.version,
+                    "candidate_service_id": service.id,
+                    "retained_service_id": previous[2].id if previous else None,
+                },
+            )
+            raise error
         updated = state.store.update_notebook_service_runtime(
             record.kind,
             runtime_status="running",
@@ -2910,7 +3052,33 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             updated_at=utc_now(),
         )
         assert updated is not None
-        probe = _probe_long_service_record(state, service)
+        active_service = probe.service
+        if previous is not None and previous[2].id != active_service.id:
+            _, previous_record, previous_service = previous
+            state.store.update_long_service_status(
+                previous_service.id,
+                status="stopped",
+                last_probe_json={
+                    "stopped_by": "repository.service.replaced",
+                    "draining": True,
+                    "replacement_service_id": active_service.id,
+                },
+            )
+
+            async def retire_previous() -> None:
+                await _retire_replaced_notebook_service(
+                    state,
+                    manager,
+                    previous_record,
+                    previous_service,
+                    active_service,
+                    principal,
+                    action="repository.websocket_drain",
+                    resource_type="repository_entry",
+                    resource_id=entry.id,
+                )
+
+            await websocket_drains.drain(previous_service.id, retire_previous)
         state.event_bus.emit(
             "repository.service.started",
             source="api",
@@ -2943,7 +3111,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             entry=entry,
             version=version_record,
             notebook_service=updated,
-            service=service,
+            service=active_service,
             runtime=runtime_proof.model(),
             probe=probe,
         )
@@ -2965,6 +3133,21 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                 detail=f"repository service runtime is missing: {entry.name}",
             )
         return record, service
+
+    def _last_known_good_repository_service(
+        entry: RepositoryEntryRecord,
+    ) -> tuple[RepositoryVersionRecord, NotebookServiceRecord, LongServiceRecord] | None:
+        """Return the newest ready published runtime retained for one repository entry."""
+        for version_record in reversed(
+            state.store.list_repository_versions(entry.id, status="published")
+        ):
+            record = state.store.get_notebook_service(version_record.kind)
+            if record is None or not record.active_service_id:
+                continue
+            service = state.store.get_long_service(record.active_service_id)
+            if service is not None and service_websocket_ready(service):
+                return version_record, record, service
+        return None
 
     @app.post(
         "/repository/services/{name}/probe",
@@ -3123,6 +3306,77 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                 "service_id": service.id,
             },
             query_string=_repository_proxy_query_string(request.url.query),
+        )
+
+    @app.websocket("/repository/services/{name}/proxy")
+    @app.websocket("/repository/services/{name}/proxy/{path:path}")
+    async def proxy_repository_service_websocket(
+        websocket: WebSocket,
+        name: str,
+        path: str = "",
+    ) -> None:
+        """Relay WebSocket frames to the selected or last-known-good published service."""
+        principal = await authenticate_service_websocket(state, websocket)
+        if principal is None:
+            return
+        project_id = websocket.query_params.get("project_id")
+        raw_version = websocket.query_params.get("version")
+        try:
+            version = int(raw_version) if raw_version is not None else None
+            if version is not None and version <= 0:
+                raise ValueError
+        except ValueError:
+            await close_websocket(websocket, 1008, "invalid repository service version")
+            return
+        try:
+            entry, version_record = _resolve_published_repository_version(
+                name=name,
+                expected_type="notebook_service",
+                principal=principal,
+                project_id=project_id,
+                version=version,
+            )
+        except HTTPException:
+            await close_websocket(websocket, 1008, "repository service is unavailable")
+            return
+        try:
+            record, service = _active_repository_service(entry, version_record)
+        except HTTPException:
+            if version is not None:
+                await close_websocket(websocket, 1008, "repository service is unavailable")
+                return
+            fallback = _last_known_good_repository_service(entry)
+            if fallback is None:
+                await close_websocket(websocket, 1013, "repository service is not ready")
+                return
+            version_record, record, service = fallback
+        if version is None and not service_websocket_ready(service):
+            fallback = _last_known_good_repository_service(entry)
+            if fallback is not None:
+                version_record, record, service = fallback
+        if not await authorize_service_websocket(
+            state,
+            websocket,
+            principal,
+            service.project_id,
+        ):
+            return
+        await proxy_service_websocket(
+            state,
+            websocket_drains,
+            websocket,
+            service=service,
+            path=path,
+            principal=principal,
+            action="repository.websocket_proxy",
+            resource_type="repository_entry",
+            resource_id=entry.id,
+            query_excluded={"token", "project_id", "version"},
+            detail_extra={
+                "name": entry.name,
+                "version": version_record.version,
+                "kind": record.kind,
+            },
         )
 
     @app.post("/jobs", response_model=JobRecord, tags=["jobs"], operation_id="createJob")

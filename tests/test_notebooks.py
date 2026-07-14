@@ -1102,11 +1102,11 @@ class _FakeNotebookServiceManager:
             probe={"ok": True, "status_code": 200},
         )
 
-    def start(self, record, *, timeout_seconds):
+    def start(self, record, *, name=None, timeout_seconds):
         self.started.append(record.kind)
         return NotebookServiceRuntimeProof(
             backend="kubernetes",
-            name="gk-nbsvc-notebook-long-hello",
+            name=name or "gk-nbsvc-notebook-long-hello",
             base_url="http://gk-nbsvc-notebook-long-hello.default.svc.cluster.local:8080",
             probe={"ok": True, "status_code": 200},
         )
