@@ -20,6 +20,7 @@ def main() -> None:
     )
     app_name = os.environ.get("GOBLIN_NOTEBOOK_SERVICE_APP", "app")
     port = int(os.environ.get("PORT", "8080"))
+    _expose_pip_target_scripts()
     _install_requirements(requirements_path)
     app = _load_app(source_path, app_name)
     if command == "validate":
@@ -30,6 +31,18 @@ def main() -> None:
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+
+
+def _expose_pip_target_scripts() -> None:
+    """Prepend declared dependency entry points without replacing the image PATH."""
+    target = os.environ.get("PIP_TARGET")
+    if not target:
+        return
+    target_bin = str(Path(target) / "bin")
+    current = [entry for entry in os.environ.get("PATH", "").split(os.pathsep) if entry]
+    if target_bin in current:
+        return
+    os.environ["PATH"] = os.pathsep.join([target_bin, *current])
 
 
 def _install_requirements(path: Path) -> None:

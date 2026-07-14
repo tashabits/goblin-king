@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 from pathlib import Path
+from runpy import run_path
 
 from goblin_king.contracts import NotebookServiceRecord, utc_now
 from goblin_king.notebook_services import (
@@ -130,3 +133,46 @@ def test_kubernetes_runtime_manifests_are_bounded_and_hardened() -> None:
     assert {"name": "PYTHONPATH", "value": "/tmp/goblin-service-runtime"} in container["env"]
     assert service["spec"]["selector"] == {"goblin-king.io/notebook-service-name": name}
     assert service["spec"]["ports"] == [{"name": "http", "port": 8080, "targetPort": 8080}]
+
+
+def test_service_runner_preserves_image_path_and_exposes_target_scripts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Keep declared dependency entry points available under a writable pip target."""
+    runner = run_path(
+        str(Path(__file__).parents[1] / "workers" / "notebook.asgi-service" / "runner.py")
+    )
+    target = tmp_path / "requirements"
+    target_bin = target / "bin"
+    target_bin.mkdir(parents=True)
+    if os.name == "nt":
+        entry_point = target_bin / "declared-cli.cmd"
+        entry_point.write_text("@echo declared-console-entry\n", encoding="utf-8")
+    else:
+        entry_point = target_bin / "declared-cli"
+        entry_point.write_text("#!/bin/sh\nprintf 'declared-console-entry\\n'\n", encoding="utf-8")
+        entry_point.chmod(0o755)
+    image_path = os.pathsep.join([str(Path("image") / "bin"), str(Path("usr") / "bin")])
+    monkeypatch.setenv("PIP_TARGET", str(target))
+    monkeypatch.setenv("PATH", image_path)
+
+    expose = runner["_expose_pip_target_scripts"]
+    expose()
+    expose()
+
+    assert os.environ["PATH"].split(os.pathsep) == [
+        str(target_bin),
+        str(Path("image") / "bin"),
+        str(Path("usr") / "bin"),
+    ]
+    resolved = shutil.which("declared-cli")
+    assert resolved is not None
+    completed = subprocess.run(
+        resolved if os.name == "nt" else [resolved],
+        check=True,
+        capture_output=True,
+        text=True,
+        shell=os.name == "nt",
+    )
+    assert completed.stdout.strip() == "declared-console-entry"
