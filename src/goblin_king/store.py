@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import create_engine, delete, func, or_, select, update
+from sqlalchemy import case, create_engine, delete, func, or_, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
 
@@ -1804,7 +1804,8 @@ class SQLiteStore:
     ) -> list[JobRecord]:
         """Lease due queued or retrying jobs once for this scheduler worker."""
         claimed: list[JobRecord] = []
-        with self.engine.begin() as connection:
+        with self.engine.connect() as connection:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
             claimable_status = or_(
                 jobs_table.c.status.in_(["queued", "retrying"]),
                 (
@@ -1813,33 +1814,73 @@ class SQLiteStore:
                     & (jobs_table.c.leased_until <= now)
                 ),
             )
-            rows = (
-                connection.execute(
-                    select(jobs_table)
-                    .where(claimable_status)
-                    .where(or_(jobs_table.c.due_at.is_(None), jobs_table.c.due_at <= now))
-                    .order_by(jobs_table.c.priority.desc(), jobs_table.c.created_at)
-                    .limit(limit)
-                )
-                .mappings()
-                .all()
-            )
-            for row in rows:
-                connection.execute(
-                    update(jobs_table)
-                    .where(jobs_table.c.id == row["id"])
-                    .values(
-                        status="leased",
-                        lease_owner=worker_id,
-                        leased_until=lease_until,
+            due = or_(jobs_table.c.due_at.is_(None), jobs_table.c.due_at <= now)
+            try:
+                rows = (
+                    connection.execute(
+                        select(jobs_table)
+                        .where(claimable_status)
+                        .where(due)
+                        .order_by(jobs_table.c.priority.desc(), jobs_table.c.created_at)
+                        .limit(limit)
                     )
+                    .mappings()
+                    .all()
                 )
-                payload = dict(row)
-                payload["status"] = "leased"
-                payload["lease_owner"] = worker_id
-                payload["leased_until"] = lease_until
-                claimed.append(_row_to_job(payload))
+                for row in rows:
+                    result = connection.execute(
+                        update(jobs_table)
+                        .where(jobs_table.c.id == row["id"])
+                        .where(claimable_status)
+                        .where(due)
+                        .values(
+                            status="leased",
+                            lease_owner=worker_id,
+                            leased_until=lease_until,
+                        )
+                    )
+                    if result.rowcount != 1:
+                        continue
+                    payload = dict(row)
+                    payload["status"] = "leased"
+                    payload["lease_owner"] = worker_id
+                    payload["leased_until"] = lease_until
+                    claimed.append(_row_to_job(payload))
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
         return claimed
+
+    def try_renew_job_lease(
+        self,
+        job_id: str,
+        *,
+        expected_lease_owner: str,
+        lease_until: datetime,
+    ) -> bool:
+        """Extend an active lease only while its current scheduler still owns it."""
+        extended_until = case(
+            (
+                or_(
+                    jobs_table.c.leased_until.is_(None),
+                    jobs_table.c.leased_until < lease_until,
+                ),
+                lease_until,
+            ),
+            else_=jobs_table.c.leased_until,
+        )
+        with self.engine.begin() as connection:
+            result = connection.execute(
+                update(jobs_table)
+                .where(
+                    jobs_table.c.id == job_id,
+                    jobs_table.c.status.in_(["leased", "running"]),
+                    jobs_table.c.lease_owner == expected_lease_owner,
+                )
+                .values(leased_until=extended_until)
+            )
+        return result.rowcount == 1
 
     def mark_job_running(self, job_id: str, *, attempt_count: int) -> None:
         """Mark a leased job as running with its incremented attempt count."""

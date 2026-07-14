@@ -68,10 +68,17 @@ allows a replacement scheduler to recover a process that stopped after marking a
 running but before recording its Run. The recovered execution increments the attempt
 count and follows the normal retry and terminal-state rules.
 
-Recovery is an at-least-once boundary. A worker that performs externally visible side
-effects should use the stable job ID as an idempotency key. Operators should choose a
-lease duration that exceeds normal work or supply a finite runtime timeout; future
-distributed-scheduler hardening may add active lease renewal.
+Each live scheduler renews every lease in its claimed synchronous batch, including the
+attempt currently executing and claimed jobs waiting behind it. Renewal is conditional
+on the scheduler still owning an active `leased` or `running` record, so a late renewal
+cannot take a job back from a replacement scheduler. Claim transactions and renewals
+are serialized in SQLite to keep the expiry boundary deterministic across scheduler
+processes. When a scheduler stops, its renewal activity stops as well and the final
+persisted deadline makes the job recoverable.
+
+Recovery remains an at-least-once boundary because a scheduler process can fail at an
+external side effect or at the lease boundary. A worker that performs externally
+visible side effects should continue to use the stable job ID as an idempotency key.
 
 ## Verification
 
@@ -83,8 +90,11 @@ For a hardened Compose deployment:
 4. Confirm input, context, result, and artifact files appear beneath the data mount.
 5. Inject an unwritable run root and confirm a failed Run and terminal job event are
    recorded while the scheduler continues.
-6. Stop a scheduler after a job reaches `running`, wait for lease expiry, start a
-   replacement scheduler, and confirm the job is reclaimed deterministically.
+6. Keep a job active beyond its initial lease deadline and confirm a second scheduler
+   cannot claim either that job or another job waiting in the same synchronous batch.
+7. Stop a scheduler after a job reaches `running`, wait for the last renewed lease to
+   expire, start a replacement scheduler, and confirm the job is reclaimed
+   deterministically.
 
 Only the scheduler/control-plane container should receive the Docker socket. Worker
 containers receive the narrow data-volume mount, declared resource policy, and scoped
