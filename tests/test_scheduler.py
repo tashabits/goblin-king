@@ -544,6 +544,96 @@ def test_replacement_scheduler_executes_an_expired_running_job(
     assert recovered.leased_until is None
 
 
+def test_two_scheduler_loops_cannot_reclaim_an_active_synchronous_batch(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Renew running and waiting leases while one scheduler executes its batch serially."""
+    now = utc_now()
+    db_path = tmp_path / "goblin.sqlite3"
+    registry = GoblinRegistry.from_path("examples/goblins.json")
+    first_store = SQLiteStore(db_path)
+    second_store = SQLiteStore(db_path)
+    first_scheduler = Scheduler(
+        registry=registry,
+        store=first_store,
+        worker_id="scheduler-a",
+        lease_seconds=1,
+        claim_limit=2,
+        runtime_mode="in-process",
+    )
+    second_scheduler = Scheduler(
+        registry=registry,
+        store=second_store,
+        worker_id="scheduler-b",
+        lease_seconds=1,
+        claim_limit=2,
+        runtime_mode="in-process",
+    )
+    for scheduler in (first_scheduler, second_scheduler):
+        monkeypatch.setattr(scheduler.event_bus, "_publish", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(scheduler.event_bus, "_append_stream", lambda *_args, **_kwargs: None)
+
+    for index, job_id in enumerate(("job-running", "job-waiting")):
+        first_store.save_job(
+            JobRecord(
+                id=job_id,
+                kind="example.echo",
+                input={"message": job_id},
+                created_at=now + timedelta(microseconds=index),
+                due_at=now,
+            )
+        )
+
+    entered = Event()
+    release = Event()
+    attempts: list[str] = []
+
+    def serial_runtime(_definition, _entrypoint, _input, context, **_kwargs) -> GoblinResult:
+        job_id = context.metadata["job_id"]
+        attempts.append(job_id)
+        if job_id == "job-running":
+            entered.set()
+            assert release.wait(5)
+        return GoblinResult.ok()
+
+    def duplicate_runtime(*_args, **_kwargs) -> GoblinResult:
+        raise AssertionError("a second scheduler reclaimed an actively maintained lease")
+
+    monkeypatch.setattr(first_scheduler.runtime, "run", serial_runtime)
+    monkeypatch.setattr(second_scheduler.runtime, "run", duplicate_runtime)
+    observed: dict[str, list[RunRecord]] = {}
+
+    def execute_batch() -> None:
+        observed["runs"] = first_scheduler.run_once()
+
+    thread = Thread(target=execute_batch)
+    thread.start()
+    assert entered.wait(5)
+
+    # Cross the original one-second deadline. Both the executing job and the second
+    # synchronously waiting job must still belong to the first scheduler.
+    assert Event().wait(1.25) is False
+    assert second_scheduler.run_once() == []
+
+    active_jobs = {job.id: job for job in second_store.list_jobs()}
+    assert active_jobs["job-running"].lease_owner == "scheduler-a"
+    assert active_jobs["job-running"].leased_until is not None
+    assert active_jobs["job-running"].leased_until > utc_now()
+    assert active_jobs["job-waiting"].lease_owner == "scheduler-a"
+    assert active_jobs["job-waiting"].leased_until is not None
+    assert active_jobs["job-waiting"].leased_until > utc_now()
+
+    release.set()
+    thread.join(5)
+    assert not thread.is_alive()
+    assert attempts == ["job-running", "job-waiting"]
+    assert len(observed["runs"]) == 2
+    completed = {job.id: job for job in second_store.list_jobs()}
+    assert all(job.status == "completed" for job in completed.values())
+    assert all(job.attempt_count == 1 for job in completed.values())
+
+
 def test_unexpected_runtime_exception_fails_attempt_and_continues_scheduler(
     tmp_path: Path,
     monkeypatch,

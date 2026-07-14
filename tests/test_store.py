@@ -4,6 +4,7 @@ import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from pathlib import Path
+from threading import Barrier
 
 from sqlalchemy.exc import OperationalError
 
@@ -330,6 +331,45 @@ def test_claim_due_jobs_once_and_reclaim_after_lease_expiry(tmp_path: Path) -> N
     assert expired[0].lease_owner == "worker-c"
 
 
+def test_simultaneous_sqlite_claims_have_exactly_one_owner(tmp_path: Path) -> None:
+    """Serialize competing claim transactions without an error or duplicate lease."""
+    now = utc_now()
+    db_path = tmp_path / "goblin.sqlite3"
+    stores = [SQLiteStore(db_path), SQLiteStore(db_path)]
+    stores[0].save_job(
+        JobRecord(
+            id="job-simultaneous-claim",
+            kind="example.echo",
+            input={},
+            created_at=now,
+            due_at=now,
+        )
+    )
+    ready = Barrier(2)
+
+    def claim(store_and_owner: tuple[SQLiteStore, str]) -> list[JobRecord]:
+        store, owner = store_and_owner
+        ready.wait()
+        return store.claim_due_jobs(
+            worker_id=owner,
+            now=now,
+            lease_until=now + timedelta(seconds=60),
+            limit=1,
+        )
+
+    candidates = [(stores[0], "scheduler-a"), (stores[1], "scheduler-b")]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(claim, candidates))
+
+    winners = [job for claimed in results for job in claimed]
+    persisted = stores[0].get_job("job-simultaneous-claim")
+    assert len(winners) == 1
+    assert persisted is not None
+    assert persisted.status == "leased"
+    assert persisted.lease_owner == winners[0].lease_owner
+    assert persisted.lease_owner in {"scheduler-a", "scheduler-b"}
+
+
 def test_claim_due_jobs_recovers_an_expired_running_lease(tmp_path: Path) -> None:
     """Allow a replacement scheduler to recover work stranded after mark-running."""
     now = utc_now()
@@ -358,6 +398,67 @@ def test_claim_due_jobs_recovers_an_expired_running_lease(tmp_path: Path) -> Non
     assert [job.id for job in recovered] == ["job-stranded"]
     assert recovered[0].status == "leased"
     assert recovered[0].attempt_count == 1
+    assert recovered[0].lease_owner == "replacement-scheduler"
+
+
+def test_lease_renewal_is_owner_scoped_and_dead_leases_remain_recoverable(
+    tmp_path: Path,
+) -> None:
+    """Fence renewals by owner without preventing recovery after renewals stop."""
+    now = utc_now()
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    store.save_job(
+        JobRecord(
+            id="job-renewed",
+            kind="example.echo",
+            input={},
+            created_at=now,
+            due_at=now,
+        )
+    )
+    claimed = store.claim_due_jobs(
+        worker_id="active-scheduler",
+        now=now,
+        lease_until=now + timedelta(seconds=1),
+        limit=1,
+    )
+    renewed_until = now + timedelta(seconds=5)
+
+    assert len(claimed) == 1
+    assert (
+        store.try_renew_job_lease(
+            "job-renewed",
+            expected_lease_owner="other-scheduler",
+            lease_until=renewed_until,
+        )
+        is False
+    )
+    assert (
+        store.try_renew_job_lease(
+            "job-renewed",
+            expected_lease_owner="active-scheduler",
+            lease_until=renewed_until,
+        )
+        is True
+    )
+    assert (
+        store.claim_due_jobs(
+            worker_id="replacement-scheduler",
+            now=renewed_until - timedelta(microseconds=1),
+            lease_until=renewed_until + timedelta(seconds=60),
+            limit=1,
+        )
+        == []
+    )
+
+    recovered = store.claim_due_jobs(
+        worker_id="replacement-scheduler",
+        now=renewed_until,
+        lease_until=renewed_until + timedelta(seconds=60),
+        limit=1,
+    )
+
+    assert len(recovered) == 1
     assert recovered[0].lease_owner == "replacement-scheduler"
 
 

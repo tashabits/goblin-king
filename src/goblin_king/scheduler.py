@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from contextlib import ExitStack
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Event
@@ -35,6 +36,7 @@ from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.resource_policies import ResourcePolicySet, policy_from_job_metadata
 from goblin_king.runtime import DockerRuntime, InProcessRuntime, KubernetesRuntime, new_run_context
 from goblin_king.scheduler_failures import record_unexpected_job_failure
+from goblin_king.scheduler_leases import ActiveJobLease
 from goblin_king.store import SQLiteStore
 from goblin_king.validation import (
     VALIDATOR_VERSION,
@@ -310,6 +312,16 @@ class Scheduler:
 
     def run_claimed_job(self, job: JobRecord, now: datetime | None = None) -> RunRecord:
         """Execute one leased job and persist both run and final job status."""
+        with ActiveJobLease(
+            store=self.store,
+            job_id=job.id,
+            lease_owner=self.worker_id,
+            lease_seconds=self.lease_seconds,
+        ):
+            return self._execute_claimed_job(job, now)
+
+    def _execute_claimed_job(self, job: JobRecord, now: datetime | None = None) -> RunRecord:
+        """Execute a claimed job while its caller maintains the scheduler lease."""
         requested_start = _ensure_utc(now or utc_now())
         attempt = job.attempt_count + 1
         if not self.store.try_mark_job_running(
@@ -701,22 +713,33 @@ class Scheduler:
         )
         self.materialize_due_schedules(current)
         runs: list[RunRecord] = []
-        for job in self.claim_due_jobs(current):
-            try:
-                runs.append(self.run_claimed_job(job, current))
-            except JobAttemptSuperseded:
-                continue
-            except Exception as error:  # one malformed attempt must not end the scheduler loop
-                runs.append(
-                    record_unexpected_job_failure(
+        claimed_jobs = self.claim_due_jobs(current)
+        with ExitStack() as active_leases:
+            for job in claimed_jobs:
+                active_leases.enter_context(
+                    ActiveJobLease(
                         store=self.store,
-                        event_bus=self.event_bus,
-                        scheduler_id=self.worker_id,
-                        claimed_job=job,
-                        started_at=current,
-                        error=error,
+                        job_id=job.id,
+                        lease_owner=self.worker_id,
+                        lease_seconds=self.lease_seconds,
                     )
                 )
+            for job in claimed_jobs:
+                try:
+                    runs.append(self._execute_claimed_job(job, current))
+                except JobAttemptSuperseded:
+                    continue
+                except Exception as error:  # one malformed attempt must not end the scheduler loop
+                    runs.append(
+                        record_unexpected_job_failure(
+                            store=self.store,
+                            event_bus=self.event_bus,
+                            scheduler_id=self.worker_id,
+                            claimed_job=job,
+                            started_at=current,
+                            error=error,
+                        )
+                    )
         return runs
 
     def run_loop(
