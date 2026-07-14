@@ -59,6 +59,15 @@ proof and completed at the new floor. Legacy Pods and worker-resource defaults a
 Restricted validation identities include these resources, so revalidate each affected kind after
 upgrading.
 
+Notebook-authored ASGI Deployments are now always generated with the fixed restricted
+service boundary documented in
+[Kubernetes Workload Security](kubernetes-workload-security.md). The API, database,
+record, runtime, and Service response shapes are unchanged. Declared Python requirements
+still install at startup, now into the writable `/tmp/goblin-service-runtime` mount.
+Review service source that writes elsewhere on the image filesystem and move that
+scratch state beneath `/tmp` before upgrading; automatic ServiceAccount credentials are
+no longer available to these service pods.
+
 ## Generic Kubernetes Validation Upgrade
 
 This release adds an attainable first-proof path for generic registry workers. No
