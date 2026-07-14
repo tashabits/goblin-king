@@ -53,7 +53,12 @@ class WebSocketDrainRegistry:
                 callback = state.retire
                 timeout_task = state.timeout_task
         if timeout_task is not None and timeout_task is not asyncio.current_task():
-            timeout_task.cancel()
+            task_loop = timeout_task.get_loop()
+            if task_loop is asyncio.get_running_loop():
+                timeout_task.cancel()
+                await asyncio.gather(timeout_task, return_exceptions=True)
+            elif not task_loop.is_closed():
+                task_loop.call_soon_threadsafe(timeout_task.cancel)
         if callback is not None:
             await self._retire(service_id, callback)
 

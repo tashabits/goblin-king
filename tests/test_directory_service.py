@@ -904,6 +904,9 @@ def test_repository_websocket_replacement_drains_old_connection(
             assert second_service_id != first_service_id
             assert manager.stopped == []
             assert store.get_long_service(first_service_id).status == "stopped"  # type: ignore[union-attr]
+            active = store.get_notebook_service(second.json()["notebook_service"]["kind"])
+            assert active is not None
+            assert active.active_service_id == second_service_id
 
             old_connection.send_text("during-drain")
             assert old_connection.receive_text() == "during-drain"
