@@ -281,6 +281,35 @@ curl -H "Authorization: Bearer local-dev-token" \
 The proxy only targets registered service base URLs, enforces project scope, audits the
 request, and strips standard auth/cookie headers before forwarding.
 
+### Connect to a ready service with WebSockets
+
+Services that need a long-lived duplex channel use the same registered proxy path with
+a WebSocket upgrade. Probe the service first, then connect with a bearer token or, for
+the browser WebSocket constructor, a scoped query token:
+
+```javascript
+const socket = new WebSocket(
+  "ws://127.0.0.1:8000/services/long-running/<service-id>/proxy/socket" +
+    "?token=<scoped-token>",
+  ["l2l.v1"],
+);
+
+socket.addEventListener("open", () => socket.send("hello"));
+socket.addEventListener("message", event => console.log(event.data));
+socket.addEventListener("close", event => console.log(event.code, event.reason));
+```
+
+Goblin King rejects unready services and callers outside the service project. It strips
+the control-plane token and client credentials before the upstream handshake, preserves
+text and binary messages, and applies operator-configured message, queue, write, idle,
+open, close, and rolling-drain limits. Published repository service replacements become
+active only after readiness succeeds; existing connections drain against the old
+runtime while new connections use the promoted one.
+
+Read [Managed-Service WebSocket Proxy](managed-service-websockets.md) for route forms,
+configuration, close codes, security boundaries, rolling behavior, Compose/Kubernetes
+proof commands, and troubleshooting.
+
 ## Deploy-Time Discovery Reload
 
 When a host project deploys a new goblin plugin package, registry file, or worker image

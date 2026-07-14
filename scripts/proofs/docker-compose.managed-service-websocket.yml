@@ -1,0 +1,71 @@
+x-proof-image: &proof-image
+  image: goblin-king-managed-websocket-proof:local
+  build:
+    context: ../..
+    dockerfile: Dockerfile
+
+services:
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  api:
+    <<: *proof-image
+    command:
+      - api
+      - run
+      - --settings
+      - /app/goblin-king-api.json
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    environment:
+      GOBLIN_KING_API_TOKEN: local-dev-token
+    ports:
+      - "${GOBLIN_KING_WEBSOCKET_PROOF_PORT:-18057}:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      upstream:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          assert urllib.request.urlopen('http://127.0.0.1:8000/health').status == 200
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  upstream:
+    <<: *proof-image
+    entrypoint: ["uvicorn"]
+    command:
+      - managed_service_websocket_proof:app
+      - --app-dir
+      - /proof
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+    volumes:
+      - ./managed_service_websocket_proof.py:/proof/managed_service_websocket_proof.py:ro
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          assert urllib.request.urlopen('http://127.0.0.1:8080/health').status == 200
+      interval: 2s
+      timeout: 2s
+      retries: 30
