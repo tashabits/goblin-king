@@ -117,6 +117,36 @@ No Job status, Run status, constructor requirement, or result-envelope shape cha
 EventRecord construction and the historical `SQLiteStore.save_event()` return contract remain
 valid. Redis Stream consumers should deduplicate by `sequence`; pub/sub remains best-effort.
 
+## Live Run Events
+
+This release adds an optional bounded Redis Stream for worker-authored `progress`,
+`stdout`, `stderr`, and `message` records. Docker and Kubernetes inject the same
+`GOBLIN_RUN_EVENT_*` environment contract. Existing workers can ignore these variables,
+and there is no SQLite migration or change to existing Job, Run, result, heartbeat,
+status, or durable event response shapes.
+
+New clients can replay `GET /runs/{run_id}/events` and follow
+`WS /ws/runs/{run_id}/events`, resuming with the last accepted sequence. Both routes
+apply the existing project boundary. The channel depends on the configured Redis
+transport, retains a finite window, and is operational feedback rather than durable
+result storage. Python worker code may use the newly exported `RunEventPublisher`,
+`RunEventEnvelope`, `RunEventRecord`, and `WORKER_RUN_EVENT_CONTRACT_VERSION` root APIs.
+See [Live Run Events](live-run-events.md).
+
+The scheduler now persists the running Run identity immediately before worker execution
+and finalizes that exact row once. Existing `SQLiteStore.save_run()` callers retain
+insert-only behavior, and no database migration is required.
+
+## Docker Artifact Downloads
+
+No worker or result-envelope change is required. Docker artifacts already using the
+documented `artifact://<name>` locator are now downloadable through
+`GET /runs/{run_id}/artifacts/{artifact_name}`. The locator must match the declared
+artifact name and resolve inside the exact job artifact directory; malformed,
+mismatched, or escaping paths remain unavailable. Relative paths, supported local
+`file://` locators, Kubernetes-retained artifacts, authorization, and cleanup behavior
+are unchanged.
+
 ## Kubernetes Artifact Retention
 
 The Helm chart now passes its data-PVC claim and artifact mapping to Kubernetes result

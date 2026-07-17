@@ -1041,9 +1041,11 @@ goblin-king events stream-read --redis-url redis://localhost:6379/0 --ack
 
 The API exposes the same durable SQLite event data over `GET /events`, Redis Stream
 transport health over `GET /events/stream/status`, scheduler and worker liveness over
-`GET /heartbeats`, and live run updates over `WS /ws/runs`. SQLite remains the durable
-source of truth; Redis pub/sub is the live rail and Redis Streams provide replayable
-delivery for operators and integrations.
+`GET /heartbeats`, and the global live lifecycle rail over `WS /ws/runs`. Fixed workers
+can separately publish bounded per-run progress through `GET /runs/{run_id}/events` and
+`WS /ws/runs/{run_id}/events`. SQLite remains the durable control-plane source of truth;
+Redis pub/sub is its live rail, while Redis Streams provide replayable lifecycle proof
+and finite per-run operational feedback.
 
 Durable events carry a database-assigned `sequence`, which is authoritative when wall
 clocks repeat, slew, or move backward. Run timestamps are causally clamped and timeout
@@ -1087,14 +1089,16 @@ Goblin King provides:
 - Docker worker execution by default, with in-process execution available for trusted
   local debugging.
 - A FastAPI control plane for submitting jobs, managing schedules, reading runs,
-  inspecting artifacts, streaming events, and operating admin workflows.
+  downloading Docker and Kubernetes artifacts, streaming durable lifecycle events and
+  bounded worker-authored run progress, and operating admin workflows.
 - A React admin lab bench served in Docker Compose and Helm for spawning goblins,
   watching task goblins, probing service goblins, reading events, cleaning old rows, and
   proving worker behavior.
 - Local bearer-token auth, project scoping, admin tokens, and optional OIDC/JWT bearer
   validation.
-- Redis pub/sub for live event delivery and Redis Streams for replayable operator proof;
-  SQLite remains the durable source of truth.
+- Redis pub/sub for live lifecycle delivery and Redis Streams for replayable operator
+  proof plus bounded per-run progress; SQLite remains the durable control-plane source
+  of truth, while final results and retained artifacts hold durable worker output.
 - Volume/PVC-backed artifact storage with status and cleanup controls.
 - Scoped runtime termination for Docker containers and Kubernetes Jobs created and
   labeled by Goblin King.

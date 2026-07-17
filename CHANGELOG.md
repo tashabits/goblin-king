@@ -5,6 +5,9 @@
 - Add an opt-in, project-authorized live run-event channel with identical Docker and Kubernetes
   worker contracts, bounded Redis Stream replay, and no changes to existing task payload or status
   shapes.
+- Serve Docker worker artifacts that use the documented `artifact://<name>` locator through the
+  authenticated Run artifact download API. Locator and declared artifact names must match, and
+  existing root-containment checks remain in force.
 
 ## 0.1.0 - Project-Ready Internal Baseline
 
