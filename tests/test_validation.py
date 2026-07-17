@@ -147,6 +147,50 @@ def test_validate_workers_uses_shared_run_root_for_docker_volume(monkeypatch) ->
     assert captured["run_root"] == Path("/data/goblin-runs")
 
 
+def test_validate_workers_uses_home_temp_root_on_macos(monkeypatch) -> None:
+    captured = {}
+
+    class FakeDockerRuntime:
+        def __init__(self, *, workers, redis_url, run_root):
+            captured["run_root"] = Path(run_root)
+
+    def fake_validate_one(**kwargs):
+        return WorkerValidationResult(kind=kwargs["kind"], ok=True)
+
+    monkeypatch.setattr("goblin_king.validation.sys.platform", "darwin")
+    monkeypatch.delenv("GOBLIN_KING_DOCKER_DATA_VOLUME", raising=False)
+    monkeypatch.setattr("goblin_king.validation.DockerRuntime", FakeDockerRuntime)
+    monkeypatch.setattr("goblin_king.validation._validate_one", fake_validate_one)
+    registry = GoblinRegistry.from_definitions(
+        [
+            GoblinDefinition(
+                kind="example.prebuilt",
+                display_name="Example Prebuilt",
+                module="goblin_king.container_only",
+            )
+        ]
+    )
+    workers = WorkerImageMap.from_definitions(
+        {
+            "example.prebuilt": WorkerImageDefinition(
+                context=Path("."),
+                image="prebuilt:local",
+            )
+        }
+    )
+
+    results = validate_workers(
+        registry=registry,
+        workers=workers,
+        input_payload={},
+        prebuilt_image=True,
+    )
+
+    assert results[0].ok is True
+    assert captured["run_root"].name == "runs"
+    assert captured["run_root"].parent.parent == Path.home()
+
+
 def test_validate_one_uses_short_label_safe_job_id_for_long_kinds(
     tmp_path,
     monkeypatch,

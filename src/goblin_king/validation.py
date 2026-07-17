@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -26,6 +27,13 @@ from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
 
 VALIDATOR_VERSION = "goblin-king-validator/v1"
+
+
+def _validation_temp_parent() -> Path | None:
+    """Keep macOS validation bind mounts inside the Colima-shared user home."""
+    if sys.platform == "darwin":
+        return Path.home()
+    return None
 
 
 class WorkerValidationResult(BaseModel):
@@ -175,7 +183,10 @@ def validate_workers(
     else:
         results = []
 
-    with TemporaryDirectory(prefix="goblin-contract-validation-") as temp_dir:
+    with TemporaryDirectory(
+        prefix="goblin-contract-validation-",
+        dir=_validation_temp_parent(),
+    ) as temp_dir:
         root = Path(temp_dir)
         effective_run_root = configured_docker_run_root(run_root)
         if effective_run_root is None and not os.environ.get(
