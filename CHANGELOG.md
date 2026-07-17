@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add optional, registry-owned `metadata.validation_input` for bounded just-in-time contract
+  validation while preserving the queued runtime input exactly for real worker execution. Invalid
+  validation metadata now fails visibly, and definitions without it retain their existing behavior.
 - Add an opt-in, project-authorized live run-event channel with identical Docker and Kubernetes
   worker contracts, bounded Redis Stream replay, and no changes to existing task payload or status
   shapes.

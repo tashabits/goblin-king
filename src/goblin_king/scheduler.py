@@ -25,7 +25,7 @@ from goblin_king.contracts import (
 from goblin_king.events import EventBus
 from goblin_king.kubernetes_runtime_factory import build_kubernetes_runtime
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
-from goblin_king.metadata import goblin_job_metadata
+from goblin_king.metadata import goblin_job_metadata, goblin_validation_input
 from goblin_king.notebooks import (
     notebook_definition,
     notebook_validation_identity,
@@ -409,7 +409,7 @@ class Scheduler:
                     registry=runtime_registry,
                     workers=runtime_workers,
                     runtime=runtime,
-                    input_payload=runtime_input,
+                    input_payload=goblin_validation_input(definition, runtime_input),
                     notebook_source_hash=(
                         notebook_record.source_hash if notebook_record is not None else None
                     ),
