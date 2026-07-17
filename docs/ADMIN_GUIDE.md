@@ -90,6 +90,12 @@ locator matches the declared name; mismatches and paths outside the configured r
 return 404. Kubernetes-retained, relative, and supported local `file://` artifacts keep
 their existing download behavior.
 
+If an artifact-producing worker is shared between Docker and Kubernetes, verify that it
+reports a relative path or a local `file:` URI beneath `GOBLIN_ARTIFACT_ROOT`. The
+`artifact://<name>` form is a Docker download convenience and Kubernetes retention will
+reject it before copying. Runtime-native URL helpers, such as Node's
+`pathToFileURL(artifactPath).href`, avoid platform-specific path encoding mistakes.
+
 ## Reload Discovery
 
 Use **Discovery** after deploying a new project plugin package, registry file, or worker

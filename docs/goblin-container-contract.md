@@ -166,9 +166,15 @@ result envelope:
 }
 ```
 
-Artifact URIs must be relative paths under the artifact root unless a future storage
-provider explicitly supports another URI scheme. Workers must not return path traversal
-segments or files outside the mounted artifact root.
+Portable workers use either a relative path under the artifact root or a local `file:` URI
+that resolves beneath that root. Use the language runtime's file-URL helper instead of
+concatenating or encoding the URI by hand. For example, Node workers use
+`pathToFileURL(artifactPath).href` from `node:url`.
+
+Docker downloads additionally accept the documented `artifact://<name>` convenience
+locator. Kubernetes durable retention deliberately rejects non-file URI schemes, so a
+worker intended for both runtimes should use a relative path or local `file:` URI. Workers
+must not return path traversal segments or files outside the mounted artifact root.
 
 ## Logs
 

@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const input = JSON.parse(await readFile(process.env.GOBLIN_INPUT_PATH, "utf8"));
 const context = JSON.parse(await readFile(process.env.GOBLIN_CONTEXT_PATH, "utf8"));
@@ -22,7 +23,7 @@ const result = {
   artifacts: [
     {
       name: "node-artifact.txt",
-      uri: "artifact://node-artifact.txt",
+      uri: pathToFileURL(artifactPath).href,
       media_type: "text/plain",
     },
   ],

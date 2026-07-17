@@ -199,6 +199,12 @@ resolves it only inside that job's mounted artifact directory and only when the 
 matches the declared artifact name. Relative paths, supported local `file://` locators,
 project authorization, and root-containment checks retain their existing behavior.
 
+For a worker that runs on both Docker and Kubernetes, prefer a relative path or a local
+`file:` URI beneath `GOBLIN_ARTIFACT_ROOT`. Kubernetes durable retention intentionally
+rejects non-file schemes. Derive file URIs with the language runtime rather than string
+concatenation; Node workers should use `pathToFileURL(artifactPath).href` from `node:url`.
+The `example.behavior-node-artifact` worker demonstrates this portable form.
+
 ## Hard-Kill Runtime Objects
 
 Use hard-kill controls only when a running worker runtime object needs to be stopped

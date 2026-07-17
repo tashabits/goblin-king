@@ -126,6 +126,19 @@ Write files under `GOBLIN_ARTIFACT_ROOT` and return relative metadata:
 Do not return absolute paths or path traversal. If the King cannot prove an artifact is
 inside the artifact root, it will not serve it.
 
+A local `file:` URI beneath the same root is also portable across Docker and Kubernetes.
+Use the language runtime's file-URL helper so path separators and special characters are
+encoded correctly. In Node:
+
+```javascript
+import { pathToFileURL } from "node:url";
+
+const artifactUri = pathToFileURL(artifactPath).href;
+```
+
+The `artifact://<name>` convenience locator is supported for Docker downloads but is not
+accepted by Kubernetes durable retention.
+
 ## Logs, Events, And Progress
 
 Use stdout/stderr for concise diagnostic logs. Put durable data in result JSON,
