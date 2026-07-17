@@ -474,6 +474,22 @@ class Scheduler:
                     },
                 )
                 return run
+        self.store.start_run(
+            RunRecord(
+                id=context.run_id,
+                job_id=job.id,
+                kind=job.kind,
+                project_id=job.project_id,
+                attempt=attempt,
+                status="running",
+                started_at=started_at,
+                timeout_seconds=job.timeout_seconds,
+                max_retries=job.max_retries,
+                leased_until=job.leased_until,
+                resource_policy=resource_policy.compact() if resource_policy else None,
+            )
+        )
+        if isinstance(runtime, DockerRuntime | KubernetesRuntime):
             result = runtime.run(
                 definition,
                 entrypoint,

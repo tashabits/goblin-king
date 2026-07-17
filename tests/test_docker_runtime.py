@@ -9,14 +9,18 @@ import time
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 from redis import Redis
 
-from goblin_king.contracts import GoblinDefinition, GoblinResult
+from goblin_king.api import create_app
+from goblin_king.api_settings import ApiSettings
+from goblin_king.contracts import GoblinDefinition, GoblinResult, JobRecord, utc_now
 from goblin_king.events import EventBus
 from goblin_king.registry import GoblinRegistry
 from goblin_king.resource_policies import ResourcePolicy
 from goblin_king.run_events import read_run_event_entries
 from goblin_king.runtime import DockerRuntime, new_run_context
+from goblin_king.scheduler import Scheduler
 from goblin_king.store import SQLiteStore
 from goblin_king.validation import validate_workers
 from goblin_king.workers import WorkerImageDefinition, WorkerImageMap
@@ -177,6 +181,103 @@ def test_docker_worker_events_are_replayable_before_exit(
         for _entry_id, event in retained
     )
     assert retained[-1][1].payload == {"text": "progress run completed\n"}
+
+
+def test_scheduler_run_events_are_authorized_through_api_before_exit(
+    tmp_path: Path,
+    redis_container: str,
+    example_progress_worker_image: str,
+) -> None:
+    """Prove the persisted running identity unlocks authenticated replay before worker exit."""
+    del redis_container, example_progress_worker_image
+    db_path = tmp_path / "live-api.sqlite3"
+    worker_map = WorkerImageMap.from_path("goblin-images.json")
+    store = SQLiteStore(db_path)
+    scheduler = Scheduler(
+        registry=GoblinRegistry.from_path("examples/goblins.json"),
+        store=store,
+        worker_id="live-api-scheduler",
+        runtime_mode="docker",
+        workers=worker_map,
+        redis_url=REDIS_URL,
+        docker_run_root=tmp_path / "runs",
+    )
+    now = utc_now()
+    store.save_job(
+        JobRecord(
+            id="job-live-api",
+            kind="example.progress",
+            input={"steps": 20, "delay_seconds": 0.1},
+            created_at=now,
+            due_at=now,
+            project_id="project-live",
+        )
+    )
+    api = TestClient(
+        create_app(
+            ApiSettings(
+                registry=Path("examples/goblins.json").resolve(),
+                images=Path("goblin-images.json").resolve(),
+                db=db_path,
+                redis_url=REDIS_URL,
+                artifact_root=tmp_path / "api-artifacts",
+                auth_token="test-token",
+            )
+        )
+    )
+    observed: dict[str, object] = {}
+
+    def run_scheduler() -> None:
+        observed["runs"] = scheduler.run_once(now)
+
+    scheduler_thread = threading.Thread(target=run_scheduler, daemon=True)
+    scheduler_thread.start()
+    running_id = None
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline and scheduler_thread.is_alive():
+        running = store.list_job_runs("job-live-api")
+        if running and running[0].status == "running":
+            running_id = running[0].id
+            break
+        time.sleep(0.05)
+    assert running_id is not None
+    listed = api.get(
+        "/runs",
+        params={"status": "running", "project_id": "project-live"},
+        headers={"Authorization": "Bearer test-token"},
+    )
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()["items"]] == [running_id]
+
+    live_response = None
+    while time.monotonic() < deadline and scheduler_thread.is_alive():
+        response = api.get(
+            f"/runs/{running_id}/events",
+            headers={"Authorization": "Bearer test-token"},
+        )
+        assert response.status_code == 200
+        if any(item["event_type"] == "progress" for item in response.json()["items"]):
+            live_response = response.json()
+            break
+        time.sleep(0.05)
+    assert scheduler_thread.is_alive()
+    assert live_response is not None
+    assert all(item["run_id"] == running_id for item in live_response["items"])
+    assert all(item["project_id"] == "project-live" for item in live_response["items"])
+    with api.websocket_connect(
+        f"/ws/runs/{running_id}/events?token=test-token&after_sequence=0"
+    ) as websocket:
+        streamed = websocket.receive_json()
+        assert streamed["run_id"] == running_id
+        assert streamed["project_id"] == "project-live"
+    scheduler_thread.join(timeout=30)
+    assert not scheduler_thread.is_alive()
+    final_runs = store.list_job_runs("job-live-api")
+    assert len(final_runs) == 1
+    assert final_runs[0].id == running_id
+    assert final_runs[0].status == "completed"
+    assert final_runs[0].result is not None
+    api.close()
 
 
 def test_docker_runtime_passes_project_env_and_secret_refs(

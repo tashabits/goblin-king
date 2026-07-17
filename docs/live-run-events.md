@@ -124,6 +124,13 @@ token, scheduler token, administration credential, or route that can mutate anot
 feature reuses the Redis URL already supplied for result and heartbeat transport and adds no new
 secret class.
 
+The Scheduler inserts the run-scoped `running` identity immediately before worker execution and
+finalizes that same row after the worker returns. Finalization permits one `running`-to-terminal
+transition with the original job, kind, project, and attempt lineage. It rejects duplicate or foreign
+transitions atomically, including any accompanying job-state update. The general `save_run()` API
+remains insert-only, so existing callers still receive a duplicate-key error instead of an implicit
+replacement.
+
 Malformed, oversized, foreign-run, duplicate, and non-monotonic entries are not projected to API
 clients. A Redis outage returns HTTP 503 or closes the WebSocket with a transport error; it does not
 change the task's final result.

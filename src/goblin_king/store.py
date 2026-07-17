@@ -64,6 +64,7 @@ from goblin_king.store_run_lifecycle import (
     AttemptFinalization,
     finalize_attempt,
     persist_run,
+    start_run,
 )
 from goblin_king.store_schema import (
     api_tokens_table,
@@ -1644,8 +1645,12 @@ class SQLiteStore:
         return [_row_to_run(dict(row)) for row in rows]
 
     def save_run(self, run: RunRecord) -> None:
-        """Insert or replace a run and refresh its artifact and handoff metadata rows."""
+        """Insert a run and its artifact and handoff metadata rows."""
         persist_run(self.engine, run)
+
+    def start_run(self, run: RunRecord) -> None:
+        """Insert the incomplete run identity exposed while its worker executes."""
+        start_run(self.engine, run)
 
     def finalize_job_attempt(
         self,

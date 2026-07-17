@@ -231,6 +231,10 @@ def test_active_cancellation_cannot_be_overwritten_by_worker_completion(
     thread = Thread(target=execute)
     thread.start()
     assert entered.wait(5)
+    running_runs = store.list_job_runs(claimed.id)
+    assert len(running_runs) == 1
+    assert running_runs[0].status == "running"
+    running_id = running_runs[0].id
     cancelled, changed = store.try_cancel_job(claimed.id)
     assert cancelled is not None
     assert changed is True
@@ -252,6 +256,7 @@ def test_active_cancellation_cannot_be_overwritten_by_worker_completion(
     assert persisted_job.status == "cancelled"
     assert persisted_job.lease_owner is None
     assert run.status == "completed"
+    assert run.id == running_id
     assert run.finished_at is not None
     assert run.started_at <= run.finished_at
     assert store.get_run(run.id) == run
@@ -654,7 +659,13 @@ def test_unexpected_runtime_exception_fails_attempt_and_continues_scheduler(
             )
         )
 
-    def fail_runtime(*_args, **_kwargs):
+    running_ids: dict[str, str] = {}
+
+    def fail_runtime(_definition, _entrypoint, _input, context, **_kwargs):
+        running = store.get_run(context.run_id)
+        assert running is not None
+        assert running.status == "running"
+        running_ids[running.job_id] = running.id
         raise RuntimeError("adapter exploded")
 
     monkeypatch.setattr(scheduler.runtime, "run", fail_runtime)
@@ -664,6 +675,9 @@ def test_unexpected_runtime_exception_fails_attempt_and_continues_scheduler(
 
     assert {run.job_id for run in runs} == {"job-first", "job-second"}
     assert all(run.status == "failed" for run in runs)
+    assert {run.job_id: run.id for run in runs} == running_ids
+    assert len(store.list_job_runs("job-first")) == 1
+    assert len(store.list_job_runs("job-second")) == 1
     assert all("adapter exploded" in (run.error or "") for run in runs)
     assert all(job.status == "failed" for job in jobs)
     assert all(job.lease_owner is None and job.leased_until is None for job in jobs)
@@ -679,6 +693,8 @@ def test_cancellation_during_retry_exception_preserves_job_and_attempt_evidence(
     """Keep cancellation terminal while retaining a later retry attempt that raises."""
     now = utc_now()
     scheduler, store = build_scheduler(tmp_path)
+    monkeypatch.setattr(scheduler.event_bus, "_publish", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(scheduler.event_bus, "_append_stream", lambda *_args, **_kwargs: None)
     store.save_job(
         JobRecord(
             id="job-cancelled-retry",
@@ -711,6 +727,10 @@ def test_cancellation_during_retry_exception_preserves_job_and_attempt_evidence(
     thread = Thread(target=execute_retry)
     thread.start()
     assert entered.wait(5)
+    live_attempts = store.list_job_runs("job-cancelled-retry")
+    assert [run.attempt for run in live_attempts] == [1, 2]
+    assert live_attempts[-1].status == "running"
+    retry_running_id = live_attempts[-1].id
     cancelled, changed = store.try_cancel_job("job-cancelled-retry")
     assert cancelled is not None
     assert changed is True
@@ -730,6 +750,7 @@ def test_cancellation_during_retry_exception_preserves_job_and_attempt_evidence(
     assert len(retry_runs) == 1
     assert [run.attempt for run in store.list_job_runs(cancelled.id)] == [1, 2]
     assert retry_runs[0].status == "failed"
+    assert retry_runs[0].id == retry_running_id
     final_job = store.get_job(cancelled.id)
     assert final_job is not None
     assert final_job.status == "cancelled"
