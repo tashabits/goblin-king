@@ -4042,7 +4042,11 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         artifact = next((item for item in artifacts if item.name == artifact_name), None)
         if artifact is None:
             raise HTTPException(status_code=404, detail=f"artifact not found: {artifact_name}")
-        path = artifact_file_path(state.artifact_root, artifact)
+        path = artifact_file_path(
+            state.artifact_root,
+            artifact,
+            mounted_artifact_root=state.artifact_root / run.job_id,
+        )
         if path is None or not path.exists() or not path.is_file():
             raise HTTPException(status_code=404, detail=f"artifact file not found: {artifact_name}")
         return FileResponse(path, media_type=artifact.media_type, filename=artifact.name)

@@ -13,9 +13,22 @@ from goblin_king.contracts import ArtifactRecord
 from goblin_king.store import SQLiteStore
 
 
-def artifact_file_path(root: Path, artifact: ArtifactRecord) -> Path | None:
+def artifact_file_path(
+    root: Path,
+    artifact: ArtifactRecord,
+    *,
+    mounted_artifact_root: Path | None = None,
+) -> Path | None:
     """Resolve a file artifact only when it stays inside the configured artifact root."""
-    if artifact.uri.startswith("file://"):
+    if artifact.uri.startswith("artifact://"):
+        parsed = urlsplit(artifact.uri)
+        if mounted_artifact_root is None or parsed.query or parsed.fragment:
+            return None
+        relative = unquote(f"{parsed.netloc}{parsed.path}").lstrip("/")
+        if relative != artifact.name:
+            return None
+        candidate = mounted_artifact_root / relative
+    elif artifact.uri.startswith("file://"):
         parsed = urlsplit(artifact.uri)
         if parsed.netloc not in {"", "localhost"}:
             return None
