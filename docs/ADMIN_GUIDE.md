@@ -68,6 +68,12 @@ The **Events** panel shows durable SQLite-backed event history, Redis Stream del
 health, and the live WebSocket event rail. Heartbeats appear below this section and
 prove scheduler and worker liveness. If a goblin moves, the King writes it down.
 
+These are control-plane lifecycle events. A fixed worker's in-flight `progress`,
+`stdout`, `stderr`, and `message` records use the separate, bounded per-run API at
+`GET /runs/{run_id}/events` and `WS /ws/runs/{run_id}/events`. Use the Run ID from the
+Task Board or Runs panel, authenticate with the same project-scoped token, and resume
+with `after_sequence` after a disconnect. See [Live Run Events](live-run-events.md).
+
 ![Events and live rail](images/admin/admin-events.png)
 
 ## Manage Artifact Storage
@@ -77,6 +83,12 @@ the Helm PVC, whether it exists and is writable, the number of files, total byte
 artifact metadata rows. Use **Preview artifact cleanup** before deleting files. Cleanup
 removes only files resolved under the configured artifact root. The King is fussy about
 treasure rooms: if the path points outside the vault, it does not get a key.
+
+Artifact metadata includes a Run-scoped authenticated download route. Docker results
+using `artifact://<name>` are served from the exact job artifact directory only when the
+locator matches the declared name; mismatches and paths outside the configured root
+return 404. Kubernetes-retained, relative, and supported local `file://` artifacts keep
+their existing download behavior.
 
 ## Reload Discovery
 

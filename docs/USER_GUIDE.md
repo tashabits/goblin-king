@@ -93,6 +93,35 @@ Use the Redis Stream or durable event API when ordered replay matters. Pub/sub i
 best-effort notification rail; consumers spanning multiple publishers order and deduplicate those
 notifications by the included sequence.
 
+## Stream Live Run Progress
+
+Fixed task workers can optionally publish bounded `progress`, `stdout`, `stderr`, and
+`message` events before the container exits. Python workers that install Goblin King can
+use the runtime-provided configuration directly:
+
+```python
+from goblin_king import RunEventPublisher
+
+events = RunEventPublisher.from_environment()
+events.stdout("loading input\n")
+events.progress(25, "input loaded")
+```
+
+Replay retained events for an authorized Run, then reconnect from the last sequence:
+
+```bash
+curl -H "Authorization: Bearer local-dev-token" \
+  "http://127.0.0.1:8000/runs/<run-id>/events?after_sequence=0&limit=100"
+```
+
+Live clients connect to
+`WS /ws/runs/<run-id>/events?token=<project-token>&after_sequence=<last-sequence>`.
+This per-run stream is separate from the durable lifecycle event history returned by
+`GET /events` and broadcast through `WS /ws/runs`. Its replay window is bounded, so
+durable output still belongs in the final result or retained artifacts. See
+[Live Run Events](live-run-events.md) for non-Python publication, limits, reconnect
+behavior, and the Docker/Kubernetes contract.
+
 ## Use The API And Admin UI
 
 Start the API:
@@ -155,6 +184,20 @@ The trusted result forwarder validates and atomically copies declared files into
 PVC before publishing the final result and before Job deletion. Failed or incomplete
 retention yields a failed result with no artifact entries, so metadata never claims
 missing bytes. See [Kubernetes Artifact Retention](kubernetes-artifact-retention.md).
+
+Every artifact returned from `GET /runs/<run-id>/artifacts` includes an authenticated
+`download_url`. Download an artifact by its declared name:
+
+```bash
+curl -H "Authorization: Bearer local-dev-token" \
+  -o report.txt \
+  http://127.0.0.1:8000/runs/<run-id>/artifacts/report.txt
+```
+
+Docker workers may return the documented `artifact://report.txt` locator. The API
+resolves it only inside that job's mounted artifact directory and only when the locator
+matches the declared artifact name. Relative paths, supported local `file://` locators,
+project authorization, and root-containment checks retain their existing behavior.
 
 ## Hard-Kill Runtime Objects
 

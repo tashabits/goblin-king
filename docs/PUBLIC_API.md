@@ -13,10 +13,13 @@ Use these imports from `goblin_king` in host projects and generated goblin packa
   `GOBLIN_CONTAINER_CONTRACT_VERSION`,
   `PROJECT_CONFIG_API_VERSION`, `PROJECT_CONFIG_KIND`,
   `REGISTRY_SCHEMA_VERSION`, `WORKER_IMAGE_MAP_SCHEMA_VERSION`,
-  `WORKER_RESULT_CONTRACT_VERSION`, and `WORKER_HEARTBEAT_CONTRACT_VERSION`.
+  `WORKER_RESULT_CONTRACT_VERSION`, `WORKER_HEARTBEAT_CONTRACT_VERSION`, and
+  `WORKER_RUN_EVENT_CONTRACT_VERSION`.
 - Contracts: `GoblinDefinition`, `GoblinContext`, `GoblinResult`, job/run/schedule,
   fanout, event, heartbeat, artifact, handoff, auth, project, and worker validation
-  record models.
+  record models, plus `RunEventEnvelope` and `RunEventRecord`.
+- Live progress helper: `RunEventPublisher` for fixed Python workers that install the
+  Goblin King package.
 - Registry helpers: `GoblinRegistry`, `RegistryError`, `ENTRY_POINT_GROUP`, and
   `discover_entry_point_definitions`.
 - Project settings: `ProjectSettings` and `ProjectSettingsError`.
@@ -116,6 +119,23 @@ The operation is synchronous and may remain open until the requested Job deadlin
 runtime completion overhead. Repeating it creates a new immutable proof record; it does
 not mutate prior records. See
 [Generic Kubernetes Worker Validation Proof](kubernetes-generic-worker-validation-proof.md).
+
+## Live Run Event API
+
+`GET /runs/{run_id}/events` and `WS /ws/runs/{run_id}/events` are additive,
+project-authorized interfaces for replaying and following bounded worker-authored
+`progress`, `stdout`, `stderr`, and `message` events. They are separate from the durable
+control-plane event history at `GET /events` and its global live rail at `WS /ws/runs`.
+
+Python workers may import `RunEventPublisher` from `goblin_king` and construct it with
+`RunEventPublisher.from_environment()`. Docker and Kubernetes inject the same versioned
+environment contract. Existing workers may ignore it, and existing Job, Run, result,
+heartbeat, and status response shapes do not change.
+
+Run-event replay is finite and Redis-backed. Consumers resume with `after_sequence`,
+detect gaps beyond the retained window, and keep final business data in the result or
+retained artifacts. See [Live Run Events](live-run-events.md) for the exact worker
+contract, payload bounds, authentication model, and reconnect behavior.
 
 ## Internal Modules
 
