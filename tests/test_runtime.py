@@ -3,6 +3,8 @@
 import subprocess
 from types import SimpleNamespace
 
+import pytest
+
 from goblin_king import kubernetes_runtime as kubernetes_runtime_module
 from goblin_king.contracts import GoblinContext, GoblinDefinition, GoblinResult
 from goblin_king.kubernetes_artifact_config import KubernetesArtifactRetention
@@ -211,7 +213,10 @@ def test_kubernetes_observed_run_captures_bounded_logs_before_cleanup(monkeypatc
             return SimpleNamespace(items=[pod])
 
         def read_namespaced_pod_log(self, *, name, namespace, container, **kwargs):
-            assert kwargs.get("limit_bytes") == DEFAULT_KUBERNETES_LOG_CAPTURE_BYTES
+            expected_limit = DEFAULT_KUBERNETES_LOG_CAPTURE_BYTES + (
+                1 if container == "worker" else 0
+            )
+            assert kwargs.get("limit_bytes") == expected_limit
             return f"{container} log"
 
         def delete_namespaced_config_map(self, *, name, namespace):
@@ -473,7 +478,242 @@ def test_kubernetes_run_keeps_result_only_compatibility(monkeypatch) -> None:
     )
 
     assert result is expected
-    assert captured["_capture_diagnostics"] is False
+    assert captured["_capture_diagnostics"] is True
+
+
+@pytest.mark.parametrize(
+    ("worker_result", "exit_code", "terminal_event"),
+    [
+        (GoblinResult.ok(data={"ok": True}), 0, "worker.completed"),
+        (GoblinResult.failed(error="controlled worker failure"), 7, "worker.failed"),
+    ],
+    ids=("success", "failure"),
+)
+def test_kubernetes_run_emits_combined_worker_logs_before_cleanup_and_terminal_event(
+    monkeypatch,
+    worker_result: GoblinResult,
+    exit_code: int,
+    terminal_event: str,
+) -> None:
+    """Retain only bounded worker output while the transient Pod still exists."""
+    timeline: list[str] = []
+    emitted: list[dict[str, object]] = []
+    worker_output = "prefix-worker-output"
+    forwarder_output = "result-forwarder-infrastructure-output"
+    pod = SimpleNamespace(
+        metadata=SimpleNamespace(name="scheduled-worker-pod"),
+        status=SimpleNamespace(
+            container_statuses=[
+                SimpleNamespace(
+                    name="worker",
+                    state=SimpleNamespace(terminated=SimpleNamespace(exit_code=exit_code)),
+                )
+            ]
+        ),
+    )
+
+    class RecordingEventBus:
+        def emit(self, event_type: str, **payload) -> None:
+            timeline.append(event_type)
+            emitted.append({"event_type": event_type, **payload})
+
+    class Batch:
+        @staticmethod
+        def create_namespaced_job(**_kwargs) -> None:
+            return None
+
+        @staticmethod
+        def delete_namespaced_job(**_kwargs) -> None:
+            timeline.append("delete-job")
+
+    class Core:
+        @staticmethod
+        def create_namespaced_config_map(**_kwargs) -> None:
+            return None
+
+        @staticmethod
+        def list_namespaced_pod(**_kwargs):
+            return SimpleNamespace(items=[pod])
+
+        @staticmethod
+        def read_namespaced_pod_log(*, container, limit_bytes, **_kwargs):
+            timeline.append(f"read-{container}")
+            if container == "worker":
+                assert limit_bytes == 11
+                return worker_output
+            assert limit_bytes == DEFAULT_KUBERNETES_LOG_CAPTURE_BYTES
+            return forwarder_output
+
+        @staticmethod
+        def delete_namespaced_config_map(**_kwargs) -> None:
+            timeline.append("delete-config")
+
+    runtime = KubernetesRuntime(
+        workers=WorkerImageMap.from_definitions(
+            {"example.scheduled": WorkerImageDefinition(context=".", image="scheduled:local")}
+        ),
+        namespace="proof",
+        event_bus=RecordingEventBus(),
+    )
+    monkeypatch.setattr(
+        kubernetes_runtime_module,
+        "kubernetes_clients",
+        lambda: (Batch(), Core()),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_wait_for_result_observed",
+        lambda **_kwargs: KubernetesRunObservation(
+            result=worker_result,
+            result_received=True,
+            result_envelope_valid=True,
+        ),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_record_worker_heartbeats",
+        lambda _context: timeline.append("heartbeats"),
+    )
+    context = GoblinContext(
+        run_id=f"scheduled-{worker_result.status}",
+        artifact_root=f"artifacts/scheduled-{worker_result.status}",
+        metadata={"job_id": f"job-{worker_result.status}"},
+    )
+
+    result = runtime.run(
+        GoblinDefinition(
+            kind="example.scheduled",
+            display_name="Scheduled",
+            module="container.only",
+        ),
+        None,
+        {},
+        context,
+        resource_policy=ResourcePolicy.model_validate({"logs": {"max_bytes": 10}}),
+    )
+
+    assert result is worker_result
+    log_event = next(event for event in emitted if event["event_type"] == "worker.container_logs")
+    assert log_event["payload"] == {
+        "kind": "example.scheduled",
+        "image": "scheduled:local",
+        "container_name": "worker",
+        "exit_code": exit_code,
+        "timed_out": False,
+        "stdout": worker_output.encode("utf-8")[-10:].decode("utf-8"),
+        "stderr": "",
+        "stdout_truncated": True,
+        "stderr_truncated": False,
+        "truncated": True,
+        "max_bytes": 10,
+        "stdout_bytes": len(worker_output.encode("utf-8")),
+        "stderr_bytes": 0,
+        "stream_mode": "combined",
+        "byte_count_exact": False,
+    }
+    assert forwarder_output not in str(log_event["payload"])
+    assert timeline.index("worker.container_logs") < timeline.index("delete-job")
+    assert timeline.index("worker.container_logs") < timeline.index(terminal_event)
+
+
+def test_kubernetes_run_does_not_project_log_transport_failures_as_worker_output(
+    monkeypatch,
+) -> None:
+    """Keep Kubernetes API diagnostics out of the user worker stream."""
+    emitted: list[dict[str, object]] = []
+    timeline: list[str] = []
+    pod = SimpleNamespace(
+        metadata=SimpleNamespace(name="worker-pod"),
+        status=SimpleNamespace(
+            container_statuses=[
+                SimpleNamespace(
+                    name="worker",
+                    state=SimpleNamespace(terminated=SimpleNamespace(exit_code=0)),
+                )
+            ]
+        ),
+    )
+
+    class RecordingEventBus:
+        def emit(self, event_type: str, **payload) -> None:
+            emitted.append({"event_type": event_type, **payload})
+
+    class Batch:
+        @staticmethod
+        def create_namespaced_job(**_kwargs) -> None:
+            return None
+
+        @staticmethod
+        def delete_namespaced_job(**_kwargs) -> None:
+            timeline.append("delete-job")
+
+    class Core:
+        @staticmethod
+        def create_namespaced_config_map(**_kwargs) -> None:
+            return None
+
+        @staticmethod
+        def list_namespaced_pod(**_kwargs):
+            return SimpleNamespace(items=[pod])
+
+        @staticmethod
+        def read_namespaced_pod_log(*, container, **_kwargs):
+            if container == "worker":
+                raise RuntimeError("cluster credential detail must stay internal")
+            return "forwarder diagnostics"
+
+        @staticmethod
+        def delete_namespaced_config_map(**_kwargs) -> None:
+            timeline.append("delete-config")
+
+    runtime = KubernetesRuntime(
+        workers=WorkerImageMap.from_definitions(
+            {"example.scheduled": WorkerImageDefinition(context=".", image="scheduled:local")}
+        ),
+        namespace="proof",
+        event_bus=RecordingEventBus(),
+    )
+    monkeypatch.setattr(
+        kubernetes_runtime_module,
+        "kubernetes_clients",
+        lambda: (Batch(), Core()),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "_wait_for_result_observed",
+        lambda **_kwargs: KubernetesRunObservation(
+            result=GoblinResult.ok(data={"ok": True}),
+            result_received=True,
+            result_envelope_valid=True,
+        ),
+    )
+    monkeypatch.setattr(runtime, "_record_worker_heartbeats", lambda _context: None)
+
+    result = runtime.run(
+        GoblinDefinition(
+            kind="example.scheduled",
+            display_name="Scheduled",
+            module="container.only",
+        ),
+        None,
+        {},
+        GoblinContext(
+            run_id="scheduled-log-read-failure",
+            artifact_root="artifacts/scheduled-log-read-failure",
+        ),
+    )
+
+    assert result.status == "success"
+    payload = next(
+        event["payload"] for event in emitted if event["event_type"] == "worker.container_logs"
+    )
+    assert payload["stdout"] == ""
+    assert payload["stderr"] == ""
+    assert payload["stdout_bytes"] == 0
+    assert payload["truncated"] is False
+    assert payload["byte_count_exact"] is False
+    assert "cluster credential" not in str(payload)
+    assert "forwarder diagnostics" not in str(payload)
 
 
 def test_kubernetes_job_omits_placement_fields_without_metadata() -> None:

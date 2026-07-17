@@ -14,6 +14,7 @@ from uuid import uuid4
 from redis import Redis
 from redis.exceptions import RedisError
 
+from goblin_king.container_logs import container_log_payload, log_capture_limit
 from goblin_king.contracts import GoblinContext, GoblinDefinition, GoblinResult
 from goblin_king.docker_runtime_paths import (
     DockerRuntimePathError,
@@ -38,8 +39,6 @@ from goblin_king.runtime_helpers import (
 )
 from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
-
-DEFAULT_RUNTIME_LOG_CAPTURE_BYTES = 64 * 1024
 
 
 class InProcessRuntime:
@@ -445,7 +444,7 @@ class DockerRuntime:
         """Persist a bounded copy of Docker wrapper output after a short-lived worker exits."""
         if self.event_bus is None:
             return
-        payload = _container_log_payload(
+        payload = container_log_payload(
             kind=definition.kind,
             image=image,
             container_name=worker_id,
@@ -453,7 +452,7 @@ class DockerRuntime:
             stderr=stderr,
             exit_code=exit_code,
             timed_out=timed_out,
-            resource_policy=resource_policy,
+            max_bytes=log_capture_limit(resource_policy),
         )
         self._emit_worker_event("worker.container_logs", context, worker_id, payload)
 
@@ -475,58 +474,6 @@ class DockerRuntime:
             return GoblinResult.model_validate_json(result_json)
         except ValueError as error:
             return GoblinResult.failed(error=f"worker produced invalid result JSON: {error}")
-
-
-def _container_log_payload(
-    *,
-    kind: str,
-    image: str,
-    container_name: str,
-    stdout: str | bytes | None,
-    stderr: str | bytes | None,
-    exit_code: int | None,
-    timed_out: bool,
-    resource_policy: ResourcePolicy | None,
-) -> dict[str, Any]:
-    max_bytes = _log_capture_limit(resource_policy)
-    stdout_limit = (max_bytes + 1) // 2
-    stderr_limit = max_bytes // 2
-    stdout_tail, stdout_truncated, stdout_bytes = _tail_text(stdout, stdout_limit)
-    stderr_tail, stderr_truncated, stderr_bytes = _tail_text(stderr, stderr_limit)
-    return {
-        "kind": kind,
-        "image": image,
-        "container_name": container_name,
-        "exit_code": exit_code,
-        "timed_out": timed_out,
-        "stdout": stdout_tail,
-        "stderr": stderr_tail,
-        "stdout_truncated": stdout_truncated,
-        "stderr_truncated": stderr_truncated,
-        "truncated": stdout_truncated or stderr_truncated,
-        "max_bytes": max_bytes,
-        "stdout_bytes": stdout_bytes,
-        "stderr_bytes": stderr_bytes,
-    }
-
-
-def _log_capture_limit(resource_policy: ResourcePolicy | None) -> int:
-    if resource_policy is not None and resource_policy.logs.max_bytes is not None:
-        return resource_policy.logs.max_bytes
-    return DEFAULT_RUNTIME_LOG_CAPTURE_BYTES
-
-
-def _tail_text(value: str | bytes | None, max_bytes: int) -> tuple[str, bool, int]:
-    if value is None:
-        return "", False, 0
-    text = value.decode("utf-8", errors="replace") if isinstance(value, bytes) else str(value)
-    encoded = text.encode("utf-8")
-    byte_count = len(encoded)
-    if max_bytes <= 0:
-        return "", byte_count > 0, byte_count
-    if byte_count <= max_bytes:
-        return text, False, byte_count
-    return encoded[-max_bytes:].decode("utf-8", errors="replace"), True, byte_count
 
 
 def _worker_env(definition: GoblinDefinition) -> dict[str, str]:

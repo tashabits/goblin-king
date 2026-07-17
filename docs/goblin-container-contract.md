@@ -183,6 +183,24 @@ and must not contain secrets. Structured data that callers need should go in the
 envelope, artifacts, events, metrics, or handoff payloads instead of only appearing in
 logs.
 
+After a finite container exits, a configured runtime event bus preserves a bounded
+`worker.container_logs` event before the terminal worker event. The effective
+`logs.max_bytes` policy limits the retained payload. Docker reports its separate wrapper
+stdout and stderr streams. Kubernetes exposes one combined Pod log stream, so its event
+places the worker text in `stdout`, leaves `stderr` empty, and sets
+`stream_mode` to `combined`; it does not claim a separation the platform cannot prove.
+The result-forwarder sidecar remains infrastructure diagnostics and is never included in
+the user-worker stream.
+
+The event includes `stdout_truncated`, `stderr_truncated`, `truncated`, `max_bytes`,
+`stdout_bytes`, and `stderr_bytes`. Kubernetes reads at most one byte beyond the retained
+bound to determine truncation before deleting the transient Job. When truncation is true,
+`stdout_bytes` is the size of that bounded observation and therefore a lower bound on the
+complete Pod log size, not a claim that the full stream was read; `byte_count_exact` is
+then `false`. If the Kubernetes log transport fails, the user event contains empty output
+and `byte_count_exact: false`. Bounded transport diagnostics remain available only to
+explicit diagnostic callers rather than being mislabeled as worker output.
+
 ## Progress And Events
 
 Short jobs can report progress by writing durable events through supported transport

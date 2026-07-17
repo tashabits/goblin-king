@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Preserve bounded user-worker output for ordinary Kubernetes runs before transient Job
+  cleanup and emit it through `worker.container_logs`. Kubernetes marks the stream as
+  combined, leaves `stderr` empty, and never presents result-forwarder diagnostics as user
+  output; Docker event payloads remain unchanged.
 - Emit a standards-derived local `file:` URI from the Node artifact behavior example so the
   unchanged result envelope works with both Docker downloads and Kubernetes durable retention.
 - Add optional, registry-owned `metadata.validation_input` for bounded just-in-time contract
