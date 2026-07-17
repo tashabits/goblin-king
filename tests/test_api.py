@@ -1030,6 +1030,93 @@ def test_run_and_artifact_endpoints(tmp_path: Path) -> None:
     )
 
 
+def test_artifact_download_resolves_documented_docker_locator(tmp_path: Path) -> None:
+    """Serve artifact:// metadata from the exact Docker job artifact directory."""
+    client, store, artifact_root = build_client(tmp_path)
+    mounted_root = artifact_root / "job-docker"
+    mounted_root.mkdir(parents=True)
+    (mounted_root / "node-artifact.txt").write_text("docker artifact", encoding="utf-8")
+    store.save_job(
+        JobRecord(
+            id="job-docker",
+            kind="example.artifact",
+            input={},
+            created_at=datetime(2026, 6, 9, tzinfo=UTC),
+            status="completed",
+        )
+    )
+    store.save_run(
+        RunRecord(
+            id="run-docker",
+            job_id="job-docker",
+            kind="example.artifact",
+            status="completed",
+            started_at=datetime(2026, 6, 9, tzinfo=UTC),
+            finished_at=datetime(2026, 6, 9, tzinfo=UTC),
+            result=GoblinResult.ok(
+                artifacts=[
+                    ArtifactRecord(
+                        name="node-artifact.txt",
+                        uri="artifact://node-artifact.txt",
+                        media_type="text/plain",
+                    )
+                ]
+            ),
+        )
+    )
+
+    response = client.get(
+        "/runs/run-docker/artifacts/node-artifact.txt",
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.text == "docker artifact"
+
+
+def test_artifact_download_rejects_mismatched_docker_locator(tmp_path: Path) -> None:
+    """Never use an artifact:// locator to select bytes outside its declared name."""
+    client, store, artifact_root = build_client(tmp_path)
+    mounted_root = artifact_root / "job-docker"
+    mounted_root.mkdir(parents=True)
+    (mounted_root / "other.txt").write_text("other artifact", encoding="utf-8")
+    store.save_job(
+        JobRecord(
+            id="job-docker",
+            kind="example.artifact",
+            input={},
+            created_at=datetime(2026, 6, 9, tzinfo=UTC),
+            status="completed",
+        )
+    )
+    store.save_run(
+        RunRecord(
+            id="run-docker",
+            job_id="job-docker",
+            kind="example.artifact",
+            status="completed",
+            started_at=datetime(2026, 6, 9, tzinfo=UTC),
+            finished_at=datetime(2026, 6, 9, tzinfo=UTC),
+            result=GoblinResult.ok(
+                artifacts=[
+                    ArtifactRecord(
+                        name="declared.txt",
+                        uri="artifact://other.txt",
+                        media_type="text/plain",
+                    )
+                ]
+            ),
+        )
+    )
+
+    response = client.get(
+        "/runs/run-docker/artifacts/declared.txt",
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 404
+
+
 def test_admin_artifact_storage_status_and_cleanup(tmp_path: Path) -> None:
     """Verify volume-backed artifact status and cleanup are project scoped."""
     client, store, artifact_root = build_client(tmp_path)
