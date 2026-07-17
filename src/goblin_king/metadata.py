@@ -29,13 +29,13 @@ def goblin_validation_input(
 ) -> dict[str, Any]:
     """Return an explicit contract-validation object without changing runtime input."""
     metadata = getattr(definition, "metadata", {}) or {}
-    candidate = metadata.get("validation_input")
-    if candidate is None:
+    if "validation_input" not in metadata:
         return runtime_input
+    candidate = metadata.get("validation_input")
     if not isinstance(candidate, dict):
         raise ValueError("goblin metadata validation_input must be a JSON object")
     try:
-        decoded = json.loads(json.dumps(candidate))
+        decoded = json.loads(json.dumps(candidate, allow_nan=False))
     except (TypeError, ValueError) as error:
         raise ValueError("goblin metadata validation_input must be JSON-compatible") from error
     if not isinstance(decoded, dict):  # defensive against custom JSON encoders

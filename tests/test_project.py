@@ -264,7 +264,10 @@ def test_goblin_validation_input_is_explicit_and_runtime_input_stays_distinct() 
     assert runtime_input == {"ticks": 100}
 
 
-@pytest.mark.parametrize("candidate", [["not", "an", "object"], {"value": object()}])
+@pytest.mark.parametrize(
+    "candidate",
+    [None, ["not", "an", "object"], {"value": object()}, {"value": float("nan")}],
+)
 def test_goblin_validation_input_rejects_invalid_metadata(candidate: object) -> None:
     """Fail visibly when operator-authored validation metadata is not inert JSON."""
     definition = GoblinDefinition(
