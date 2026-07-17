@@ -71,6 +71,12 @@ operation runs the contract Job and persists pass/fail proof before normal sched
 This prevents a fresh Helm installation from depending on a Docker daemon, a database
 seed, or a first unvalidated workload.
 
+An operator-reviewed definition may set `metadata.validation_input` to a JSON object when
+the ordinary runtime input is intentionally slow, failing, destructive, or expensive. The
+scheduler uses that object only for contract validation and still executes the exact queued
+input afterward. Definitions without it retain exact-input validation. Invalid or non-JSON
+metadata fails the validation boundary visibly instead of falling back to runtime input.
+
 Docker proof uses the locally inspected immutable image ID. Kubernetes proof uses the
 exact scheduler gate identity `kubernetes:<configured-image-reference>`. A digest-pinned
 reference therefore yields an immutable configured identity and is preferred. A mutable

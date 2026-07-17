@@ -305,6 +305,55 @@ def test_validation_gate_reuses_passing_proof(tmp_path: Path, monkeypatch) -> No
     assert error is None
 
 
+def test_scheduler_separates_declared_validation_input_from_runtime_input(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Validate with reviewed bounded data, then execute the exact queued payload."""
+    scheduler, store = build_docker_scheduler(tmp_path)
+    scheduler.registry = GoblinRegistry.from_definitions(
+        [
+            GoblinDefinition(
+                kind="example.validation",
+                display_name="Example Validation",
+                module="container.only",
+                metadata={"validation_input": {"ticks": 1}},
+            )
+        ]
+    )
+    now = datetime(2026, 7, 17, 2, 0, tzinfo=UTC)
+    store.save_job(
+        JobRecord(
+            id="job-bounded-validation",
+            kind="example.validation",
+            input={"ticks": 100},
+            created_at=now,
+            due_at=now,
+        )
+    )
+    claimed = scheduler.claim_due_jobs(now)[0]
+    observed: dict[str, object] = {}
+
+    def validate(_job, _kind, **kwargs):
+        observed["validation"] = kwargs["input_payload"]
+        return None
+
+    def run(_definition, _entrypoint, input_payload, _context, **_kwargs):
+        observed["runtime"] = input_payload
+        return GoblinResult.ok(data={"completed": True})
+
+    monkeypatch.setattr(scheduler, "_validate_before_container_run", validate)
+    monkeypatch.setattr(scheduler.runtime, "run", run)
+
+    result = scheduler.run_claimed_job(claimed, now)
+
+    assert result.status == "completed"
+    assert observed == {
+        "validation": {"ticks": 1},
+        "runtime": {"ticks": 100},
+    }
+
+
 def test_kubernetes_validation_gate_accepts_public_operation_identity(tmp_path: Path) -> None:
     """Verify preflight proof uses the exact identity recorded by Kubernetes validation."""
     scheduler, store = build_kubernetes_scheduler(tmp_path)

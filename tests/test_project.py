@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from goblin_king.metadata import goblin_job_metadata
+from goblin_king.contracts import GoblinDefinition
+from goblin_king.metadata import goblin_job_metadata, goblin_validation_input
 from goblin_king.project import ProjectSettings, ProjectSettingsError
 from goblin_king.registry import GoblinRegistry
 from goblin_king.resource_policies import ResourcePolicyError, ResourcePolicySet
@@ -239,6 +240,42 @@ def test_project_settings_propagates_placement_to_job_metadata() -> None:
         "required": {"example.com/node-pool": "batch"},
         "preferred": {"disk-tier": "ssd"},
     }
+
+
+def test_goblin_validation_input_is_explicit_and_runtime_input_stays_distinct() -> None:
+    """Use reviewed validation data without mutating the queued runtime payload."""
+    runtime_input = {"ticks": 100}
+    default_definition = GoblinDefinition(
+        kind="example.default-input",
+        display_name="Default input",
+        module="container.only",
+    )
+    bounded_definition = GoblinDefinition(
+        kind="example.bounded-input",
+        display_name="Bounded input",
+        module="container.only",
+        metadata={"validation_input": {"ticks": 1}},
+    )
+
+    assert goblin_validation_input(default_definition, runtime_input) is runtime_input
+    validation_input = goblin_validation_input(bounded_definition, runtime_input)
+    assert validation_input == {"ticks": 1}
+    assert validation_input is not bounded_definition.metadata["validation_input"]
+    assert runtime_input == {"ticks": 100}
+
+
+@pytest.mark.parametrize("candidate", [["not", "an", "object"], {"value": object()}])
+def test_goblin_validation_input_rejects_invalid_metadata(candidate: object) -> None:
+    """Fail visibly when operator-authored validation metadata is not inert JSON."""
+    definition = GoblinDefinition(
+        kind="example.invalid-input",
+        display_name="Invalid input",
+        module="container.only",
+        metadata={"validation_input": candidate},
+    )
+
+    with pytest.raises(ValueError, match="validation_input"):
+        goblin_validation_input(definition, {"runtime": True})
 
 
 def test_project_settings_reject_service_without_endpoint(tmp_path: Path) -> None:
