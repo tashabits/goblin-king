@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Emit a standards-derived local `file:` URI from the Node artifact behavior example so the
+  unchanged result envelope works with both Docker downloads and Kubernetes durable retention.
 - Add optional, registry-owned `metadata.validation_input` for bounded just-in-time contract
   validation while preserving the queued runtime input exactly for real worker execution. Invalid
   validation metadata now fails visibly, and definitions without it retain their existing behavior.
