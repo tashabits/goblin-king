@@ -1169,6 +1169,8 @@ Goblin King provides:
   readiness-gated duplex service routing, limits, rolling drain, and deployment proof.
 - [Causal Lifecycle Ordering](docs/causal-lifecycle-ordering.md): Durable event
   sequences, monotonic Run timestamps, and rollback-safe timeout behavior.
+- [Live Run Events](docs/live-run-events.md): Backwards-compatible bounded progress and
+  stdout/stderr replay while Docker or Kubernetes workers are still running.
 - [Kubernetes Artifact Retention](docs/kubernetes-artifact-retention.md): PVC-backed
   byte retention, validation, authorized downloads, cleanup, and live proof.
 - [Writable Docker Runtime Data](docs/writable-docker-runtime-data.md): Hardened

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add an opt-in, project-authorized live run-event channel with identical Docker and Kubernetes
+  worker contracts, bounded Redis Stream replay, and no changes to existing task payload or status
+  shapes.
+
 ## 0.1.0 - Project-Ready Internal Baseline
 
 - Added typed goblin contracts, registry loading, runtime execution, SQLite persistence,
