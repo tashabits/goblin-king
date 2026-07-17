@@ -133,6 +133,21 @@ processing later leased jobs. Diagnostic Pod queries have a five-second client t
 and the durable error is capped at 500 characters so registry responses cannot create
 unbounded run records.
 
+For every ordinary scheduled run that creates a Job, the runtime also captures the
+bounded `worker` container log before cleanup and emits `worker.container_logs` before
+the terminal worker event. Kubernetes returns a combined stream; the payload therefore
+uses `stdout` for that text, an empty `stderr`, and `stream_mode: combined`. Only the
+worker container is projected into this event. The `result-forwarder` log may remain in
+explicit validation diagnostics, but it is not user worker output.
+
+The retained worker text is capped at the smaller of 64 KiB and the effective
+`logs.max_bytes` policy. A one-byte probe makes truncation explicit without reading an
+unbounded Pod log. A truncated event sets `byte_count_exact: false` because Kubernetes
+cannot report the complete stream length through that bounded read. If the log request
+itself fails, the user event contains empty output and also marks the byte count inexact;
+cluster transport details remain confined to explicit diagnostics. Job and ConfigMap
+deletion happens only after the bounded event has been persisted.
+
 ## Verification
 
 Render before applying:

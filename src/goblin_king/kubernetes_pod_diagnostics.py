@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from goblin_king.container_logs import tail_text
 from goblin_king.contracts import GoblinResult
 
 _IMAGE_PULL_FAILURE_REASONS = frozenset(
@@ -32,6 +33,9 @@ class KubernetesRunObservation:
     result_envelope_valid: bool = False
     exit_code: int | None = None
     logs: dict[str, str] = field(default_factory=dict)
+    log_truncated: dict[str, bool] = field(default_factory=dict)
+    log_observed_bytes: dict[str, int] = field(default_factory=dict)
+    log_read_failed: dict[str, bool] = field(default_factory=dict)
 
     def with_job_created(self) -> KubernetesRunObservation:
         """Return a copy that records successful Kubernetes Job creation."""
@@ -42,6 +46,9 @@ class KubernetesRunObservation:
             result_envelope_valid=self.result_envelope_valid,
             exit_code=self.exit_code,
             logs=self.logs,
+            log_truncated=self.log_truncated,
+            log_observed_bytes=self.log_observed_bytes,
+            log_read_failed=self.log_read_failed,
         )
 
     def with_runtime_diagnostics(
@@ -49,6 +56,9 @@ class KubernetesRunObservation:
         *,
         exit_code: int | None,
         logs: dict[str, str],
+        log_truncated: dict[str, bool] | None = None,
+        log_observed_bytes: dict[str, int] | None = None,
+        log_read_failed: dict[str, bool] | None = None,
     ) -> KubernetesRunObservation:
         """Return a copy enriched before the transient Job is deleted."""
         return KubernetesRunObservation(
@@ -58,6 +68,9 @@ class KubernetesRunObservation:
             result_envelope_valid=self.result_envelope_valid,
             exit_code=exit_code,
             logs=logs,
+            log_truncated=log_truncated or {},
+            log_observed_bytes=log_observed_bytes or {},
+            log_read_failed=log_read_failed or {},
         )
 
 
@@ -116,24 +129,50 @@ def capture_kubernetes_pod_diagnostics(
     namespace: str,
     job_name: str,
     observation: KubernetesRunObservation,
+    worker_log_max_bytes: int | None = None,
 ) -> KubernetesRunObservation:
     """Capture bounded logs and the worker exit code before deleting a Job."""
     pods = _list_job_pods(core, namespace=namespace, job_name=job_name)
     if pods is None or not getattr(pods, "items", ()):
         return observation
     pod = pods.items[0]
-    logs = {
-        container: read_bounded_kubernetes_pod_log(
-            core,
-            namespace=namespace,
-            pod_name=str(getattr(getattr(pod, "metadata", None), "name", "unknown")),
-            container=container,
-        )
-        for container in ("worker", "result-forwarder")
+    worker_limit = min(
+        DEFAULT_KUBERNETES_LOG_CAPTURE_BYTES,
+        (
+            DEFAULT_KUBERNETES_LOG_CAPTURE_BYTES
+            if worker_log_max_bytes is None
+            else max(worker_log_max_bytes, 0)
+        ),
+    )
+    pod_name = str(getattr(getattr(pod, "metadata", None), "name", "unknown"))
+    worker_capture = _read_kubernetes_pod_log_capture(
+        core,
+        namespace=namespace,
+        pod_name=pod_name,
+        container="worker",
+        max_bytes=worker_limit,
+    )
+    forwarder_log = read_bounded_kubernetes_pod_log(
+        core,
+        namespace=namespace,
+        pod_name=pod_name,
+        container="result-forwarder",
+    )
+    captures = {
+        "worker": worker_capture,
+        "result-forwarder": (
+            forwarder_log,
+            False,
+            len(forwarder_log.encode("utf-8")),
+            False,
+        ),
     }
     return observation.with_runtime_diagnostics(
         exit_code=_container_exit_code(pod, "worker"),
-        logs=logs,
+        logs={container: capture[0] for container, capture in captures.items()},
+        log_truncated={container: capture[1] for container, capture in captures.items()},
+        log_observed_bytes={container: capture[2] for container, capture in captures.items()},
+        log_read_failed={container: capture[3] for container, capture in captures.items()},
     )
 
 
@@ -183,11 +222,56 @@ def read_bounded_kubernetes_pod_log(
     pod_name: str,
     container: str,
 ) -> str:
+    return _read_kubernetes_pod_log_value(
+        core,
+        namespace=namespace,
+        pod_name=pod_name,
+        container=container,
+        limit_bytes=DEFAULT_KUBERNETES_LOG_CAPTURE_BYTES,
+    )
+
+
+def _read_kubernetes_pod_log_capture(
+    core: Any,
+    *,
+    namespace: str,
+    pod_name: str,
+    container: str,
+    max_bytes: int,
+) -> tuple[str, bool, int, bool]:
+    try:
+        value = _read_kubernetes_pod_log_value(
+            core,
+            namespace=namespace,
+            pod_name=pod_name,
+            container=container,
+            limit_bytes=max_bytes + 1,
+            raise_on_error=True,
+        )
+    except Exception as error:  # diagnostic observation may retain a bounded failure reason
+        message = _bounded_text(
+            f"unable to read {container} logs: {error}",
+            _MAX_DIAGNOSTIC_CHARACTERS,
+        )
+        return message, False, len(message.encode("utf-8")), True
+    text, truncated, observed_bytes = tail_text(value, max_bytes)
+    return text, truncated, observed_bytes, False
+
+
+def _read_kubernetes_pod_log_value(
+    core: Any,
+    *,
+    namespace: str,
+    pod_name: str,
+    container: str,
+    limit_bytes: int,
+    raise_on_error: bool = False,
+) -> str:
     kwargs = {
         "name": pod_name,
         "namespace": namespace,
         "container": container,
-        "limit_bytes": DEFAULT_KUBERNETES_LOG_CAPTURE_BYTES,
+        "limit_bytes": limit_bytes,
     }
     try:
         try:
@@ -215,6 +299,8 @@ def read_bounded_kubernetes_pod_log(
             return value.decode("utf-8", errors="replace")
         return str(value)
     except Exception as error:  # diagnostic best effort
+        if raise_on_error:
+            raise
         return _bounded_text(
             f"unable to read {container} logs: {error}",
             _MAX_DIAGNOSTIC_CHARACTERS,

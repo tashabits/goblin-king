@@ -519,6 +519,15 @@ immutable deployment proof and treat returned logs as potentially sensitive work
 output. Follow the [exact generic worker proof](kubernetes-generic-worker-validation-proof.md)
 for install, validation, scheduling, and cleanup checks.
 
+Normal scheduled Kubernetes runs also persist a bounded `worker.container_logs` event
+before their transient Job is deleted. Because Kubernetes returns one combined Pod log
+stream, read its `stdout` field together with `stream_mode: combined`; `stderr` is empty.
+The event contains only the user `worker` container output, not result-forwarder
+infrastructure diagnostics. Use the truncation fields to tell whether the effective
+`logs.max_bytes` policy clipped the retained tail. A false `byte_count_exact` means the
+reported byte count is only a bounded lower bound, or that the Kubernetes log request
+failed and the user output was intentionally left empty.
+
 ## Release And Upgrade
 
 For project-ready adoption, use:

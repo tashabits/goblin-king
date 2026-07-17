@@ -10,6 +10,7 @@ from typing import Any
 from redis import Redis
 from redis.exceptions import RedisError
 
+from goblin_king.container_logs import container_log_payload, log_capture_limit
 from goblin_king.contracts import GoblinContext, GoblinDefinition, GoblinResult
 from goblin_king.events import (
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
@@ -20,6 +21,7 @@ from goblin_king.kubernetes_artifact_config import KubernetesArtifactRetention
 from goblin_king.kubernetes_job_manifest import build_kubernetes_job_manifest
 from goblin_king.kubernetes_placement import placement_metadata
 from goblin_king.kubernetes_pod_diagnostics import (
+    DEFAULT_KUBERNETES_LOG_CAPTURE_BYTES,
     KubernetesRunObservation,
     capture_kubernetes_pod_diagnostics,
     find_image_pull_failure,
@@ -105,7 +107,7 @@ class KubernetesRuntime:
             context,
             timeout_seconds=timeout_seconds,
             resource_policy=resource_policy,
-            _capture_diagnostics=False,
+            _capture_diagnostics=True,
         ).result
 
     def run_observed(
@@ -180,15 +182,30 @@ class KubernetesRuntime:
                 job_created=job_created,
             )
         finally:
-            self._record_worker_heartbeats(context)
-            if _capture_diagnostics and job_created:
-                observation = capture_kubernetes_pod_diagnostics(
-                    core=core,
-                    namespace=self.namespace,
-                    job_name=name,
-                    observation=observation,
-                )
-            self._cleanup(batch=batch, core=core, job_name=name, config_name=config_name)
+            try:
+                self._record_worker_heartbeats(context)
+                if _capture_diagnostics and job_created:
+                    max_log_bytes = min(
+                        log_capture_limit(resource_policy),
+                        DEFAULT_KUBERNETES_LOG_CAPTURE_BYTES,
+                    )
+                    observation = capture_kubernetes_pod_diagnostics(
+                        core=core,
+                        namespace=self.namespace,
+                        job_name=name,
+                        observation=observation,
+                        worker_log_max_bytes=max_log_bytes,
+                    )
+                    self._emit_container_log_event(
+                        definition=definition,
+                        image=worker.image,
+                        context=context,
+                        worker_id=worker_id,
+                        observation=observation,
+                        max_bytes=max_log_bytes,
+                    )
+            finally:
+                self._cleanup(batch=batch, core=core, job_name=name, config_name=config_name)
 
         result = observation.result
         self._emit_worker_event(
@@ -385,6 +402,42 @@ class KubernetesRuntime:
             worker_id=worker_id,
             payload=payload,
         )
+
+    def _emit_container_log_event(
+        self,
+        *,
+        definition: GoblinDefinition,
+        image: str,
+        context: GoblinContext,
+        worker_id: str,
+        observation: KubernetesRunObservation,
+        max_bytes: int,
+    ) -> None:
+        """Persist the bounded combined stream from only the user worker container."""
+        if self.event_bus is None:
+            return
+        log_read_failed = observation.log_read_failed.get("worker", False)
+        worker_log = "" if log_read_failed else observation.logs.get("worker", "")
+        error = observation.result.error or ""
+        payload = container_log_payload(
+            kind=definition.kind,
+            image=image,
+            container_name="worker",
+            stdout=worker_log,
+            stderr="",
+            exit_code=observation.exit_code,
+            timed_out="exceeded wait timeout" in error,
+            max_bytes=max_bytes,
+            stream_mode="combined",
+            stdout_was_truncated=(
+                False if log_read_failed else observation.log_truncated.get("worker", False)
+            ),
+            stdout_observed_bytes=(
+                0 if log_read_failed else observation.log_observed_bytes.get("worker")
+            ),
+        )
+        payload["byte_count_exact"] = not (log_read_failed or payload["stdout_truncated"])
+        self._emit_worker_event("worker.container_logs", context, worker_id, payload)
 
     def _cleanup(self, *, batch: Any, core: Any, job_name: str, config_name: str) -> None:
         """Best-effort cleanup for transient Kubernetes runtime objects."""
