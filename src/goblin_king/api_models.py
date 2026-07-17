@@ -19,6 +19,7 @@ from goblin_king.contracts import (
     RepositoryEntryRecord,
     RepositoryGoblinType,
     RepositoryVersionRecord,
+    RunEventRecord,
     RunRecord,
 )
 from goblin_king.termination import RuntimeTarget
@@ -77,6 +78,14 @@ class RunListResponse(BaseModel):
 
     items: list[RunRecord]
     meta: PageMeta
+
+
+class RunEventListResponse(BaseModel):
+    """Bounded retained worker events for one exact authorized run."""
+
+    items: list[RunEventRecord]
+    meta: PageMeta
+    next_sequence: int
 
 
 class TokenCreateResponse(BaseModel):

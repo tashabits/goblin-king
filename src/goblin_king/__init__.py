@@ -21,6 +21,8 @@ from goblin_king.contracts import (
     ProjectRecord,
     RepositoryEntryRecord,
     RepositoryVersionRecord,
+    RunEventEnvelope,
+    RunEventRecord,
     RunRecord,
     ScheduleRecord,
     UserRecord,
@@ -38,6 +40,7 @@ from goblin_king.registry import (
     RegistryError,
     discover_entry_point_definitions,
 )
+from goblin_king.run_events import RunEventPublisher
 from goblin_king.templates import TemplateError, init_package
 from goblin_king.versions import (
     API_SETTINGS_SCHEMA_VERSION,
@@ -48,6 +51,7 @@ from goblin_king.versions import (
     WORKER_HEARTBEAT_CONTRACT_VERSION,
     WORKER_IMAGE_MAP_SCHEMA_VERSION,
     WORKER_RESULT_CONTRACT_VERSION,
+    WORKER_RUN_EVENT_CONTRACT_VERSION,
 )
 from goblin_king.workers import (
     WorkerConfigError,
@@ -95,6 +99,9 @@ __all__ = [
     "RepositoryEntryRecord",
     "RepositoryVersionRecord",
     "RunRecord",
+    "RunEventEnvelope",
+    "RunEventPublisher",
+    "RunEventRecord",
     "ScheduleRecord",
     "Scheduler",
     "SQLiteStore",
@@ -102,6 +109,7 @@ __all__ = [
     "UserRecord",
     "WorkerConfigError",
     "WORKER_HEARTBEAT_CONTRACT_VERSION",
+    "WORKER_RUN_EVENT_CONTRACT_VERSION",
     "WorkerImageDefinition",
     "WorkerImageMap",
     "WORKER_IMAGE_MAP_SCHEMA_VERSION",

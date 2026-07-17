@@ -5,6 +5,7 @@
   "worker_image_map_schema_version": "goblin-king/v1alpha1",
   "worker_result_contract_version": "goblin-king/v1alpha1",
   "worker_heartbeat_contract_version": "goblin-king/v1alpha1",
+  "worker_run_event_contract_version": "goblin-king/v1alpha1",
   "api_settings_schema_version": "goblin-king/v1alpha1",
   "project_settings_schema_version": "goblin-king/v1alpha1",
   "notes": [
@@ -12,6 +13,7 @@
     "Registry files use a top-level goblins array.",
     "Worker image maps use a top-level workers object keyed by goblin kind.",
     "Durable events add a sequence while pre-sequence EventRecord construction remains valid.",
+    "Bounded worker run events are additive; existing workers, results, heartbeats, jobs, and runs remain unchanged.",
     "Kubernetes artifact retention keeps result and artifact JSON shapes stable and adds verified metrics.",
     "Job statuses, Run statuses, result envelopes, and existing constructor requirements are unchanged.",
     "Kubernetes runtime image settings are additive; legacy constructor and Helm tag-only values remain valid.",

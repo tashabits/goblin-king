@@ -29,6 +29,7 @@ JobStatus = Literal[
     "cancelled",
 ]
 RunStatus = Literal["running", "completed", "failed", "timed_out"]
+RunEventType = Literal["progress", "stdout", "stderr", "message"]
 EventSource = Literal["api", "scheduler", "runtime", "worker", "cli"]
 HeartbeatOwnerType = Literal["scheduler", "worker"]
 PrincipalRole = Literal["admin", "member", "viewer"]
@@ -206,6 +207,23 @@ class EventRecord(BaseModel):
     worker_id: str | None = None
     scheduler_id: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class RunEventEnvelope(BaseModel):
+    """Represent one bounded worker-authored event in a run-local Redis Stream."""
+
+    sequence: int = Field(ge=1)
+    created_at: datetime
+    event_type: RunEventType
+    run_id: str = Field(min_length=1)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class RunEventRecord(RunEventEnvelope):
+    """Add control-plane ownership to a validated worker run event."""
+
+    job_id: str
+    project_id: str | None = None
 
 
 class HeartbeatRecord(BaseModel):

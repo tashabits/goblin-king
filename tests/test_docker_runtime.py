@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import json
 import subprocess
+import threading
 import time
 from pathlib import Path
 
 import pytest
 from redis import Redis
 
-from goblin_king.contracts import GoblinDefinition
+from goblin_king.contracts import GoblinDefinition, GoblinResult
 from goblin_king.events import EventBus
 from goblin_king.registry import GoblinRegistry
 from goblin_king.resource_policies import ResourcePolicy
+from goblin_king.run_events import read_run_event_entries
 from goblin_king.runtime import DockerRuntime, new_run_context
 from goblin_king.store import SQLiteStore
 from goblin_king.validation import validate_workers
@@ -84,6 +86,16 @@ def example_artifact_worker_image(redis_container: str) -> str:
     return worker_map.get("example.artifact").image
 
 
+@pytest.fixture(scope="session")
+def example_progress_worker_image(redis_container: str) -> str:
+    """Build the fixed progress worker that exercises live run events."""
+    del redis_container
+    worker_map = WorkerImageMap.from_path("goblin-images.json")
+    runtime = DockerRuntime(workers=worker_map, redis_url=REDIS_URL)
+    runtime.build_image("example.progress")
+    return worker_map.get("example.progress").image
+
+
 def test_docker_runtime_executes_example_worker(
     tmp_path: Path,
     redis_container: str,
@@ -110,6 +122,61 @@ def test_docker_runtime_executes_example_worker(
     assert result_file.exists()
     assert redis_payload is not None
     assert json.loads(redis_payload)["status"] == "success"
+
+
+def test_docker_worker_events_are_replayable_before_exit(
+    tmp_path: Path,
+    redis_container: str,
+    example_progress_worker_image: str,
+) -> None:
+    """Prove fixed-worker progress is visible while DockerRuntime remains blocked in the run."""
+    del redis_container, example_progress_worker_image
+    worker_map = WorkerImageMap.from_path("goblin-images.json")
+    runtime = DockerRuntime(workers=worker_map, redis_url=REDIS_URL, run_root=tmp_path / "runs")
+    context = new_run_context("job-progress-live", "example.progress")
+    context = context.model_copy(update={"artifact_root": str(tmp_path / "artifacts")})
+    definition = GoblinDefinition(
+        kind="example.progress",
+        display_name="Progress",
+        module="unused.by.docker",
+    )
+    completed: dict[str, object] = {}
+
+    def run_worker() -> None:
+        completed["result"] = runtime.run(
+            definition,
+            None,
+            {"steps": 12, "delay_seconds": 0.1},
+            context,
+        )
+
+    worker_thread = threading.Thread(target=run_worker, daemon=True)
+    worker_thread.start()
+    observed_while_running = []
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and worker_thread.is_alive():
+        observed_while_running = read_run_event_entries(REDIS_URL, context.run_id)
+        if any(event.event_type == "progress" for _entry_id, event in observed_while_running):
+            break
+        time.sleep(0.05)
+    was_running_when_observed = worker_thread.is_alive()
+    worker_thread.join(timeout=15)
+    assert not worker_thread.is_alive()
+    retained = read_run_event_entries(REDIS_URL, context.run_id)
+    result = completed["result"]
+
+    assert isinstance(result, GoblinResult)
+    assert was_running_when_observed is True
+    assert any(event.event_type == "stdout" for _entry_id, event in observed_while_running)
+    assert any(event.event_type == "progress" for _entry_id, event in observed_while_running)
+    assert result.status == "success"
+    sequences = [event.sequence for _entry_id, event in retained]
+    assert sequences == sorted(set(sequences))
+    assert any(
+        event.event_type == "progress" and event.payload["percent"] == 100
+        for _entry_id, event in retained
+    )
+    assert retained[-1][1].payload == {"text": "progress run completed\n"}
 
 
 def test_docker_runtime_passes_project_env_and_secret_refs(
