@@ -22,6 +22,7 @@ from goblin_king.kubernetes_result_forwarder import RESULT_FORWARDER_SCRIPT
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
 from goblin_king.kubernetes_workload_security import apply_restricted_workload_security
 from goblin_king.resource_policies import ResourcePolicy
+from goblin_king.run_events import worker_run_event_environment
 from goblin_king.runtime_helpers import kubernetes_policy_fields, resource_policy_env
 from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
 
@@ -157,6 +158,10 @@ def _worker_container(
             {"name": "artifacts", "mountPath": "/artifacts"},
         ],
     }
+    container["env"].extend(
+        {"name": key, "value": value}
+        for key, value in worker_run_event_environment(context.run_id, redis_url).items()
+    )
     if resource_policy is not None:
         container["env"].append(
             {

@@ -6,7 +6,8 @@ from datetime import timedelta
 from pathlib import Path
 from threading import Barrier
 
-from sqlalchemy.exc import OperationalError
+import pytest
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 import goblin_king.store as store_module
 from goblin_king.contracts import (
@@ -673,6 +674,30 @@ def test_terminal_run_without_finish_is_normalized_when_persisted(tmp_path: Path
     assert persisted.finished_at == persisted.started_at
 
 
+def test_save_run_remains_insert_only_for_duplicate_runtime_ids(tmp_path: Path) -> None:
+    """Preserve the public store contract that rejects duplicate Run identities."""
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    started_at = utc_now()
+    store.save_job(
+        JobRecord(id="job-duplicate", kind="example.echo", input={}, created_at=started_at)
+    )
+    run = RunRecord(
+        id="run-duplicate",
+        job_id="job-duplicate",
+        kind="example.echo",
+        status="completed",
+        started_at=started_at,
+        finished_at=started_at,
+        result=GoblinResult.ok(data={"first": True}),
+    )
+    store.save_run(run)
+
+    with pytest.raises(IntegrityError):
+        store.save_run(run.model_copy(update={"result": GoblinResult.ok(data={"second": True})}))
+
+    assert store.get_run(run.id) == run
+
+
 def test_attempt_finalization_and_cancellation_have_one_atomic_winner(tmp_path: Path) -> None:
     """Prevent cancellation after completion from rewriting a terminal attempt."""
     store = SQLiteStore(tmp_path / "goblin.sqlite3")
@@ -710,6 +735,163 @@ def test_attempt_finalization_and_cancellation_have_one_atomic_winner(tmp_path: 
     assert terminal is not None
     assert terminal.status == "completed"
     assert changed is False
+
+
+def test_running_attempt_is_finalized_in_place_with_child_metadata(tmp_path: Path) -> None:
+    """Keep one Run identity from pre-execution visibility through terminal result storage."""
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    started_at = utc_now()
+    store.save_job(
+        JobRecord(
+            id="job-live",
+            kind="example.echo",
+            input={},
+            created_at=started_at,
+            status="running",
+            lease_owner="scheduler-a",
+            attempt_count=1,
+        )
+    )
+    running = RunRecord(
+        id="run-live",
+        job_id="job-live",
+        kind="example.echo",
+        attempt=1,
+        status="running",
+        started_at=started_at,
+    )
+    store.start_run(running)
+    terminal = running.model_copy(
+        update={
+            "status": "completed",
+            "finished_at": started_at + timedelta(milliseconds=1),
+            "result": GoblinResult.ok(
+                artifacts=[
+                    {
+                        "name": "proof.txt",
+                        "uri": "file:///proof.txt",
+                        "media_type": "text/plain",
+                    }
+                ],
+                handoff=[{"kind": "proof", "payload": {"ok": True}}],
+            ),
+        }
+    )
+
+    finalized = store.finalize_job_attempt(
+        terminal,
+        status="completed",
+        expected_lease_owner="scheduler-a",
+    )
+
+    assert finalized.outcome == "finalized"
+    assert finalized.run.id == running.id
+    assert store.list_job_runs("job-live") == [terminal]
+    assert store.list_run_artifacts(running.id)[0].name == "proof.txt"
+
+
+def test_finalizing_an_existing_terminal_run_rolls_back_the_job_transition(
+    tmp_path: Path,
+) -> None:
+    """Reject terminal rewrites without partially completing their owning job."""
+    store = SQLiteStore(tmp_path / "goblin.sqlite3")
+    started_at = utc_now()
+    store.save_job(
+        JobRecord(
+            id="job-terminal-rewrite",
+            kind="example.echo",
+            input={},
+            created_at=started_at,
+            status="running",
+            lease_owner="scheduler-a",
+            attempt_count=1,
+        )
+    )
+    terminal = RunRecord(
+        id="run-terminal-rewrite",
+        job_id="job-terminal-rewrite",
+        kind="example.echo",
+        attempt=1,
+        status="completed",
+        started_at=started_at,
+        finished_at=started_at + timedelta(milliseconds=1),
+        result=GoblinResult.ok(),
+    )
+    store.save_run(terminal)
+
+    with pytest.raises(ValueError, match="from status 'completed'"):
+        store.finalize_job_attempt(
+            terminal,
+            status="completed",
+            expected_lease_owner="scheduler-a",
+        )
+
+    job = store.get_job("job-terminal-rewrite")
+    assert job is not None
+    assert job.status == "running"
+    assert job.lease_owner == "scheduler-a"
+    assert store.get_run(terminal.id) == terminal
+
+
+@pytest.mark.parametrize("mismatch", ["job_id", "kind", "project_id", "attempt"])
+def test_finalizing_a_running_run_rejects_lineage_changes_atomically(
+    tmp_path: Path,
+    mismatch: str,
+) -> None:
+    """Keep the persisted Run and job lease unchanged after a foreign finalization."""
+    store = SQLiteStore(tmp_path / f"goblin-{mismatch}.sqlite3")
+    started_at = utc_now()
+    attempt_count = 2 if mismatch == "attempt" else 1
+    source_job = JobRecord(
+        id="job-lineage-source",
+        kind="example.echo",
+        input={},
+        created_at=started_at,
+        status="running",
+        lease_owner="scheduler-a",
+        attempt_count=attempt_count,
+    )
+    store.save_job(source_job)
+    if mismatch == "job_id":
+        store.save_job(
+            source_job.model_copy(
+                update={"id": "job-lineage-other", "attempt_count": 1}
+            )
+        )
+    running = RunRecord(
+        id="run-lineage",
+        job_id=source_job.id,
+        kind=source_job.kind,
+        attempt=1,
+        status="running",
+        started_at=started_at,
+    )
+    store.start_run(running)
+    terminal = running.model_copy(
+        update={
+            "job_id": "job-lineage-other" if mismatch == "job_id" else running.job_id,
+            "kind": "example.fail" if mismatch == "kind" else running.kind,
+            "project_id": "project-other" if mismatch == "project_id" else running.project_id,
+            "attempt": 2 if mismatch == "attempt" else running.attempt,
+            "status": "completed",
+            "finished_at": started_at + timedelta(milliseconds=1),
+            "result": GoblinResult.ok(),
+        }
+    )
+
+    with pytest.raises(ValueError, match="cannot change Run .* lineage"):
+        store.finalize_job_attempt(
+            terminal,
+            status="completed",
+            expected_lease_owner="scheduler-a",
+        )
+
+    target_job_id = terminal.job_id
+    target_job = store.get_job(target_job_id)
+    assert target_job is not None
+    assert target_job.status == "running"
+    assert target_job.lease_owner == "scheduler-a"
+    assert store.get_run(running.id) == running
 
 
 def test_stale_attempt_cannot_finalize_a_newer_lease(tmp_path: Path) -> None:

@@ -31,17 +31,28 @@ def record_unexpected_job_failure(
         ) from error
 
     prior_runs = store.list_job_runs(current.id)
+    running_run: RunRecord | None = None
     if prior_runs:
-        latest = max(prior_runs, key=lambda run: (run.attempt, run.finished_at))
-        if current.status in TERMINAL_JOB_STATUSES and latest.attempt >= current.attempt_count:
-            return latest
-        if current.status != "leased" and latest.attempt >= current.attempt_count:
-            store.finish_job(
-                current.id,
-                status=latest.status,
-                last_error=latest.error,
-            )
-            return latest
+        latest = max(
+            prior_runs,
+            key=lambda run: (
+                run.attempt,
+                run.finished_at is not None,
+                run.finished_at or run.started_at,
+            ),
+        )
+        if latest.status != "running":
+            if current.status in TERMINAL_JOB_STATUSES and latest.attempt >= current.attempt_count:
+                return latest
+            if current.status != "leased" and latest.attempt >= current.attempt_count:
+                store.finish_job(
+                    current.id,
+                    status=latest.status,
+                    last_error=latest.error,
+                )
+                return latest
+        elif latest.attempt >= current.attempt_count:
+            running_run = latest
 
     attempt = current.attempt_count
     if current.status == "leased":
@@ -54,10 +65,14 @@ def record_unexpected_job_failure(
     )
     result = GoblinResult.failed(error=message)
     resource_policy = policy_from_job_metadata(current.metadata)
-    attempt_started_at = causally_after(
-        current.created_at,
-        store.latest_event_created_at(job_id=current.id, event_type="job.running"),
-        candidate=started_at,
+    attempt_started_at = (
+        running_run.started_at
+        if running_run is not None
+        else causally_after(
+            current.created_at,
+            store.latest_event_created_at(job_id=current.id, event_type="job.running"),
+            candidate=started_at,
+        )
     )
     finished_at = causally_after(
         attempt_started_at,
@@ -65,7 +80,7 @@ def record_unexpected_job_failure(
         candidate=utc_now(),
     )
     run = RunRecord(
-        id=context.run_id,
+        id=running_run.id if running_run is not None else context.run_id,
         job_id=current.id,
         kind=current.kind,
         project_id=current.project_id,

@@ -131,6 +131,10 @@ inside the artifact root, it will not serve it.
 Use stdout/stderr for concise diagnostic logs. Put durable data in result JSON,
 artifacts, events, metrics, or handoff payloads.
 
+For user-visible progress or text that must arrive before the container exits, use the additive
+bounded [live run-event contract](live-run-events.md). Docker and Kubernetes provide the same
+run-local publisher environment; existing workers may ignore it.
+
 Longer-running workers should publish heartbeat envelopes using the heartbeat Redis
 variables. Short workers can publish `running` and `completed` heartbeats or skip
 heartbeats when the run is too brief.

@@ -15,6 +15,7 @@ from goblin_king.versions import (
     WORKER_HEARTBEAT_CONTRACT_VERSION,
     WORKER_IMAGE_MAP_SCHEMA_VERSION,
     WORKER_RESULT_CONTRACT_VERSION,
+    WORKER_RUN_EVENT_CONTRACT_VERSION,
 )
 from goblin_king.workers import WorkerImageMap
 
@@ -29,6 +30,7 @@ def test_compatibility_matrix_matches_project_ready_baseline() -> None:
     assert matrix["worker_image_map_schema_version"] == WORKER_IMAGE_MAP_SCHEMA_VERSION
     assert matrix["worker_result_contract_version"] == WORKER_RESULT_CONTRACT_VERSION
     assert matrix["worker_heartbeat_contract_version"] == WORKER_HEARTBEAT_CONTRACT_VERSION
+    assert matrix["worker_run_event_contract_version"] == WORKER_RUN_EVENT_CONTRACT_VERSION
     assert matrix["api_settings_schema_version"] == API_SETTINGS_SCHEMA_VERSION
     assert matrix["project_settings_schema_version"] == PROJECT_CONFIG_API_VERSION
     assert any(

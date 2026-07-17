@@ -29,6 +29,7 @@ from goblin_king.events import (
 )
 from goblin_king.kubernetes_runtime import KubernetesRuntime as KubernetesRuntime
 from goblin_king.resource_policies import ResourcePolicy
+from goblin_king.run_events import worker_run_event_environment
 from goblin_king.runtime_helpers import (
     artifact_policy_error,
     container_redis_url,
@@ -332,6 +333,11 @@ class DockerRuntime:
             "-e",
             f"GOBLIN_HEARTBEAT_INTERVAL_SECONDS={self.heartbeat_interval_seconds}",
         ]
+        for key, value in worker_run_event_environment(
+            context.run_id,
+            container_redis_url(self.redis_url),
+        ).items():
+            command.extend(["-e", f"{key}={value}"])
         command.extend(_docker_env_args(worker_env or {}, secret_refs or []))
         if resource_policy is not None:
             command.extend(

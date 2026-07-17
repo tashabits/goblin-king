@@ -21,6 +21,7 @@ from fastapi import (
     Response,
     Security,
     WebSocket,
+    WebSocketDisconnect,
 )
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.responses import Response as FastAPIResponse
@@ -82,6 +83,7 @@ from goblin_king.api_models import (
     RepositorySubmitResponse,
     RepositoryValidateRequest,
     RepositoryValidationResponse,
+    RunEventListResponse,
     RunListResponse,
     RuntimeCleanupRequest,
     RuntimeCleanupResponse,
@@ -135,6 +137,8 @@ from goblin_king.contracts import (
     ProjectRecord,
     RepositoryEntryRecord,
     RepositoryVersionRecord,
+    RunEventRecord,
+    RunRecord,
     ScheduleRecord,
     UserRecord,
     utc_now,
@@ -173,6 +177,11 @@ from goblin_king.notebooks import (
 from goblin_king.project import ProjectSettingsError
 from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.resource_policies import ResourcePolicyError
+from goblin_king.run_events import (
+    MAX_RUN_EVENT_READ_LIMIT,
+    RunEventTransportError,
+    read_run_event_entries,
+)
 from goblin_king.runtime import new_run_context
 from goblin_king.scheduler import next_run_after
 from goblin_king.service_websocket_drain import WebSocketDrainRegistry
@@ -649,6 +658,20 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             )
             raise HTTPException(status_code=error.status_code, detail=str(error)) from error
         return project_id
+
+    def run_for_principal(run_id: str, principal: Principal) -> RunRecord:
+        """Load one run and enforce its persisted project boundary."""
+        run = state.store.get_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+        job = state.store.get_job(run.job_id)
+        project_for_request(principal, job.project_id if job else run.project_id)
+        return run
+
+    def project_id_for_run(run: RunRecord) -> str | None:
+        """Resolve legacy Runs through their owning Job without trusting worker bytes."""
+        job = state.store.get_job(run.job_id)
+        return job.project_id if job is not None else run.project_id
 
     @app.get("/health", tags=["health"], operation_id="getHealth")
     def health() -> dict[str, str]:
@@ -3843,6 +3866,94 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         finally:
             await asyncio.to_thread(pubsub.close)
 
+    @app.get(
+        "/runs/{run_id}/events",
+        response_model=RunEventListResponse,
+        tags=["runs"],
+        operation_id="listRunEvents",
+    )
+    def list_run_events(
+        run_id: str,
+        after_sequence: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=MAX_RUN_EVENT_READ_LIMIT),
+        principal: Principal = Depends(require_principal),
+    ) -> RunEventListResponse:
+        """Replay bounded worker-authored events for one exact authorized run."""
+        run = run_for_principal(run_id, principal)
+        try:
+            entries = read_run_event_entries(
+                state.settings.redis_url,
+                run.id,
+                after_sequence=after_sequence,
+                limit=limit,
+            )
+        except RunEventTransportError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        items = [
+            RunEventRecord(
+                **event.model_dump(),
+                job_id=run.job_id,
+                project_id=project_id_for_run(run),
+            )
+            for _stream_id, event in entries
+        ]
+        return RunEventListResponse(
+            items=items,
+            meta=PageMeta(limit=limit, offset=after_sequence, count=len(items)),
+            next_sequence=items[-1].sequence if items else after_sequence,
+        )
+
+    @app.websocket("/ws/runs/{run_id}/events")
+    async def stream_run_events(websocket: WebSocket, run_id: str) -> None:
+        """Replay then stream one authorized run's retained event channel."""
+        token = websocket.query_params.get("token")
+        if token is None:
+            await websocket.close(code=1008)
+            return
+        try:
+            principal = authenticate_token(
+                state.store,
+                token,
+                bootstrap_token=state.settings.bootstrap_admin_token,
+                oidc=state.settings.oidc,
+                jupyterhub=state.settings.jupyterhub,
+            )
+            run = run_for_principal(run_id, principal)
+            after_sequence = int(websocket.query_params.get("after_sequence", "0"))
+            if after_sequence < 0:
+                raise ValueError("after_sequence must be non-negative")
+        except (AuthError, HTTPException, ValueError):
+            await websocket.close(code=1008)
+            return
+        await websocket.accept()
+        last_sequence = after_sequence
+        try:
+            while True:
+                try:
+                    entries = await asyncio.to_thread(
+                        read_run_event_entries,
+                        state.settings.redis_url,
+                        run.id,
+                        after_sequence=last_sequence,
+                        limit=MAX_RUN_EVENT_READ_LIMIT,
+                    )
+                except RunEventTransportError:
+                    await websocket.send_json({"error": "run event transport is unavailable"})
+                    await websocket.close(code=1011)
+                    return
+                for _stream_id, event in entries:
+                    record = RunEventRecord(
+                        **event.model_dump(),
+                        job_id=run.job_id,
+                        project_id=project_id_for_run(run),
+                    )
+                    await websocket.send_json(record.model_dump(mode="json"))
+                    last_sequence = record.sequence
+                if not entries:
+                    await asyncio.sleep(0.25)
+        except WebSocketDisconnect:
+            return
+
     @app.get("/heartbeats", tags=["heartbeats"], operation_id="listHeartbeats")
     def list_heartbeats(
         _principal: Principal = Depends(require_principal),
@@ -3867,12 +3978,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         principal: Principal = Depends(require_principal),
     ) -> Any:
         """Return one persisted run."""
-        run = state.store.get_run(run_id)
-        if run is None:
-            raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
-        job = state.store.get_job(run.job_id)
-        project_for_request(principal, job.project_id if job else run.project_id)
-        return run
+        return run_for_principal(run_id, principal)
 
     @app.get("/runs", response_model=RunListResponse, tags=["runs"], operation_id="listRuns")
     def list_runs(
