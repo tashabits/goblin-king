@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from goblin_king.contracts import GoblinContext
@@ -25,6 +26,10 @@ from goblin_king.resource_policies import ResourcePolicy
 from goblin_king.run_events import worker_run_event_environment
 from goblin_king.runtime_helpers import kubernetes_policy_fields, resource_policy_env
 from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
+
+_TMPFS_SIZE_PATTERN = re.compile(r"^(?P<amount>[1-9][0-9]*)(?P<unit>[kmgt]?)(?:b)?$", re.I)
+_KUBERNETES_TMPFS_SIZE_PATTERN = re.compile(r"^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$")
+_RESERVED_WORKER_MOUNT_PATHS = frozenset({"/", "/artifacts", "/goblin-config", "/goblin-result"})
 
 
 def build_kubernetes_job_manifest(
@@ -71,6 +76,11 @@ def build_kubernetes_job_manifest(
             {"name": "artifacts", "emptyDir": {}},
         ],
     }
+    _attach_worker_tmpfs_volumes(
+        pod_spec=pod_spec,
+        worker_container=worker_container,
+        resource_policy=resource_policy,
+    )
     if settings.artifact_retention is not None:
         pod_spec["volumes"].append(
             {
@@ -118,6 +128,59 @@ def build_kubernetes_job_manifest(
         "metadata": {"name": name, "labels": labels},
         "spec": spec,
     }
+
+
+def _attach_worker_tmpfs_volumes(
+    *,
+    pod_spec: dict[str, Any],
+    worker_container: dict[str, Any],
+    resource_policy: ResourcePolicy | None,
+) -> None:
+    """Translate Docker-style tmpfs declarations into bounded memory-backed volumes."""
+    if resource_policy is None:
+        return
+    mounted_paths = {
+        str(mount["mountPath"])
+        for mount in worker_container["volumeMounts"]
+        if "mountPath" in mount
+    }
+    for index, declaration in enumerate(resource_policy.filesystem.tmpfs):
+        mount_path, size_limit = _parse_tmpfs_declaration(declaration)
+        if mount_path in _RESERVED_WORKER_MOUNT_PATHS or mount_path in mounted_paths:
+            raise ValueError(f"tmpfs mount path conflicts with a runtime mount: {mount_path}")
+        volume_name = f"worker-tmpfs-{index}"
+        empty_dir: dict[str, str] = {"medium": "Memory"}
+        if size_limit is not None:
+            empty_dir["sizeLimit"] = size_limit
+        pod_spec["volumes"].append({"name": volume_name, "emptyDir": empty_dir})
+        worker_container["volumeMounts"].append({"name": volume_name, "mountPath": mount_path})
+        mounted_paths.add(mount_path)
+
+
+def _parse_tmpfs_declaration(declaration: str) -> tuple[str, str | None]:
+    """Return one absolute mount path and optional Kubernetes size quantity."""
+    raw = declaration.strip()
+    mount_path, separator, raw_options = raw.partition(":")
+    if not mount_path.startswith("/") or mount_path.endswith("/"):
+        raise ValueError(f"tmpfs mount path must be a normalized absolute path: {declaration}")
+    if any(part in {"", ".", ".."} for part in mount_path.split("/")[1:]):
+        raise ValueError(f"tmpfs mount path must be normalized: {declaration}")
+    if not separator:
+        return mount_path, None
+
+    options = [option.strip() for option in raw_options.split(",") if option.strip()]
+    if len(options) != 1 or not options[0].startswith("size="):
+        raise ValueError(
+            "Kubernetes tmpfs declarations support only one optional size=<quantity> option"
+        )
+    size = options[0].removeprefix("size=")
+    if _KUBERNETES_TMPFS_SIZE_PATTERN.fullmatch(size):
+        return mount_path, size
+    match = _TMPFS_SIZE_PATTERN.fullmatch(size)
+    if match is None:
+        raise ValueError(f"unsupported tmpfs size quantity: {size}")
+    units = {"": "", "k": "Ki", "m": "Mi", "g": "Gi", "t": "Ti"}
+    return mount_path, f"{match.group('amount')}{units[match.group('unit').lower()]}"
 
 
 def _worker_container(

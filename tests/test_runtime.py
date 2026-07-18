@@ -112,6 +112,71 @@ def test_kubernetes_job_includes_result_forwarder() -> None:
     assert {mount["name"] for mount in forwarder["volumeMounts"]} == {"result"}
 
 
+def test_kubernetes_job_maps_worker_tmpfs_to_bounded_memory_volume() -> None:
+    """Give read-only workers their declared ephemeral writable paths."""
+    workers = WorkerImageMap(
+        {"example.temp": WorkerImageDefinition(context=".", image="temp:local")},
+        root=".",
+    )
+    runtime = KubernetesRuntime(workers=workers, redis_url="redis://redis:6379/0")
+    context = GoblinContext(
+        run_id="run-tmpfs",
+        artifact_root=".goblin-king/artifacts/run-tmpfs",
+        metadata={"job_id": "job-tmpfs"},
+    )
+    policy = ResourcePolicy.model_validate(
+        {"filesystem": {"read_only_root": True, "tmpfs": ["/tmp:size=128m"]}}
+    )
+
+    manifest = runtime._job_manifest(
+        name="gk-example-temp-run-tmpfs",
+        config_name="gk-example-temp-run-tmpfs-input",
+        image="temp:local",
+        context=context,
+        worker_id="k8s-worker-run-tmpfs",
+        timeout_seconds=30,
+        resource_policy=policy,
+    )
+
+    pod_spec = manifest["spec"]["template"]["spec"]
+    worker, forwarder = pod_spec["containers"]
+    assert {
+        "name": "worker-tmpfs-0",
+        "emptyDir": {"medium": "Memory", "sizeLimit": "128Mi"},
+    } in pod_spec["volumes"]
+    assert {"name": "worker-tmpfs-0", "mountPath": "/tmp"} in worker["volumeMounts"]
+    assert "worker-tmpfs-0" not in {mount["name"] for mount in forwarder["volumeMounts"]}
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    ["tmp:size=16m", "/tmp/:size=16m", "/tmp:mode=1777", "/artifacts:size=16m"],
+)
+def test_kubernetes_job_rejects_unsafe_tmpfs_declarations(declaration: str) -> None:
+    """Reject paths or options Kubernetes cannot enforce faithfully."""
+    workers = WorkerImageMap(
+        {"example.temp": WorkerImageDefinition(context=".", image="temp:local")},
+        root=".",
+    )
+    runtime = KubernetesRuntime(workers=workers)
+    policy = ResourcePolicy.model_validate({"filesystem": {"tmpfs": [declaration]}})
+
+    with pytest.raises(ValueError, match="tmpfs"):
+        runtime._job_manifest(
+            name="gk-example-temp-invalid",
+            config_name="gk-example-temp-invalid-input",
+            image="temp:local",
+            context=GoblinContext(
+                run_id="run-invalid",
+                artifact_root=".goblin-king/artifacts/run-invalid",
+                metadata={"job_id": "job-invalid"},
+            ),
+            worker_id="k8s-worker-run-invalid",
+            timeout_seconds=30,
+            resource_policy=policy,
+        )
+
+
 def test_kubernetes_job_retains_artifacts_on_operator_pvc() -> None:
     """Mount durable storage only into the trusted forwarder with effective policy limits."""
     workers = WorkerImageMap(

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Map `filesystem.tmpfs` resource policies to worker-only, memory-backed Kubernetes
+  `emptyDir` volumes, preserve declared size bounds, and reject options the runtime cannot
+  faithfully enforce instead of silently ignoring them.
 - Preserve bounded user-worker output for ordinary Kubernetes runs before transient Job
   cleanup and emit it through `worker.container_logs`. Kubernetes marks the stream as
   combined, leaves `stderr` empty, and never presents result-forwarder diagnostics as user
