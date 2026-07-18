@@ -39,6 +39,11 @@ Service goblins are not arbitrary unmanaged daemons. They remain project or depl
 scoped, subject to validation and resource policy, and visible through service/admin/API
 surfaces.
 
+If a previously registered runtime disappears, a failed proxy connection changes that
+exact service record to `failed`, emits `service.proxy_failed`, and returns a stable
+unavailable response without exposing resolver or network internals. A later successful
+probe can return the same record to `running`; operators can also stop and replace it.
+
 ## Notebook Function Goblins
 
 A notebook function goblin is a source-authored Python function bundled from a notebook

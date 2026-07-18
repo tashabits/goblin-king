@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reconcile an unreachable managed-service proxy to an honest `failed` lifecycle state,
+  emit a bounded failure event, and keep raw resolver details out of client responses.
 - Pass registry-owned literal `metadata.env` values to Kubernetes workers through the same
   normalizer used by Docker, without exposing secret references or changing result-forwarder
   environment.
