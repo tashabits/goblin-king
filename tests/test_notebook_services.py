@@ -8,6 +8,8 @@ import subprocess
 from pathlib import Path
 from runpy import run_path
 
+import pytest
+
 from goblin_king.contracts import NotebookServiceRecord, utc_now
 from goblin_king.notebook_services import (
     NotebookServiceRuntimeManager,
@@ -47,6 +49,10 @@ def test_docker_runtime_command_uses_volume_network_and_no_socket(
 
     monkeypatch.setenv("GOBLIN_KING_DOCKER_NETWORK", "goblin-king_default")
     monkeypatch.setenv("GOBLIN_KING_DOCKER_DATA_VOLUME", "goblin-king_goblin-king-data")
+    monkeypatch.setenv(
+        "GOBLIN_KING_NOTEBOOK_SERVICE_DEPENDENCY_PROXY",
+        "http://dependency-egress-proxy:8888",
+    )
     monkeypatch.setattr("goblin_king.notebook_services.subprocess.run", fake_run)
     monkeypatch.setattr(
         "goblin_king.notebook_services.probe_http",
@@ -69,6 +75,9 @@ def test_docker_runtime_command_uses_volume_network_and_no_socket(
     assert "goblin-king_default" in run_command
     assert "/var/run/docker.sock" not in " ".join(run_command)
     assert f"goblin-king.notebook-service-kind={record.kind}" in run_command
+    assert "HTTP_PROXY=http://dependency-egress-proxy:8888" in run_command
+    assert "HTTPS_PROXY=http://dependency-egress-proxy:8888" in run_command
+    assert "NO_PROXY=127.0.0.1,localhost,.svc,.cluster.local" in run_command
     assert "goblin-king_goblin-king-data:/goblin-data:ro" in run_command
     source_env = next(
         item for item in run_command if item.startswith("GOBLIN_NOTEBOOK_SERVICE_SOURCE=")
@@ -76,8 +85,12 @@ def test_docker_runtime_command_uses_volume_network_and_no_socket(
     assert source_env.endswith(f"notebook-services/{runtime_name}/source.py")
 
 
-def test_kubernetes_runtime_manifests_are_bounded_and_hardened() -> None:
+def test_kubernetes_runtime_manifests_are_bounded_and_hardened(monkeypatch) -> None:
     """Verify generated service Pods retain the restricted workload boundary."""
+    monkeypatch.setenv(
+        "GOBLIN_KING_NOTEBOOK_SERVICE_DEPENDENCY_PROXY",
+        "http://dependency-egress-proxy:8888",
+    )
     record = _record()
     manager = NotebookServiceRuntimeManager(
         image="registry.example/goblin-king-notebook-asgi-service:tag",
@@ -131,8 +144,35 @@ def test_kubernetes_runtime_manifests_are_bounded_and_hardened() -> None:
     ]
     assert {"name": "PIP_TARGET", "value": "/tmp/goblin-service-runtime"} in container["env"]
     assert {"name": "PYTHONPATH", "value": "/tmp/goblin-service-runtime"} in container["env"]
+    assert {
+        "name": "HTTP_PROXY",
+        "value": "http://dependency-egress-proxy:8888",
+    } in container["env"]
+    assert {
+        "name": "HTTPS_PROXY",
+        "value": "http://dependency-egress-proxy:8888",
+    } in container["env"]
+    assert {
+        "name": "NO_PROXY",
+        "value": "127.0.0.1,localhost,.svc,.cluster.local",
+    } in container["env"]
     assert service["spec"]["selector"] == {"goblin-king.io/notebook-service-name": name}
     assert service["spec"]["ports"] == [{"name": "http", "port": 8080, "targetPort": 8080}]
+
+
+def test_notebook_service_dependency_proxy_rejects_embedded_credentials(monkeypatch) -> None:
+    """Keep dependency credentials out of generated container and Pod specifications."""
+    monkeypatch.setenv(
+        "GOBLIN_KING_NOTEBOOK_SERVICE_DEPENDENCY_PROXY",
+        "https://operator:secret@proxy.example:8443",
+    )
+    manager = NotebookServiceRuntimeManager(
+        image="goblin-king-notebook-asgi-service:local",
+        runtime="kubernetes",
+    )
+
+    with pytest.raises(RuntimeError, match="credential-free HTTP\\(S\\) origin"):
+        manager._deployment_manifest(_record(), "dependency-proxy-proof")
 
 
 def test_service_runner_preserves_image_path_and_exposes_target_scripts(
