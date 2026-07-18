@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib import error as urlerror
+from urllib import parse as urlparse
 from urllib import request as urlrequest
 
 from goblin_king.contracts import NotebookServiceRecord
@@ -19,6 +20,35 @@ from goblin_king.runtime_helpers import current_kubernetes_namespace, kubernetes
 RUNNER_SOURCE_PATH = "/goblin-service/source.py"
 RUNNER_REQUIREMENTS_PATH = "/goblin-service/requirements.txt"
 KUBERNETES_RUNTIME_PATH = "/tmp/goblin-service-runtime"
+DEPENDENCY_PROXY_SETTING = "GOBLIN_KING_NOTEBOOK_SERVICE_DEPENDENCY_PROXY"
+
+
+def _dependency_proxy_environment() -> dict[str, str]:
+    """Return the operator-owned proxy used only while dependencies are prepared."""
+    value = os.environ.get(DEPENDENCY_PROXY_SETTING, "").strip()
+    if not value:
+        return {}
+    parsed = urlparse.urlsplit(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise NotebookServiceRuntimeError(
+            f"{DEPENDENCY_PROXY_SETTING} must be a credential-free HTTP(S) origin"
+        )
+    origin = f"{parsed.scheme}://{parsed.hostname}"
+    if parsed.port is not None:
+        origin += f":{parsed.port}"
+    return {
+        "HTTP_PROXY": origin,
+        "HTTPS_PROXY": origin,
+        "NO_PROXY": "127.0.0.1,localhost,.svc,.cluster.local",
+    }
 
 
 def _kubernetes_service_resources() -> dict[str, dict[str, str]]:
@@ -263,6 +293,8 @@ class NotebookServiceRuntimeManager:
             command.extend(["--network", docker_network])
         else:
             command.extend(["-p", f"127.0.0.1::{record.port}"])
+        for key, value in _dependency_proxy_environment().items():
+            command.extend(["-e", f"{key}={value}"])
         command.extend(volume_args)
         command.extend([self.image, "serve"])
         completed = subprocess.run(
@@ -401,6 +433,10 @@ class NotebookServiceRuntimeManager:
 
     def _deployment_manifest(self, record: NotebookServiceRecord, name: str) -> dict[str, Any]:
         labels = self._kubernetes_labels(record, name)
+        dependency_environment = [
+            {"name": key, "value": value}
+            for key, value in _dependency_proxy_environment().items()
+        ]
         return {
             "apiVersion": "apps/v1",
             "kind": "Deployment",
@@ -443,7 +479,8 @@ class NotebookServiceRuntimeManager:
                                         "value": KUBERNETES_RUNTIME_PATH,
                                     },
                                     {"name": "PYTHONDONTWRITEBYTECODE", "value": "1"},
-                                ],
+                                ]
+                                + dependency_environment,
                                 "resources": _kubernetes_service_resources(),
                                 "securityContext": (_kubernetes_service_security_context()),
                                 "volumeMounts": [

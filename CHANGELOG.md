@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Pass one optional, credential-free operator dependency proxy into ephemeral notebook-service
+  preparation under Docker and Kubernetes, while leaving existing deployments unchanged and relying
+  on the runner to remove proxy variables before authored code starts.
 - Reconcile an unreachable managed-service proxy to an honest `failed` lifecycle state,
   emit a bounded failure event, and keep raw resolver details out of client responses.
 - Pass registry-owned literal `metadata.env` values to Kubernetes workers through the same

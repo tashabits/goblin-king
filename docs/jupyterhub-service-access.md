@@ -210,6 +210,12 @@ the service token in the ConfigMap; mount it through `service_token_env`.
 }
 ```
 
+When notebook services infer and install registry packages inside a network-restricted workload,
+set `GOBLIN_KING_NOTEBOOK_SERVICE_DEPENDENCY_PROXY` on the API process to one operator-owned,
+credential-free HTTP(S) proxy origin. Goblin King passes it to both Docker and Kubernetes service
+runtimes as `HTTP_PROXY` and `HTTPS_PROXY`; the reviewed runner must remove those variables before
+authored code starts. Omitting the setting preserves the existing runtime environment.
+
 The Helm chart exposes the same settings under `config.jupyterhub.*` and reads the
 service token from a Secret:
 
