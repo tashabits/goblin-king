@@ -46,6 +46,7 @@ def build_kubernetes_job_manifest(
     resource_policy: ResourcePolicy | None = None,
     placement: dict[str, dict[str, str]] | None = None,
     kind: str | None = None,
+    worker_env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Build a Job manifest without widening the typed runtime settings boundary."""
     worker_container = _worker_container(
@@ -56,6 +57,7 @@ def build_kubernetes_job_manifest(
         redis_url=redis_url,
         heartbeat_interval_seconds=heartbeat_interval_seconds,
         resource_policy=resource_policy,
+        worker_env=worker_env,
     )
     result_forwarder_container = _result_forwarder_container(
         context=context,
@@ -192,6 +194,7 @@ def _worker_container(
     redis_url: str,
     heartbeat_interval_seconds: int,
     resource_policy: ResourcePolicy | None,
+    worker_env: dict[str, str] | None,
 ) -> dict[str, Any]:
     container: dict[str, Any] = {
         "name": "worker",
@@ -224,6 +227,10 @@ def _worker_container(
     container["env"].extend(
         {"name": key, "value": value}
         for key, value in worker_run_event_environment(context.run_id, redis_url).items()
+    )
+    container["env"].extend(
+        {"name": key, "value": worker_env[key]}
+        for key in sorted(worker_env or {})
     )
     if resource_policy is not None:
         container["env"].append(

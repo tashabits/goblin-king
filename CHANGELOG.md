@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Pass registry-owned literal `metadata.env` values to Kubernetes workers through the same
+  normalizer used by Docker, without exposing secret references or changing result-forwarder
+  environment.
 - Map `filesystem.tmpfs` resource policies to worker-only, memory-backed Kubernetes
   `emptyDir` volumes, preserve declared size bounds, and reject options the runtime cannot
   faithfully enforce instead of silently ignoring them.
