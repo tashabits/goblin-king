@@ -1423,6 +1423,46 @@ def test_service_proxy_gates_project_access_and_strips_auth_headers(
     assert proxy_logs[0].project_id == project_a["id"]
 
 
+def test_service_proxy_marks_an_unreachable_runtime_failed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Keep durable lifecycle state honest when a runtime host disappears."""
+    client, store, _ = build_client(tmp_path)
+    created = client.post(
+        "/services/long-running",
+        json={
+            "kind": "notebook.orphaned-service",
+            "base_url": "http://missing-runtime.internal:8080",
+        },
+        headers=auth_headers(),
+    )
+    service_id = created.json()["id"]
+
+    def unreachable(*_args: object, **_kwargs: object) -> object:
+        raise OSError("synthetic resolver detail must remain internal")
+
+    monkeypatch.setattr("goblin_king.api.urlrequest.urlopen", unreachable)
+    response = client.get(
+        f"/services/long-running/{service_id}/proxy/",
+        headers=auth_headers(),
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "managed service upstream is unavailable"}
+    assert "synthetic resolver" not in response.text
+    saved = store.get_long_service(service_id)
+    assert saved is not None
+    assert saved.status == "failed"
+    assert saved.last_probe_json == {"proxy_error": "upstream_unavailable"}
+    failures = [
+        event for event in store.list_events() if event.event_type == "service.proxy_failed"
+    ]
+    assert failures
+    assert failures[-1].worker_id == service_id
+    assert failures[-1].payload == {"path": "", "reason": "upstream_unavailable"}
+
+
 def test_admin_creates_user_project_and_hashed_token(tmp_path: Path) -> None:
     """Verify admin setup creates users, projects, and hashed API tokens."""
     client, store, _ = build_client(tmp_path)

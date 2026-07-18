@@ -1451,6 +1451,11 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                 headers=_proxy_response_headers(error.headers),
             )
         except (OSError, urlerror.URLError) as error:
+            state.store.update_long_service_status(
+                service.id,
+                status="failed",
+                last_probe_json={"proxy_error": "upstream_unavailable"},
+            )
             audit(
                 state.store,
                 action=action,
@@ -1461,7 +1466,17 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
                 resource_id=resource_id,
                 detail={**detail, "error": str(error)},
             )
-            raise HTTPException(status_code=502, detail=str(error)) from error
+            state.event_bus.emit(
+                "service.proxy_failed",
+                source="api",
+                project_id=service.project_id,
+                worker_id=service.id,
+                payload={"path": path, "reason": "upstream_unavailable"},
+            )
+            raise HTTPException(
+                status_code=502,
+                detail="managed service upstream is unavailable",
+            ) from error
 
     @app.post(
         "/services/long-running/{service_id}/stop",
