@@ -125,8 +125,9 @@ source during smoke proof.
 | `port` | Optional service container port. Service workloads must set `baseUrl` or `port`. |
 | `probePath` | HTTP path used by service probes. Defaults to `/hello` and must start with `/`. |
 
-`env` is intended for literal, non-secret runtime settings. Docker workers receive
-those values as container environment variables. `secretRefs` lists environment
+`env` is intended for literal, non-secret runtime settings. Docker and Kubernetes workers receive
+those values as container environment variables. The result-forwarder container does not.
+`secretRefs` lists environment
 variable names that must already exist in the scheduler process environment. Docker
 workers receive those names by reference so secret values are copied by Docker without
 being stored in project config, job payloads, result envelopes, or Docker command

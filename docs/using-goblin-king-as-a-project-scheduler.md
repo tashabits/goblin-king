@@ -164,7 +164,8 @@ Create `goblin-king-project.json` at the project root. This example uses current
 inherits the defaults too, then overrides timeout and memory because PDF rendering needs
 more room.
 
-Use `env` only for safe literal values. Use `secretRefs` for secret environment variable
+Use `env` only for safe literal values. Docker and Kubernetes pass those literals only to the
+worker container, never to the result forwarder. Use `secretRefs` for secret environment variable
 names that already exist in the scheduler process environment. Docker workers receive
 those secret names by reference, which lets Docker copy the values into the container
 without putting the values in project config, queued job records, result payloads, or

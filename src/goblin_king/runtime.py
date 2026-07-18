@@ -38,6 +38,7 @@ from goblin_king.runtime_helpers import (
     resource_policy_env,
 )
 from goblin_king.versions import GOBLIN_CONTAINER_CONTRACT_VERSION
+from goblin_king.worker_environment import literal_worker_environment as _worker_env
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
 
 
@@ -474,18 +475,6 @@ class DockerRuntime:
             return GoblinResult.model_validate_json(result_json)
         except ValueError as error:
             return GoblinResult.failed(error=f"worker produced invalid result JSON: {error}")
-
-
-def _worker_env(definition: GoblinDefinition) -> dict[str, str]:
-    """Extract safe literal environment values from project goblin metadata."""
-    metadata_env = definition.metadata.get("env", {})
-    if not isinstance(metadata_env, dict):
-        return {}
-    return {
-        str(key): str(value)
-        for key, value in metadata_env.items()
-        if str(key) and value is not None
-    }
 
 
 def _worker_secret_refs(definition: GoblinDefinition) -> list[str]:

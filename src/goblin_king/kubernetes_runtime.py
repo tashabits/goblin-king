@@ -39,6 +39,7 @@ from goblin_king.runtime_helpers import (
     kubernetes_clients,
     kubernetes_name,
 )
+from goblin_king.worker_environment import literal_worker_environment
 from goblin_king.workers import WorkerConfigError, WorkerImageMap
 
 
@@ -164,6 +165,7 @@ class KubernetesRuntime:
                     resource_policy=resource_policy,
                     placement=placement_metadata(definition, context),
                     kind=definition.kind,
+                    worker_env=literal_worker_environment(definition),
                 ),
             )
             job_created = True
@@ -228,6 +230,7 @@ class KubernetesRuntime:
         resource_policy: ResourcePolicy | None = None,
         placement: dict[str, dict[str, str]] | None = None,
         kind: str | None = None,
+        worker_env: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Build the Kubernetes Job manifest that mirrors the Docker worker contract."""
         return build_kubernetes_job_manifest(
@@ -243,6 +246,7 @@ class KubernetesRuntime:
             resource_policy=resource_policy,
             placement=placement,
             kind=kind,
+            worker_env=worker_env,
         )
 
     def _wait_for_result(

@@ -148,6 +148,46 @@ def test_kubernetes_job_maps_worker_tmpfs_to_bounded_memory_volume() -> None:
     assert "worker-tmpfs-0" not in {mount["name"] for mount in forwarder["volumeMounts"]}
 
 
+def test_kubernetes_job_adds_only_literal_project_environment_to_worker() -> None:
+    """Keep safe project literals consistent across Docker and Kubernetes workers."""
+    workers = WorkerImageMap(
+        {"example.environment": WorkerImageDefinition(context=".", image="env:local")},
+        root=".",
+    )
+    runtime = KubernetesRuntime(workers=workers, redis_url="redis://redis:6379/0")
+    definition = GoblinDefinition(
+        kind="example.environment",
+        display_name="Environment",
+        module="container.only",
+        metadata={
+            "env": {"HTTPS_PROXY": "http://dependency-proxy:8888", "COUNT": 2},
+            "secret_refs": ["PROJECT_SECRET"],
+        },
+    )
+
+    manifest = runtime._job_manifest(
+        name="gk-example-environment",
+        config_name="gk-example-environment-input",
+        image="env:local",
+        context=GoblinContext(
+            run_id="run-environment",
+            artifact_root=".goblin-king/artifacts/run-environment",
+            metadata={"job_id": "job-environment"},
+        ),
+        worker_id="k8s-worker-run-environment",
+        timeout_seconds=30,
+        worker_env=_worker_env(definition),
+    )
+
+    worker, forwarder = manifest["spec"]["template"]["spec"]["containers"]
+    worker_environment = {entry["name"]: entry["value"] for entry in worker["env"]}
+    forwarder_environment = {entry["name"] for entry in forwarder["env"]}
+    assert worker_environment["HTTPS_PROXY"] == "http://dependency-proxy:8888"
+    assert worker_environment["COUNT"] == "2"
+    assert "PROJECT_SECRET" not in worker_environment
+    assert "HTTPS_PROXY" not in forwarder_environment
+
+
 @pytest.mark.parametrize(
     "declaration",
     ["tmp:size=16m", "/tmp/:size=16m", "/tmp:mode=1777", "/artifacts:size=16m"],
@@ -323,6 +363,7 @@ def test_kubernetes_observed_run_captures_bounded_logs_before_cleanup(monkeypatc
             kind="example.validation",
             display_name="Validation",
             module="container.only",
+            metadata={"env": {"HTTPS_PROXY": "http://dependency-proxy:8888"}},
         ),
         None,
         {"value": 1},
@@ -340,6 +381,11 @@ def test_kubernetes_observed_run_captures_bounded_logs_before_cleanup(monkeypatc
     }
     assert created["namespace"] == "proof"
     assert created["job"]["spec"]["activeDeadlineSeconds"] == 17  # type: ignore[index]
+    worker = created["job"]["spec"]["template"]["spec"]["containers"][0]  # type: ignore[index]
+    assert {
+        "name": "HTTPS_PROXY",
+        "value": "http://dependency-proxy:8888",
+    } in worker["env"]
     assert len(deleted) == 2
 
 
