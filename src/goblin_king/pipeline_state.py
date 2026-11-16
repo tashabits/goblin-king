@@ -157,6 +157,28 @@ class PipelineState:
         if (row["version"] if row else 0) != version:
             raise PipelineConflict("expected version does not match current state")
 
+    def action_receipt(self, key, fingerprint):
+        with self.store.engine.connect() as connection:
+            prior = (
+                connection.execute(select(actions).where(actions.c.key == key))
+                .mappings()
+                .one_or_none()
+            )
+        if prior:
+            if prior["fingerprint"] != fingerprint:
+                raise PipelineConflict("idempotency key conflicts")
+            return json.loads(prior["response"])
+        return None
+
+    @staticmethod
+    def attachment_identity(registration, repository_id, expected_version, actor, idempotency_key):
+        return (
+            _fingerprint([registration.project_id, "attach", idempotency_key]),
+            _fingerprint(
+                [registration.model_dump(mode="json"), repository_id, expected_version, actor]
+            ),
+        )
+
     def attach(
         self,
         registration: PipelineRegistration,
@@ -183,8 +205,9 @@ class PipelineState:
             "discovery": discovery,
             "worker": worker,
         }
-        fingerprint = _fingerprint([document, expected_version, actor])
-        action_key = _fingerprint([registration.project_id, "attach", idempotency_key])
+        action_key, fingerprint = self.attachment_identity(
+            registration, repository_id, expected_version, actor, idempotency_key
+        )
         with self.transaction() as connection:
             prior = (
                 connection.execute(select(actions).where(actions.c.key == action_key))
@@ -437,12 +460,13 @@ class PipelineState:
             with self.store.engine.connect() as connection:
                 row = self.row(connection, dispatch, key)
             job = JobRecord.model_validate(row["document"])
+            submitted = self.store.get_job(job.id) is not None
             if row["build_id"]:
                 with self.transaction() as connection:
                     build = self.row(connection, builds, row["build_id"])
                     release = self.row(connection, environments, build["document"]["release_key"])
                     registration = self.row(connection, registrations, release["registration_key"])
-                    if release["document"]["desired_build"] != row["build_id"]:
+                    if release["document"]["desired_build"] != row["build_id"] and not submitted:
                         self.cas(connection, dispatch, row, row["document"], status="superseded")
                         self.cas(
                             connection,
@@ -453,7 +477,7 @@ class PipelineState:
                             status="superseded",
                         )
                         continue
-                    if not registration["enabled"]:
+                    if not registration["enabled"] and not submitted:
                         continue
             try:
                 validate(job)

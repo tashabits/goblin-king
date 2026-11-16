@@ -189,3 +189,38 @@ def test_validation_failure_leaves_intent_pending_without_job(tmp_path):
     with pytest.raises(ValueError, match="validation"):
         state.dispatch_pending(reject)
     assert state.store.list_jobs() == []
+
+
+def test_newer_admission_preserves_unacknowledged_existing_execution(tmp_path, monkeypatch):
+    state, _, key = enabled(tmp_path)
+    first = admit(state, key)
+    submit = state.store.submit_job_once
+
+    def crash_after_submit(job):
+        submit(job)
+        raise RuntimeError("acknowledgement lost")
+
+    monkeypatch.setattr(state.store, "submit_job_once", crash_after_submit)
+    with pytest.raises(RuntimeError, match="acknowledgement lost"):
+        state.dispatch_pending(lambda job: None)
+    state.admit(
+        key,
+        source_change(commit="d" * 40, delivery_id="new-head"),
+        expected_version=2,
+        expected_cursor=first.request.source.commit,
+        verification={"pull_request": 2},
+    )
+    monkeypatch.setattr(state.store, "submit_job_once", submit)
+    state.dispatch_pending(lambda job: None)
+    assert len(state.store.list_jobs()) == 2
+    with state.store.engine.connect() as connection:
+        old = (
+            connection.execute(
+                select(pipeline_dispatch_table).where(
+                    pipeline_dispatch_table.c.build_id == first.request.build_id
+                )
+            )
+            .mappings()
+            .one()
+        )
+        assert old["status"] == "dispatched"
