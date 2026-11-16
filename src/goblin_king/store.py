@@ -77,6 +77,7 @@ from goblin_king.store_schema import (
     handoffs_table,
     heartbeats_table,
     image_promotions_table,
+    job_submissions_table,
     jobs_table,
     long_services_table,
     memberships_table,
@@ -169,6 +170,71 @@ class SQLiteStore:
                     last_error=job.last_error,
                 )
             )
+
+    def submit_job_once(self, job: JobRecord) -> tuple[JobRecord, bool]:
+        """Insert a stable submission or return it, rejecting a conflicting payload.
+
+        The immutable fingerprint survives scheduler changes to status, leases,
+        attempts, and due times. A pre-existing job without this receipt is never
+        adopted, including historical jobs created before this migration.
+        """
+        identity = job.model_dump(
+            mode="json",
+            include={
+                "kind",
+                "input",
+                "created_by",
+                "project_id",
+                "correlation_id",
+                "fanout_id",
+                "metadata",
+                "priority",
+                "schedule_id",
+                "max_retries",
+                "timeout_seconds",
+            },
+        )
+        fingerprint = json.dumps(identity, sort_keys=True, separators=(",", ":"))
+        with self.engine.connect() as connection:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+            try:
+                existing = (
+                    connection.execute(select(jobs_table).where(jobs_table.c.id == job.id))
+                    .mappings()
+                    .one_or_none()
+                )
+                receipt = connection.execute(
+                    select(job_submissions_table.c.fingerprint).where(
+                        job_submissions_table.c.job_id == job.id
+                    )
+                ).scalar_one_or_none()
+                if existing is not None:
+                    if receipt != fingerprint:
+                        raise ValueError("job ID conflicts with an existing submission")
+                    result = _row_to_job(existing)
+                    created = False
+                else:
+                    if receipt is not None:
+                        raise RuntimeError("submission receipt refers to a missing job")
+                    if job.status != "queued" or job.attempt_count or job.lease_owner:
+                        raise ValueError("new submissions must be unclaimed queued jobs")
+                    values = job.model_dump(exclude={"input", "metadata", "is_terminal"})
+                    values = {key: value for key, value in values.items() if key in jobs_table.c}
+                    values.update(
+                        input_json=json.dumps(job.input), metadata_json=json.dumps(job.metadata)
+                    )
+                    connection.execute(jobs_table.insert().values(**values))
+                    connection.execute(
+                        job_submissions_table.insert().values(
+                            job_id=job.id, fingerprint=fingerprint
+                        )
+                    )
+                    result, created = job, True
+                connection.commit()
+                return result, created
+            except Exception:
+                connection.rollback()
+                raise
 
     def save_event(self, event: EventRecord) -> None:
         """Insert one durable event while preserving the original public return contract."""

@@ -94,11 +94,20 @@ class PipelineServiceContract(_PipelineModel):
     kind: Literal["PipelineService"] = "PipelineService"
     context: str = "."
     dockerfile: str = "Dockerfile"
+    test_target: str = Field(default="test", pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+    runtime_target: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
     test_command: tuple[str, ...] = ("sh", "ci/test.sh")
+    background_command: tuple[str, ...] | None = None
+    scheduled_command: tuple[str, ...] | None = None
     port: int = Field(gt=0, le=65535, strict=True)
     health_path: str = Field(default="/health", min_length=1, max_length=2048)
 
     _paths = field_validator("context", "dockerfile")(_relative_path)
+
+    @field_validator("background_command", "scheduled_command")
+    @classmethod
+    def validate_optional_command(cls, value):
+        return cls.validate_test_command(value) if value is not None else None
 
     @field_validator("test_command")
     @classmethod

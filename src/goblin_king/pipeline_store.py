@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
@@ -57,7 +58,13 @@ class PipelineAdmissionStore:
         """Reuse the application's initialized store and additive schema migrations."""
         self.store = store
 
-    def admit(self, registration: PipelineRegistration, change: SourceChange) -> PipelineAdmission:
+    def admit(
+        self,
+        registration: PipelineRegistration,
+        change: SourceChange,
+        *,
+        transaction_hook: Callable[[Connection, PipelineAdmission], None] | None = None,
+    ) -> PipelineAdmission:
         """Atomically record approved source intent and deduplicate retried notifications.
 
         The caller must authenticate the event and authorize the operator catalog.
@@ -137,8 +144,11 @@ class PipelineAdmissionStore:
                     self._save_receipt(
                         connection, receipt_key, payload_hash, request_key, request.build_id
                     )
+                admission = PipelineAdmission(request=request, created=created)
+                if transaction_hook is not None:
+                    transaction_hook(connection, admission)
                 connection.commit()
-                return PipelineAdmission(request=request, created=created)
+                return admission
             except Exception:
                 connection.rollback()
                 raise

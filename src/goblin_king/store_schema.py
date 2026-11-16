@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlalchemy import (
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     MetaData,
@@ -34,6 +35,119 @@ pipeline_receipts_table = Table(
     Column("payload_hash", String, nullable=False),
     Column("request_key", String, nullable=False),
     Column("build_id", String, ForeignKey("pipeline_build_requests.build_id"), nullable=False),
+)
+
+pipeline_registrations_table = Table(
+    "pipeline_registrations",
+    metadata,
+    Column("key", String, primary_key=True),
+    Column("project_id", String, nullable=False, index=True),
+    Column("version", Integer, nullable=False),
+    Column("enabled", Integer, nullable=False, default=0),
+    Column("document", Text, nullable=False),
+)
+
+pipeline_reservations_table = Table(
+    "pipeline_reservations",
+    metadata,
+    Column("destination", String, primary_key=True),
+    Column("registration_key", String, nullable=False, index=True),
+)
+
+pipeline_environment_states_table = Table(
+    "pipeline_environment_states",
+    metadata,
+    Column("key", String, primary_key=True),
+    Column("registration_key", String, nullable=False, index=True),
+    Column("project_id", String, nullable=False, index=True),
+    Column("version", Integer, nullable=False),
+    Column("document", Text, nullable=False),
+)
+
+pipeline_dispatch_table = Table(
+    "pipeline_dispatch",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("build_id", String, nullable=False, index=True),
+    Column("job_id", String, nullable=False, unique=True),
+    Column("version", Integer, nullable=False),
+    Column("status", String, nullable=False, index=True),
+    Column("document", Text, nullable=False),
+)
+
+pipeline_builds_table = Table(
+    "pipeline_builds",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("project_id", String, nullable=False, index=True),
+    Column("version", Integer, nullable=False),
+    Column("status", String, nullable=False, index=True),
+    Column("document", Text, nullable=False),
+)
+
+pipeline_operations_table = Table(
+    "pipeline_operations",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("project_id", String, nullable=False, index=True),
+    Column("release_key", String, nullable=False, index=True),
+    Column("version", Integer, nullable=False),
+    Column("status", String, nullable=False, index=True),
+    Column("document", Text, nullable=False),
+)
+
+pipeline_journal_table = Table(
+    "pipeline_journal",
+    metadata,
+    Column("sequence", Integer, primary_key=True, autoincrement=True),
+    Column("project_id", String, nullable=False, index=True),
+    Column("entity", String, nullable=False),
+    Column("action", String, nullable=False),
+    Column("at", String, nullable=False),
+    Column("evidence", Text, nullable=False),
+    sqlite_autoincrement=True,
+)
+
+pipeline_actions_table = Table(
+    "pipeline_actions",
+    metadata,
+    Column("key", String, primary_key=True),
+    Column("fingerprint", String, nullable=False),
+    Column("response", Text, nullable=False),
+)
+
+pipeline_provider_cursors_table = Table(
+    "pipeline_provider_cursors",
+    metadata,
+    Column("key", String, primary_key=True),
+    Column("version", Integer, nullable=False),
+    Column("document", Text, nullable=False),
+)
+
+job_submissions_table = Table(
+    "job_submissions",
+    metadata,
+    Column("job_id", String, primary_key=True),
+    Column("fingerprint", Text, nullable=False),
+)
+
+pipeline_notifications_table = Table(
+    "pipeline_notifications",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("status", String, nullable=False, index=True),
+    Column("attempts", Integer, nullable=False, default=0),
+    Column("not_before", Float, nullable=False, default=0),
+    Column("document", Text, nullable=False),
+)
+
+pipeline_webhooks_table = Table(
+    "pipeline_webhooks",
+    metadata,
+    Column("id", String, primary_key=True),
+    Column("fingerprint", String, nullable=False),
+    Column("status", String, nullable=False, index=True),
+    Column("document", Text, nullable=False),
 )
 
 causal_sequences_table = Table(
