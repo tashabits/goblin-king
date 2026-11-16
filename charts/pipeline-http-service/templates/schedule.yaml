@@ -1,0 +1,35 @@
+{{- if .Values.scheduledCommand }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}-schedule
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  schedule: {{ .Values.schedule | quote }}
+  suspend: {{ not .Values.active }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: schedule
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 60
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/component: schedule
+        spec:
+          restartPolicy: Never
+          {{- include "pipeline.podSecurity" . | nindent 10 }}
+          containers:
+            - name: scheduled
+              command: {{ .Values.scheduledCommand | toJson }}
+              {{- include "pipeline.container" . | nindent 14 }}
+          {{- include "pipeline.volumes" . | nindent 10 }}
+{{- end }}
