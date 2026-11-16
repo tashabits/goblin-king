@@ -1,7 +1,8 @@
 # Repository Delivery Pipeline Roadmap
 
-Status: planned. This branch begins the design and acceptance work; no repository
-controller, delivery service, or cluster proof is implemented by this document.
+Status: foundation in progress. [Contracts and local durable admission](pipeline-foundation.md)
+are implemented. Repository attachment, build/deploy execution, reconciliation, and
+cluster acceptance remain planned; local admission proof is not cluster delivery proof.
 
 This roadmap defines reusable Git-driven build and release management for Goblin
 King. It is a self-contained capability for any conforming project.
@@ -224,3 +225,4 @@ Secret access is prohibited. Reference existing application secrets by name.
 The initial pilot is a test release. Existing production delivery remains in place
 until cluster failure, recovery, isolation, and rollback evidence passes. This
 roadmap does not claim compliance certification or production readiness.
+

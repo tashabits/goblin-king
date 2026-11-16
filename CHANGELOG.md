@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add reusable pipeline service/catalog contracts and durable, duplicate-safe source
+  admission. This foundation records build intent without starting workers or deployments.
 - Pass one optional, credential-free operator dependency proxy into ephemeral notebook-service
   preparation under Docker and Kubernetes, while leaving existing deployments unchanged and relying
   on the runner to remove proxy variables before authored code starts.

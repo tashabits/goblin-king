@@ -1,0 +1,36 @@
+{
+  "apiVersion": "goblin-king/pipeline-catalog/v1alpha1",
+  "kind": "PipelineCatalog",
+  "registrations": [
+    {
+      "project_id": "sample-project",
+      "service_id": "sample-api",
+      "provider": "github",
+      "source_repository": "example/sample-api",
+      "pipeline_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "catalog_revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "environments": [
+        {
+          "name": "test",
+          "branch": "test",
+          "target": "local-cluster",
+          "namespace": "sample-test",
+          "release": "sample-api-test",
+          "deployment_profile": "http-service",
+          "image_repository": "registry.example/sample-test/app",
+          "active": false
+        },
+        {
+          "name": "prod",
+          "branch": "prod",
+          "target": "local-cluster",
+          "namespace": "sample-prod",
+          "release": "sample-api",
+          "deployment_profile": "http-service",
+          "image_repository": "registry.example/sample-prod/app",
+          "active": true
+        }
+      ]
+    }
+  ]
+}

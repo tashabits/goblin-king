@@ -16,6 +16,26 @@ from sqlalchemy import (
 
 metadata = MetaData()
 
+pipeline_build_requests_table = Table(
+    "pipeline_build_requests",
+    metadata,
+    Column("sequence", Integer, primary_key=True, autoincrement=True),
+    Column("build_id", String, nullable=False, unique=True),
+    Column("request_key", String, nullable=False, unique=True),
+    Column("project_id", String, nullable=False, index=True),
+    Column("snapshot_json", Text, nullable=False),
+    sqlite_autoincrement=True,
+)
+
+pipeline_receipts_table = Table(
+    "pipeline_receipts",
+    metadata,
+    Column("receipt_key", String, primary_key=True),
+    Column("payload_hash", String, nullable=False),
+    Column("request_key", String, nullable=False),
+    Column("build_id", String, ForeignKey("pipeline_build_requests.build_id"), nullable=False),
+)
+
 causal_sequences_table = Table(
     "causal_sequences",
     metadata,
