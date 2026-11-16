@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Event, Thread
+from types import SimpleNamespace
 
 from goblin_king.contracts import (
     GoblinDefinition,
@@ -927,9 +928,15 @@ def test_failing_goblin_retries_then_fails(tmp_path: Path) -> None:
     assert [event.sequence for event in events] == sorted(event.sequence for event in events)
 
 
-def test_timeout_configuration_marks_overdue_run(tmp_path: Path) -> None:
+def test_timeout_configuration_marks_overdue_run(tmp_path: Path, monkeypatch) -> None:
     """Verify timeout metadata can mark a completed in-process call as timed out."""
     now = datetime(2026, 6, 9, 12, 0, tzinfo=UTC)
+    # A fast call can finish in one Windows monotonic-clock tick. Control elapsed
+    # time locally so this tests an overdue call independently of clock resolution.
+    ticks = iter((100.0, 102.0))
+    monkeypatch.setattr(
+        "goblin_king.scheduler.time", SimpleNamespace(monotonic=lambda: next(ticks))
+    )
     scheduler, store = build_scheduler(tmp_path)
     store.save_schedule(
         ScheduleRecord(
@@ -939,7 +946,7 @@ def test_timeout_configuration_marks_overdue_run(tmp_path: Path) -> None:
             cron="* * * * *",
             created_at=now,
             next_run_at=now,
-            timeout_seconds=0,
+            timeout_seconds=1,
         )
     )
 

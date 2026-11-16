@@ -4,6 +4,11 @@ Status: foundation in progress. [Contracts and local durable admission](pipeline
 are implemented. Repository attachment, build/deploy execution, reconciliation, and
 cluster acceptance remain planned; local admission proof is not cluster delivery proof.
 
+The [single-node storage mode](pipeline-storage.md) and executable cluster harness
+now have installation, pod replacement, upgrade, HTTP persistence, and backup-restore
+evidence. The [state and transaction design](pipeline-state-design.md) defines the
+remaining controller boundaries; those state machines are not implemented yet.
+
 This roadmap defines reusable Git-driven build and release management for Goblin
 King. It is a self-contained capability for any conforming project.
 The reusable implementation stays Apache-2.0. Organization-specific repository
@@ -88,10 +93,13 @@ hard-code an adopter's organization or cloud account.
 
 ## Cluster foundation comes first
 
-The current Helm deployment uses a shared SQLite path and a ReadWriteOnce PVC.
+The Helm deployment uses a shared SQLite path and a ReadWriteOnce PVC.
 API, scheduler, and optional repository components mount that data volume.
 Increasing replicas or installing on a multi-node cluster does not by itself
 establish safe storage access or high availability.
+The opt-in `sqlite-single-node` mode now pins storage clients to one explicit
+hostname, limits each to one replica, rejects autoscaling, and uses Recreate updates.
+Legacy values remain available without these additional guarantees.
 
 Before advertising cluster delivery:
 

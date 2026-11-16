@@ -27,6 +27,11 @@ Record:
 
 ## Kubernetes Image Settings
 
+For the delivery foundation's opt-in `sqlite-single-node` storage mode, follow the
+[storage migration and recovery guidance](pipeline-storage.md) before changing
+existing placement. Legacy values remain renderable; multiple replicas do not
+establish SQLite high availability.
+
 Existing tag-only chart values and Python constructor calls remain valid. New installs
 should set `image.digest` when an immutable control-plane identity is available. With no
 `scheduler.resultForwarder.image` override, the chart passes that exact rendered image

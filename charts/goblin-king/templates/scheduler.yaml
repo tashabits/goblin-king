@@ -45,6 +45,10 @@ kind: Deployment
 metadata:
   name: {{ include "goblin-king.fullname" . }}-scheduler
 spec:
+  {{- if eq .Values.persistence.topology "sqlite-single-node" }}
+  strategy:
+    type: Recreate
+  {{- end }}
   {{- if not .Values.scheduler.autoscaling.enabled }}
   replicas: {{ .Values.scheduler.replicas }}
   {{- end }}
@@ -139,5 +143,5 @@ spec:
         {{- with .Values.project.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- include "goblin-king.podPlacement" .Values.scheduler | nindent 6 }}
+      {{- include "goblin-king.storagePlacement" (dict "root" . "component" "scheduler") | nindent 6 }}
 {{- end }}

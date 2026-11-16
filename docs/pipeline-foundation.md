@@ -81,10 +81,12 @@ Callers must consume persisted requests after restart, not rely solely on the
 `created` return flag. There is no dispatch acknowledgement or worker claim yet;
 adding the next stage requires a durable claim/outbox protocol. Source deduplication
 is not a substitute for deployment locking or stale-build rejection.
+The [state and transaction design](pipeline-state-design.md) specifies these next
+boundaries and distinguishes planned transitions from implemented admission.
 
 ## Local proof
 
-See the [recorded local results and blocked checks](proofs/pipeline-foundation.md).
+See the [recorded local and cluster results](proofs/pipeline-foundation.md).
 
 From an editable installation at the repository root:
 
@@ -104,6 +106,11 @@ To generate schemas for an adopter's validation tools, use
 alpha interfaces and may evolve while the delivery controller is developed.
 
 ## Remaining cluster work
+
+The [single-node storage mode and executable cluster proof](pipeline-storage.md)
+now cover installation, colocated persistence clients, pod replacement, a Helm
+upgrade, and an independently restored SQLite backup. Legacy chart values remain
+available for compatibility; delivery installations must select the explicit mode.
 
 This adapter inherits the existing local SQLite transaction model. It does not
 establish distributed storage, high availability, release locks, Kubernetes worker

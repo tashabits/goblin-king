@@ -152,6 +152,9 @@ redis:
   affinity: {}
 
 persistence:
+  # Legacy preserves existing installations; delivery requires sqlite-single-node.
+  topology: legacy
+  sqliteNode: ""
   enabled: true
   size: 1Gi
   storageClassName: ""

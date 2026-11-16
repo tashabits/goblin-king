@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add an opt-in single-node SQLite Helm topology with replica/placement guards,
+  API health probes, and an executable cluster persistence and backup proof.
 - Add reusable pipeline service/catalog contracts and durable, duplicate-safe source
   admission. This foundation records build intent without starting workers or deployments.
 - Pass one optional, credential-free operator dependency proxy into ephemeral notebook-service

@@ -4,6 +4,10 @@ kind: Deployment
 metadata:
   name: {{ include "goblin-king.fullname" . }}-api
 spec:
+  {{- if eq .Values.persistence.topology "sqlite-single-node" }}
+  strategy:
+    type: Recreate
+  {{- end }}
   {{- if not .Values.api.autoscaling.enabled }}
   replicas: {{ .Values.api.replicas }}
   {{- end }}
@@ -32,6 +36,22 @@ spec:
           {{- include "goblin-king.containerSecurityContext" . | nindent 10 }}
           ports:
             - containerPort: {{ .Values.api.port }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.api.port }}
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.api.port }}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.api.port }}
+            periodSeconds: 10
           env:
             - name: GOBLIN_KING_BOOTSTRAP_ADMIN_TOKEN
               {{- if .Values.api.existingSecret }}
@@ -99,7 +119,7 @@ spec:
         {{- with .Values.project.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- include "goblin-king.podPlacement" .Values.api | nindent 6 }}
+      {{- include "goblin-king.storagePlacement" (dict "root" . "component" "api") | nindent 6 }}
 ---
 apiVersion: v1
 kind: Service
