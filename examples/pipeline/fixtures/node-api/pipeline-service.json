@@ -1,0 +1,12 @@
+{
+  "apiVersion": "goblin-king/pipeline-service/v1alpha1",
+  "kind": "PipelineService",
+  "context": ".",
+  "dockerfile": "Dockerfile",
+  "test_target": "test",
+  "test_command": ["node", "--test", "test.mjs"],
+  "background_command": ["node", "app.mjs", "--background"],
+  "scheduled_command": ["node", "app.mjs", "--work-once"],
+  "port": 8080,
+  "health_path": "/health"
+}

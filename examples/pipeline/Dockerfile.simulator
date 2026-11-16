@@ -1,0 +1,6 @@
+ARG CONTROL_PLANE_IMAGE=goblin-king:pipeline-dev
+FROM ${CONTROL_PLANE_IMAGE}
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+ENTRYPOINT ["python", "-m", "examples.pipeline.provider_simulator"]
