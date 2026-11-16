@@ -4,8 +4,7 @@ Status: planned. This branch begins the design and acceptance work; no repositor
 controller, delivery service, or cluster proof is implemented by this document.
 
 This roadmap defines reusable Git-driven build and release management for Goblin
-King. It follows the deployment requirements discussed in
-[the deployment proposal](https://github.com/engageLively/coreshell-drive-deployment/issues/26).
+King. It is a self-contained capability for any conforming project.
 The reusable implementation stays Apache-2.0. Organization-specific repository
 registrations, cloud resources, credentials, data destinations, and application
 charts belong to adopting projects.
