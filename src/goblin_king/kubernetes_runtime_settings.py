@@ -35,6 +35,7 @@ class KubernetesRuntimeSettings(BaseModel):
         DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
     )
     workload_image_pull_secret_names: tuple[str, ...] = ()
+    redis_secret_name: str | None = None
     workload_security_profile: KubernetesWorkloadSecurityProfile = "legacy"
     restricted_workload: KubernetesRestrictedWorkloadSettings = Field(
         default_factory=KubernetesRestrictedWorkloadSettings
@@ -70,6 +71,11 @@ class KubernetesRuntimeSettings(BaseModel):
                 names.append(normalized)
         return tuple(names)
 
+    @field_validator("redis_secret_name")
+    @classmethod
+    def validate_redis_secret(cls, value):
+        return kubernetes_object_name(value, field_name="Redis Secret") if value else None
+
     def effective_workload_security(self, kind: str | None) -> dict[str, object]:
         """Expose the effective versioned security contract for validation proof."""
         if self.workload_security_profile == "legacy":
@@ -93,9 +99,12 @@ class KubernetesRuntimeSettings(BaseModel):
     def validation_image_identity(self, image: str, kind: str | None) -> str:
         """Bind restricted validation proof to its effective security contract."""
         base = f"kubernetes:{image}"
-        if self.workload_security_profile == "legacy" and self.artifact_retention is None:
+        if (self.workload_security_profile == "legacy" and self.artifact_retention is None
+                and self.redis_secret_name is None):
             return base
         contract: dict[str, object] = self.effective_workload_security(kind)
+        if self.redis_secret_name:
+            contract = {**contract, "redis_secret_name": self.redis_secret_name}
         if self.artifact_retention is not None:
             contract = {
                 "workload_security": contract,

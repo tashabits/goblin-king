@@ -83,6 +83,13 @@ def build_kubernetes_job_manifest(
         worker_container=worker_container,
         resource_policy=resource_policy,
     )
+    if settings.redis_secret_name:
+        for container in pod_spec["containers"]:
+            for item in container.get("env", []):
+                if item["name"] in {"GOBLIN_REDIS_URL", "GOBLIN_HEARTBEAT_REDIS_URL"}:
+                    item.pop("value", None)
+                    item["valueFrom"] = {"secretKeyRef": {
+                        "name": settings.redis_secret_name, "key": "redis-url"}}
     if settings.artifact_retention is not None:
         pod_spec["volumes"].append(
             {

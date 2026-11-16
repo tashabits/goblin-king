@@ -123,6 +123,12 @@ class KubernetesRuntime:
         _capture_diagnostics: bool = True,
     ) -> KubernetesRunObservation:
         """Run one Job and capture bounded diagnostics before transient cleanup."""
+        if definition.kind.startswith("pipeline.") and context.metadata.get("pipeline"):
+            from goblin_king.pipeline_runtime import run_retained_worker
+
+            return run_retained_worker(
+                self, definition, input_payload, context, timeout_seconds, resource_policy
+            )
         try:
             worker = self.workers.get(definition.kind)
         except WorkerConfigError as error:
