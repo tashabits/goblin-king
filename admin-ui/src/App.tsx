@@ -29,6 +29,7 @@ import {
   usefulServicesFirst,
 } from "./adminData";
 import { EffectivePolicy, Table } from "./components";
+import { PipelinePanel } from "./PipelinePanel";
 import type {
   AdminConfig,
   ArtifactCleanupResponse,
@@ -493,6 +494,7 @@ export function App() {
       onRefresh={refreshAll}
     >
         <DashboardPanel counts={counts} />
+        <PipelinePanel api={api} />
 
         <GoblinLabPanel
           goblins={goblins}

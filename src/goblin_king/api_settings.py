@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from goblin_king.jsonio import read_json_file
 from goblin_king.kubernetes_runtime_settings import KubernetesRuntimeSettings
+from goblin_king.pipeline_settings import PipelineSettings
 
 
 class ApiSettingsError(ValueError):
@@ -91,6 +92,7 @@ class ApiSettings(BaseModel):
     oidc: OidcSettings = Field(default_factory=OidcSettings)
     jupyterhub: JupyterHubSettings = Field(default_factory=JupyterHubSettings)
     repository: RepositorySettings = Field(default_factory=RepositorySettings)
+    pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
     service_websocket_proxy: ServiceWebSocketProxySettings = Field(
         default_factory=ServiceWebSocketProxySettings
     )
@@ -117,6 +119,9 @@ class ApiSettings(BaseModel):
             ) from error
 
         token = os.environ.get("GOBLIN_KING_API_TOKEN")
+        redis_url = os.environ.get("GOBLIN_KING_REDIS_URL")
+        if redis_url:
+            payload["redis_url"] = redis_url
         if token:
             payload["auth_token"] = token
             payload["bootstrap_admin_token"] = token

@@ -124,6 +124,7 @@ export function AdminShell({
 }) {
   const navItems = [
     "Dashboard",
+    "Delivery",
     "Goblin Lab",
     "Task Board",
     "Schedules",

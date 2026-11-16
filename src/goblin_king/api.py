@@ -2202,6 +2202,8 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
         repository_version: RepositoryVersionRecord | None = None,
     ) -> JobRecord:
         """Queue a registry or notebook-backed job with consistent metadata."""
+        if request.kind.startswith("pipeline."):
+            raise HTTPException(403, "pipeline workers require verified delivery admission")
         notebook_record = None
         try:
             definition = state.registry.get(request.kind)
@@ -4066,4 +4068,7 @@ def create_app(settings: ApiSettings | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=f"artifact file not found: {artifact_name}")
         return FileResponse(path, media_type=artifact.media_type, filename=artifact.name)
 
+    from goblin_king.pipeline_api import install_pipeline_api
+
+    install_pipeline_api(app, state, require_principal, project_for_request)
     return app
