@@ -1,6 +1,7 @@
 """Authenticate bounded Kubernetes identities against retained execution ownership."""
 
 import json
+import time
 from uuid import NAMESPACE_URL, uuid5
 
 from kubernetes import client
@@ -33,10 +34,24 @@ def verify_execution_identity(token, operation, core, namespace):
     stable_id = str(
         uuid5(NAMESPACE_URL, "goblin-king/execution/" + operation["document"]["job_id"])
     )
-    ledger = json.loads(
-        core.read_namespaced_config_map("pipeline-" + stable_id, namespace).data["execution.json"]
-    )
-    job_uid = ledger["stages"]["worker"]["uid"]
+    # A Pod can start before the Job creation response is durably acknowledged.
+    # Keep authority closed while that original identity is being recorded.
+    deadline = time.monotonic() + 5
+    while True:
+        ledger = json.loads(
+            core.read_namespaced_config_map("pipeline-" + stable_id, namespace).data[
+                "execution.json"
+            ]
+        )
+        job_uid = ledger["stages"]["worker"]["uid"]
+        if job_uid is not None:
+            break
+        if time.monotonic() >= deadline:
+            raise PipelineConflict("execution Job identity has not been acknowledged")
+        time.sleep(0.1)
+    pod = core.read_namespaced_pod(names[0], namespace)
+    if pod.metadata.uid != uids[0] or pod.metadata.deletion_timestamp:
+        raise PipelineConflict("execution Pod identity changed or is terminating")
     if not any(
         ref.kind == "Job" and ref.uid == job_uid for ref in pod.metadata.owner_references or []
     ):

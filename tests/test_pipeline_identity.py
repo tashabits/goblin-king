@@ -7,8 +7,76 @@ from unittest.mock import Mock
 import pytest
 from kubernetes.client.exceptions import ApiException
 
-from goblin_king.pipeline_identity import terminated_build, terminated_execution
+from goblin_king.pipeline_identity import (
+    terminated_build,
+    terminated_execution,
+    verify_execution_identity,
+)
 from goblin_king.pipeline_state import PipelineConflict
+
+
+def claim_identity(monkeypatch, ledgers):
+    core = Mock()
+    pod = NS(
+        metadata=NS(
+            uid="pod-uid", deletion_timestamp=None, owner_references=[NS(kind="Job", uid="job-uid")]
+        )
+    )
+    core.read_namespaced_pod.return_value = pod
+    core.read_namespaced_config_map.side_effect = [
+        NS(data={"execution.json": json.dumps({"stages": {"worker": {"uid": uid}}})})
+        for uid in ledgers
+    ]
+    authentication = Mock()
+    authentication.create_token_review.return_value = NS(
+        status=NS(
+            authenticated=True,
+            user=NS(
+                username="system:serviceaccount:control:pipeline-deploy-test",
+                extra={
+                    "authentication.kubernetes.io/pod-name": ["execution-pod"],
+                    "authentication.kubernetes.io/pod-uid": ["pod-uid"],
+                },
+            ),
+        )
+    )
+    monkeypatch.setattr(
+        "goblin_king.pipeline_identity.client.AuthenticationV1Api", lambda: authentication
+    )
+    operation = {
+        "document": {"job_id": "operation-job", "execution": {"environment": {"name": "test"}}}
+    }
+    return core, pod, operation
+
+
+def test_claim_waits_for_original_job_identity_acknowledgement(monkeypatch):
+    core, _, operation = claim_identity(monkeypatch, [None, "job-uid"])
+    assert verify_execution_identity("bound-token", operation, core, "control") == "pod-uid"
+    assert core.read_namespaced_config_map.call_count == 2
+
+
+def test_claim_rejects_recorded_identity_mismatch_without_waiting(monkeypatch):
+    core, _, operation = claim_identity(monkeypatch, ["another-job"])
+    with pytest.raises(PipelineConflict, match="does not belong"):
+        verify_execution_identity("bound-token", operation, core, "control")
+    assert core.read_namespaced_config_map.call_count == 1
+
+
+def test_claim_stays_closed_when_identity_acknowledgement_never_arrives(monkeypatch):
+    core, _, operation = claim_identity(monkeypatch, [None])
+    ticks = iter([0, 5])
+    monkeypatch.setattr("goblin_king.pipeline_identity.time.monotonic", lambda: next(ticks))
+    with pytest.raises(PipelineConflict, match="has not been acknowledged"):
+        verify_execution_identity("bound-token", operation, core, "control")
+    assert core.read_namespaced_config_map.call_count == 1
+
+
+def test_claim_rechecks_live_pod_after_identity_acknowledgement(monkeypatch):
+    core, pod, operation = claim_identity(monkeypatch, [None, "job-uid"])
+    terminating = NS(metadata=NS(uid="pod-uid", deletion_timestamp="deleting"))
+    core.read_namespaced_pod.side_effect = [pod, terminating]
+    with pytest.raises(PipelineConflict, match="terminating"):
+        verify_execution_identity("bound-token", operation, core, "control")
 
 
 def evidence():

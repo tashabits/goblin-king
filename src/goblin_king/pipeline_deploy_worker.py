@@ -38,7 +38,14 @@ def deploy(payload):
         with urlopen(request, timeout=15) as response:
             claim = json.load(response)
     except HTTPError as error:
-        raise RecoveryHold("release claim was rejected: HTTP " + str(error.code)) from None
+        detail = ""
+        try:
+            body = json.loads(error.read(4096))
+            if isinstance(body, dict) and isinstance(body.get("detail"), str):
+                detail = ": " + body["detail"][:240]
+        except (ValueError, OSError):
+            pass
+        raise RecoveryHold("release claim was rejected: HTTP " + str(error.code) + detail) from None
     if claim.get("superseded"):
         return GoblinResult.ok(data={"superseded": True})
     if claim != payload:
