@@ -27,7 +27,7 @@ from goblin_king.workers import WorkerImageDefinition, WorkerImageMap
 
 REDIS_CONTAINER = "goblin-king-test-redis"
 REDIS_PORT = 6380
-REDIS_URL = f"redis://localhost:{REDIS_PORT}/0"
+REDIS_URL = f"redis://127.0.0.1:{REDIS_PORT}/0"
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -48,7 +48,7 @@ def redis_container() -> str:
             "--name",
             REDIS_CONTAINER,
             "-p",
-            f"{REDIS_PORT}:6379",
+            f"127.0.0.1:{REDIS_PORT}:6379",
             "redis:7-alpine",
         ],
         check=True,
