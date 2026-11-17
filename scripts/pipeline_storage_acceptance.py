@@ -78,6 +78,43 @@ def node_outage(delivery):
     ):
         raise RuntimeError("outage requires both active SQLite services pinned to the source node")
     container_id = inspected["Id"]
+    caches = json.loads(
+        proof.kube(
+            "-n", delivery.control, "get", "pods", "-l", "app=pipeline-image-cache", "-o", "json"
+        )
+    )["items"]
+    observer = next(pod for pod in caches if pod["spec"]["nodeName"] != source)
+
+    def api_health():
+        script = """
+import json,sys
+from urllib.request import urlopen
+try:
+    with urlopen(json.load(sys.stdin)['url'],timeout=3) as response:
+        print(json.dumps({'available':response.status==200,'status':response.status}))
+except Exception as error:
+    print(json.dumps({'available':False,'error':type(error).__name__}))
+"""
+        return json.loads(
+            proof.kube(
+                "-n",
+                delivery.control,
+                "exec",
+                "-i",
+                observer["metadata"]["name"],
+                "-c",
+                "controller",
+                "--",
+                "python",
+                "-c",
+                script,
+                document={"url": f"http://delivery-api.{delivery.control}.svc:8000/health"},
+            )
+        )
+
+    health_before = api_health()
+    if not health_before["available"]:
+        raise RuntimeError("outage observer cannot reach the healthy API before interruption")
     guard = subprocess.Popen(
         [
             sys.executable,
@@ -98,6 +135,7 @@ def node_outage(delivery):
         "node_uid": node["metadata"]["uid"],
         "container_id": container_id,
         "before_jobs": [item["metadata"]["uid"] for item in before],
+        "health_before": health_before,
     }
     try:
         proof.command(["docker", "pause", container_id])
@@ -126,6 +164,11 @@ def node_outage(delivery):
             raise RuntimeError("SQLite writer moved to another node during loss")
         evidence["held_writer_pods"] = writer_pods
         evidence["during_jobs"] = [item["metadata"]["uid"] for item in during]
+        evidence["health_during"] = api_health()
+        if evidence["health_during"]["available"]:
+            raise RuntimeError(
+                "delivery API remained available after its sole storage node stopped"
+            )
     finally:
         state = json.loads(proof.command(["docker", "inspect", container_id]))[0]
         if state["State"]["Paused"]:
@@ -147,6 +190,18 @@ def node_outage(delivery):
             "--timeout=90s",
         )
     evidence["recovered_node"] = ready()[0]
+    evidence["health_recovery_attempts"] = []
+    deadline = time.monotonic() + 90
+    while True:
+        observed = api_health()
+        evidence["health_recovery_attempts"].append(observed)
+        if observed["available"]:
+            evidence["health_after"] = observed
+            break
+        if time.monotonic() >= deadline:
+            delivery.save("storage-outage", evidence)
+            raise RuntimeError("delivery API route did not recover after the node resumed")
+        time.sleep(3)
     delivery.save("storage-outage", evidence)
     return evidence
 
@@ -155,6 +210,7 @@ def prove_storage_recovery(delivery):
     proof = delivery.proof
     output = delivery.output / "storage"
     recovery = StorageRecovery(proof.state["context"], delivery.control, "delivery", output)
+
     def inventory():
         result = recovery.inventory()
         if "registrations" not in result:
