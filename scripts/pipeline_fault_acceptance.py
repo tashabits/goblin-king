@@ -466,6 +466,17 @@ print(json.dumps({'previous':head,'commit':commit,'path':path,'content':content}
             record["build"] = self.delivery.build(record["delivery"])
             if record["build"]["status"] not in {"failed", "held"}:
                 raise RuntimeError("interrupted publication or sandbox was accepted as successful")
+            if record["build"]["status"] == "held":
+                record["build_recovery"] = self.delivery.request(
+                    f"/pipeline/builds/{record['build']['id']}/recover",
+                    {
+                        "expected_version": record["build"]["version"],
+                        "idempotency_key": record["id"] + "-settle-terminated-build",
+                    },
+                )
+                record["recovered_build"] = self.delivery.build(record["delivery"])
+                if record["recovered_build"]["status"] != "failed":
+                    raise RuntimeError("terminated held build did not settle without publication")
             record["registry"] = self.registry_observation(record)
             expected = 200 if point == "registry.after_manifest" else 404
             if record["registry"]["status"] != expected:

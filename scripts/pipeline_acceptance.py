@@ -135,8 +135,52 @@ class Acceptance:
         self.state["revision"] = self.command(["git", "rev-parse", "HEAD"]).strip()
         self.state["source_status"] = self.command(["git", "status", "--porcelain"])
         self.state["baseline"] = self.baseline(exclude_acceptance=True)
+        self.state["baseline_health"] = self.workload_health()
         self.state["nodes"] = json.loads(self.kube("get", "nodes", "-o", "json"))
         self.save()
+
+    def workload_health(self):
+        items = json.loads(
+            self.kube("get", "deployments,statefulsets,daemonsets", "-A", "-o", "json")
+        )["items"]
+        baseline = self.state["baseline"]
+        return {
+            item["metadata"]["uid"]: {
+                "kind": item["kind"],
+                "namespace": item["metadata"]["namespace"],
+                "name": item["metadata"]["name"],
+                "ready": item.get("status", {}).get(
+                    "numberReady" if item["kind"] == "DaemonSet" else "readyReplicas", 0
+                ),
+            }
+            for item in items
+            if item["metadata"]["uid"] in baseline
+        }
+
+    def verify_baseline_health(self):
+        expected = self.state.get("baseline_health")
+        if expected is None:
+            raise RuntimeError(
+                "baseline workload health was not recorded; use a fresh acceptance run"
+            )
+        deadline = time.monotonic() + 180
+        while True:
+            current = self.workload_health()
+            unhealthy = [
+                entry
+                for uid, entry in expected.items()
+                if uid not in current or current[uid]["ready"] < entry["ready"]
+            ]
+            if not unhealthy:
+                (self.output / "preserved-workload-health.json").write_text(
+                    json.dumps({"before": expected, "after": current}, indent=2), encoding="utf-8"
+                )
+                return
+            if time.monotonic() > deadline:
+                raise RuntimeError(
+                    "unrelated workloads did not regain baseline health: " + str(unhealthy)
+                )
+            time.sleep(3)
 
     def namespace(self, purpose):
         if purpose in self.state["namespaces"]:
@@ -364,6 +408,7 @@ class Acceptance:
         changed = [v for uid, v in self.state["baseline"].items() if current.get(uid) != v]
         if changed:
             raise RuntimeError(f"unrelated resources changed: {changed}")
+        self.verify_baseline_health()
         self.state["cleanup_evidence"] = {
             "preserved": len(self.state["baseline"]),
             "at": datetime.now(UTC).isoformat(),
