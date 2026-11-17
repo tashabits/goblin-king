@@ -1,0 +1,149 @@
+{
+  "runtime": "helm",
+  "acceptance_run_id": "50e59391-04f2-4b13-8377-a955508f46b2",
+  "revision": "f7c4d3aed056c636d18ebed6f3775420bc5c8eda",
+  "source_sha256": "b1a7d3228b9108234cfedbf157dfad3944cc8b76422017aecb57b8f9b780b32f",
+  "jobs": {
+    "example.artifact": {
+      "job_id": "76d76a36-b8ca-487b-a66d-9de0fe65feec",
+      "run_id": "587e42a0-b85b-4ddc-a0b8-5cfc8183220f",
+      "result": "completed"
+    },
+    "example.behavior-go-transform": {
+      "job_id": "231bc8a3-0c51-4528-8cd8-76abd2705276",
+      "run_id": "e1b4990c-74c2-491c-ab61-f56e3e30752a",
+      "result": "completed"
+    },
+    "example.behavior-node-artifact": {
+      "job_id": "713a5b8f-11a2-4c44-bfd0-e5496c7f03ab",
+      "run_id": "03c2a9ed-55d8-4b62-b287-06bd6ca8b645",
+      "result": "completed"
+    },
+    "example.behavior-python-progress": {
+      "job_id": "9063be6f-944b-4eb7-a2a7-23fe13f6f59e",
+      "run_id": "096c2115-26b8-44ae-993f-a1fc996c7973",
+      "result": "completed"
+    },
+    "example.behavior-python-slow-cancellable": {
+      "job_id": "ff54a5ed-640e-492f-94b1-7757bb4669d7",
+      "run_id": "2058b08b-9503-4dab-aa3f-f53488e4ae92",
+      "result": "completed"
+    },
+    "example.behavior-shell-failure": {
+      "job_id": "1ac8278b-ec95-4058-89ae-305477beb774",
+      "run_id": "493d8ada-1ffa-4a9a-8cdf-28d69b7b3dd0",
+      "result": "documented controlled failure"
+    },
+    "example.behavior-wasi-c-context": {
+      "job_id": "afbd08b9-665a-4efb-a1cb-4bf14118d963",
+      "run_id": "7d0635ba-0583-4377-8948-e679334e3406",
+      "result": "completed"
+    },
+    "example.controlled-failure": {
+      "job_id": "3f500056-3b1d-4d61-99aa-4b73117a9c26",
+      "run_id": "60f4dfa7-9865-4b00-be26-e01981a3a812",
+      "result": "documented controlled failure"
+    },
+    "example.echo": {
+      "job_id": "79c133b2-186a-4cf1-a3e1-07eccd88fd49",
+      "run_id": "9fed0319-cc75-480c-8133-0536f0efc199",
+      "result": "completed"
+    },
+    "example.environment": {
+      "job_id": "294db392-a482-4d23-8c2d-1fec85b0b987",
+      "run_id": "ed6cd251-b931-4db5-afde-5af6a8942b1d",
+      "result": "completed"
+    },
+    "example.hello": {
+      "job_id": "c6fd30f5-c0df-4ee6-8efc-ab58ac254f85",
+      "run_id": "92c5a7ee-7087-4222-8ac5-7bf5e3d7585b",
+      "result": "completed"
+    },
+    "example.hello-dotnet": {
+      "job_id": "836f8ebc-fd51-4c61-bfe0-d9eb960925cc",
+      "run_id": "ed5c5c16-b059-4a81-af95-8516d1e8233c",
+      "result": "completed"
+    },
+    "example.hello-go": {
+      "job_id": "db9db7ad-0844-4e87-ad10-80eca7e6297a",
+      "run_id": "c1fae121-791a-468a-bff1-b2f663f86c63",
+      "result": "completed"
+    },
+    "example.hello-java": {
+      "job_id": "86871ece-5a45-4795-9d1c-369a9298686f",
+      "run_id": "bdf2baef-30d2-4dbf-a6a9-104c3b0a254f",
+      "result": "completed"
+    },
+    "example.hello-node": {
+      "job_id": "d7c72db1-55bc-467f-9297-ffb89c962a4a",
+      "run_id": "66dc2f98-6678-498a-bdd4-0c34d693d41d",
+      "result": "completed"
+    },
+    "example.hello-php": {
+      "job_id": "74190fa4-0ea2-490c-a2ff-9b78c5d54d17",
+      "run_id": "0ff62030-746d-4f5a-9e0e-8911e8982f7e",
+      "result": "completed"
+    },
+    "example.hello-python": {
+      "job_id": "821416f3-5064-4aeb-a436-bd785129a4a5",
+      "run_id": "7e262ed6-3fc3-44e8-b77f-c6cefcc5380f",
+      "result": "completed"
+    },
+    "example.hello-ruby": {
+      "job_id": "70d6e49f-18b1-41e2-b16f-df5a4b063e9c",
+      "run_id": "bfc21170-9bd2-43bf-8ff8-d4b1f40358c2",
+      "result": "completed"
+    },
+    "example.hello-rust": {
+      "job_id": "c5f90ffb-fd39-4edf-bb09-03ddb3e2d70c",
+      "run_id": "f70de441-4778-4b67-899d-2a7ad34bb806",
+      "result": "completed"
+    },
+    "example.hello-shell": {
+      "job_id": "f459e3b9-85fa-430e-8a8d-96d7ec16b802",
+      "run_id": "bffc1b60-e987-4c19-8910-aabd334dff83",
+      "result": "completed"
+    },
+    "example.progress": {
+      "job_id": "69446f84-455a-4ba3-825c-5795707ad127",
+      "run_id": "fcb1ba2c-9c3c-424f-9edf-78201bff111f",
+      "result": "completed"
+    },
+    "example.wasi-c-hello": {
+      "job_id": "d7760f66-26fc-498f-8159-bf47d36e3638",
+      "run_id": "6d598a37-9a14-408f-b56c-95cc4dc522ce",
+      "result": "completed"
+    },
+    "example.wasi-rust-hello": {
+      "job_id": "89a5dbd4-3011-4aab-973c-746b4f5c74be",
+      "run_id": "0def56e8-5382-44b4-ae94-d3039f401cc2",
+      "result": "completed"
+    }
+  },
+  "screenshots": {
+    "kinds": {
+      "path": "two/helm/kinds.png",
+      "sha256": "745665596b3c5a795b26df09681f4dc3a21e07b661d60ca544658b8fd5bbe88d"
+    },
+    "artifacts": {
+      "path": "two/helm/artifacts.png",
+      "sha256": "1e8e7b7f3054c26b321654a829971f0e3b26764ea8197b7bd22a9a4524665687"
+    },
+    "runs": {
+      "path": "two/helm/runs.png",
+      "sha256": "1e8e7b7f3054c26b321654a829971f0e3b26764ea8197b7bd22a9a4524665687"
+    },
+    "events": {
+      "path": "two/helm/events.png",
+      "sha256": "af2238a3feda217ec8eeaed35e13644e1a88afab43e2670b051f72c96e0de436"
+    },
+    "heartbeats": {
+      "path": "two/helm/heartbeats.png",
+      "sha256": "a9db808926cdd874487204e4ea017e5bdeb6ad19d127e497ac5f656bfbe97680"
+    },
+    "services": {
+      "path": "two/helm/services.png",
+      "sha256": "c552a763d28276a5079a4958d47627e7bd8087affc710605708ca29661e1ab78"
+    }
+  }
+}
