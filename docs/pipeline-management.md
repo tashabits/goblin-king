@@ -35,5 +35,7 @@ build** in the build details, or `goblin-king pipeline recover-build BUILD_ID
 EXPECTED_VERSION IDEMPOTENCY_KEY`. Recovery checks the original retained execution
 and every remaining source and publication Job and container in its recorded
 namespace. Missing evidence or running containers keep the build on hold.
+The installation grants the API read-only Job and Pod access in the configured
+source namespaces for this check. It grants no source mutation or Secret access.
 Successful recovery preserves the result as a failed attempt; I can then explicitly
 rebuild with a new UUID. Recovery itself never publishes or deploys an image.

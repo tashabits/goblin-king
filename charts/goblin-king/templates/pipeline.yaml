@@ -2,12 +2,48 @@
 {{- if ne .Values.persistence.topology "sqlite-single-node" }}
 {{- fail "pipeline requires persistence.topology=sqlite-single-node" }}
 {{- end }}
+{{- $seen := dict }}
+{{- $role := printf "pipeline-source-recovery-%s" (printf "%s/%s" .Release.Namespace .Release.Name | sha256sum | trunc 12) }}
+{{- range $repository, $source := .Values.pipeline.workerConfig.sources }}
+{{- $namespace := required "pipeline source requires a namespace" $source.namespace }}
+{{- if not (hasKey $seen $namespace) }}
+{{- $_ := set $seen $namespace true }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $role }}
+  namespace: {{ $namespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $role }}
+  namespace: {{ $namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "goblin-king.serviceAccountName" (dict "root" $ "component" "api") }}
+    namespace: {{ $.Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role }}
+{{- end }}
+{{- end }}
 {{- if or (not .Values.pipeline.authSecret) (not .Values.pipeline.githubSecret) (not .Values.pipeline.registryReaderSecret) }}
 {{- fail "pipeline requires existing authSecret, githubSecret, and registryReaderSecret references" }}
 {{- end }}
 {{- if ne .Values.scheduler.workloadSecurity.profile "restricted-v1" }}
 {{- fail "pipeline orchestration workers require restricted-v1" }}
 {{- end }}
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:

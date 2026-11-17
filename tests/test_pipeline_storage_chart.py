@@ -94,6 +94,41 @@ def test_legacy_values_remain_renderable_without_storage_guarantees() -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_build_recovery_reads_only_approved_source_jobs_and_pods():
+    result = render(
+        "pipeline.enabled=true",
+        "pipeline.authSecret=auth",
+        "pipeline.githubSecret=app",
+        "pipeline.registryReaderSecret=reader",
+        "scheduler.workloadSecurity.profile=restricted-v1",
+        "api.serviceAccount.name=recovery-api",
+        "pipeline.workerConfig.sources.one.namespace=source-one",
+        "pipeline.workerConfig.sources.two.namespace=source-two",
+        "pipeline.workerConfig.sources.shared.namespace=source-one",
+    )
+    assert result.returncode == 0, result.stderr
+    resources = [
+        item
+        for item in yaml.safe_load_all(result.stdout)
+        if item and item["metadata"]["name"].startswith("pipeline-source-recovery-")
+    ]
+    roles = [item for item in resources if item["kind"] == "Role"]
+    bindings = [item for item in resources if item["kind"] == "RoleBinding"]
+    assert len(roles) == len(bindings) == 2
+    assert {item["metadata"]["namespace"] for item in roles} == {"source-one", "source-two"}
+    for role in roles:
+        assert role["rules"] == [
+            {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list"]},
+            {"apiGroups": ["batch"], "resources": ["jobs"], "verbs": ["get", "list"]},
+        ]
+    for binding in bindings:
+        assert binding["subjects"] == [
+            {"kind": "ServiceAccount", "name": "recovery-api", "namespace": "default"}
+        ]
+        assert binding["roleRef"]["kind"] == "Role"
+        assert binding["roleRef"]["name"] == binding["metadata"]["name"]
+
+
 def test_restored_claim_is_reused_without_provisioning_another_database_volume():
     result = render(
         "persistence.existingClaim=restored-data",

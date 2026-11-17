@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from pipeline_build_images import source_identity
+from pipeline_image_cache import verify_platform_alias
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -114,9 +115,12 @@ def prepare(output, namespace, controller, admin, context="docker-desktop"):
         pods = json.loads(kube("get", "pods", "-l", "app=" + name, "-o", "json"))["items"]
         for pod in pods:
             for status in pod["status"]["containerStatuses"]:
-                expected = group[int(status["name"].split("-")[1])][1]["digest"].split("@")[1]
+                entry = group[int(status["name"].split("-")[1])][1]
+                expected = entry["digest"].split("@")[1]
                 if not status["imageID"].endswith(expected):
-                    raise RuntimeError("audit image differs from its pinned digest")
+                    verify_platform_alias(
+                        output, pod, expected, entry["tag"], status["imageID"], context
+                    )
         caches.extend(pods)
         kube("delete", "daemonset", name, "--wait=true")
     kube(

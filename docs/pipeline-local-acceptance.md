@@ -75,6 +75,11 @@ installation, pins the example images, verifies both node caches, and runs the
 contract checks before browser submissions. Long-running services are probed through
 Services rather than submitted as one-shot jobs.
 
+If local CRI status reports a different OCI index alias, preparation verifies the
+cached reference and both index hashes against the exact node-platform runtime
+manifest. A different runtime or ambiguous platform still fails. The raw image IDs
+and comparison evidence remain in the audit directory.
+
 Each acceptance directory needs `docker-admin-audit/browser-proof.json` and
 `helm-admin-audit/browser-proof.json`. These identify the acceptance run, source
 revision and hash, loopback API endpoint, job/run IDs, checksummed browser-submission
