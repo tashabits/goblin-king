@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import case, create_engine, delete, func, or_, select, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
 
@@ -1222,40 +1223,30 @@ class SQLiteStore:
         *,
         key: str,
         window_started_at: datetime,
-        reset_existing: bool,
     ) -> RateLimitRecord:
-        """Increment one rate-limit counter and return the current window state."""
-        with self.engine.begin() as connection:
-            row = (
-                connection.execute(select(rate_limits_table).where(rate_limits_table.c.key == key))
-                .mappings()
-                .one_or_none()
+        """Atomically count a request, resetting an expired one-minute window."""
+        expired = rate_limits_table.c.window_started_at <= window_started_at - timedelta(minutes=1)
+        statement = (
+            sqlite_insert(rate_limits_table)
+            .values(key=key, window_started_at=window_started_at, count=1)
+            .on_conflict_do_update(
+                index_elements=[rate_limits_table.c.key],
+                set_={
+                    "count": case((expired, 1), else_=rate_limits_table.c.count + 1),
+                    "window_started_at": case(
+                        (expired, window_started_at), else_=rate_limits_table.c.window_started_at
+                    ),
+                },
             )
-            if row is None:
-                count = 1
-                connection.execute(
-                    rate_limits_table.insert().values(
-                        key=key,
-                        window_started_at=window_started_at,
-                        count=count,
-                    )
-                )
-            elif reset_existing:
-                count = 1
-                connection.execute(
-                    update(rate_limits_table)
-                    .where(rate_limits_table.c.key == key)
-                    .values(window_started_at=window_started_at, count=count)
-                )
-            else:
-                count = row["count"] + 1
-                window_started_at = _coerce_datetime(row["window_started_at"])
-                connection.execute(
-                    update(rate_limits_table)
-                    .where(rate_limits_table.c.key == key)
-                    .values(count=count)
-                )
-        return RateLimitRecord(key=key, window_started_at=window_started_at, count=count)
+            .returning(rate_limits_table.c.window_started_at, rate_limits_table.c.count)
+        )
+        with self.engine.begin() as connection:
+            row = connection.execute(statement).mappings().one()
+        return RateLimitRecord(
+            key=key,
+            window_started_at=_coerce_datetime(row["window_started_at"]),
+            count=row["count"],
+        )
 
     def upsert_heartbeat(self, heartbeat: HeartbeatRecord) -> None:
         """Insert or replace the latest heartbeat for one scheduler or worker owner."""

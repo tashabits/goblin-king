@@ -461,15 +461,7 @@ def check_rate_limit(
     existing = store.increment_rate_limit(
         key=key,
         window_started_at=now,
-        reset_existing=False,
     )
-    reset = now - existing.window_started_at >= timedelta(minutes=1)
-    if reset:
-        existing = store.increment_rate_limit(
-            key=key,
-            window_started_at=now,
-            reset_existing=True,
-        )
     if existing.count > max_per_minute:
         audit(
             store,
