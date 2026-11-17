@@ -6,12 +6,14 @@ from unittest.mock import Mock
 import pytest
 from kubernetes.client.exceptions import ApiException
 
+from goblin_king.pipeline_faults import no_fault
 from goblin_king.pipeline_kubernetes import RecoveryHold, RetainedExecution
 
 
 def ledger():
     execution = RetainedExecution.__new__(RetainedExecution)
     execution.namespace = "source"
+    execution.name, execution.fault_hook = "retained", no_fault
     execution.core, execution.batch, execution.save = Mock(), Mock(), Mock()
     execution.document = {
         "stages": {

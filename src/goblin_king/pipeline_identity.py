@@ -81,6 +81,8 @@ def _terminated_execution(operation, core, batch, namespace):
         all_statuses = statuses + (pod.status.init_container_statuses or [])
         if (
             len(statuses) != len(pod.spec.containers)
+            or len(pod.status.init_container_statuses or [])
+            != len(getattr(pod.spec, "init_containers", None) or [])
             or not statuses
             or any(item.state is None or item.state.terminated is None for item in all_statuses)
             or pod.status.phase not in {"Succeeded", "Failed"}
@@ -91,4 +93,52 @@ def _terminated_execution(operation, core, batch, namespace):
         "job_uid": job.metadata.uid,
         "terminated": True,
         "pod_uids": [pod.metadata.uid for pod in owned],
+        "source_namespace": retained.get("source_namespace"),
     }
+
+
+def terminated_build(build, core, batch, namespace):
+    """A new build UUID is eligible only after all prior execution has stopped."""
+    central = terminated_execution(build, core, batch, namespace)
+    source_namespace = central.get("source_namespace")
+    if not source_namespace:
+        raise PipelineConflict("original source namespace is not retained; reconcile fencing")
+    prefix = build["id"] + "-"
+    try:
+        jobs = [
+            job
+            for job in batch.list_namespaced_job(source_namespace).items
+            if job.metadata.name.startswith(prefix)
+        ]
+        pods = [
+            pod
+            for pod in core.list_namespaced_pod(source_namespace).items
+            if pod.metadata.name.startswith(prefix)
+        ]
+        for job in jobs:
+            if not any(
+                condition.status == "True" and condition.type in {"Complete", "Failed"}
+                for condition in job.status.conditions or []
+            ):
+                raise PipelineConflict("a prior source or publication Job is not terminal")
+        for pod in pods:
+            regular = pod.status.container_statuses or []
+            initial = pod.status.init_container_statuses or []
+            if (
+                pod.status.phase not in {"Succeeded", "Failed"}
+                or len(regular) != len(pod.spec.containers)
+                or len(initial) != len(pod.spec.init_containers or [])
+                or any(
+                    item.state is None or item.state.terminated is None
+                    for item in [*regular, *initial]
+                )
+            ):
+                raise PipelineConflict("a prior source or publication container has not terminated")
+        return central | {
+            "build_id": build["id"],
+            "source_namespace": source_namespace,
+            "source_job_uids": [job.metadata.uid for job in jobs],
+            "source_pod_uids": [pod.metadata.uid for pod in pods],
+        }
+    except ApiException as error:
+        raise PipelineConflict("source termination evidence is unavailable") from error

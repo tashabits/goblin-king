@@ -9,7 +9,7 @@ for dir in /goblin /goblin-data /goblin-config /goblin-result /artifacts; do
 done
 
 # shellcheck disable=SC2086
-wasmtime run \
+python /worker/run-wasi.py run \
   $DIR_ARGS \
   --env "GOBLIN_INPUT_PATH=${GOBLIN_INPUT_PATH:?GOBLIN_INPUT_PATH is required}" \
   --env "GOBLIN_CONTEXT_PATH=${GOBLIN_CONTEXT_PATH:?GOBLIN_CONTEXT_PATH is required}" \

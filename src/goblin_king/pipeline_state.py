@@ -11,6 +11,7 @@ from sqlalchemy import delete, select
 
 from goblin_king.contracts import JobRecord, utc_now
 from goblin_king.pipeline_contracts import PipelineCatalog, PipelineRegistration, SourceChange
+from goblin_king.pipeline_faults import no_fault
 from goblin_king.pipeline_store import PipelineAdmissionStore, _fingerprint
 from goblin_king.store import SQLiteStore
 from goblin_king.store_schema import (
@@ -64,6 +65,7 @@ class PipelineState:
 
     def __init__(self, store: SQLiteStore):
         self.store = store
+        self.fault_hook = no_fault
 
     def authorize_scheduler_job(self, job):
         """Reject direct submissions that did not originate in the durable dispatch outbox."""
@@ -501,7 +503,9 @@ class PipelineState:
                             {"reason": str(error)},
                         )
                 continue
+            self.fault_hook("dispatch.before_submit", job.id)
             self.store.submit_job_once(job)
+            self.fault_hook("dispatch.after_submit", job.id)
             with self.transaction() as connection:
                 current = self.row(connection, dispatch, key)
                 if current["status"] == "pending":
@@ -511,6 +515,7 @@ class PipelineState:
                     self.audit(
                         connection, job.project_id, key, "dispatch.acknowledged", {"job_id": job.id}
                     )
+            self.fault_hook("dispatch.after_ack", job.id)
 
     def finish_build(self, build_id, result, *, job_id, run_id):
         """Persist inspected results without changing a previously observed healthy release."""
@@ -549,6 +554,60 @@ class PipelineState:
                 "build." + status,
                 {"job_id": job_id, "run_id": run_id},
             )
+
+    def recover_build(
+        self, build_id, *, expected_version, actor, idempotency_key, termination=None
+    ):
+        """Settle a fenced interruption without publishing or accepting its artifact."""
+        with self.transaction() as connection:
+            original = self.row(connection, builds, build_id)
+            if original is None:
+                raise KeyError(build_id)
+            key = _fingerprint([original["project_id"], build_id, "recover", idempotency_key])
+            fingerprint = _fingerprint([expected_version, actor])
+            prior = (
+                connection.execute(select(actions).where(actions.c.key == key))
+                .mappings()
+                .one_or_none()
+            )
+            if prior:
+                if prior["fingerprint"] != fingerprint:
+                    raise PipelineConflict("idempotency key conflicts")
+                return json.loads(prior["response"])
+            self.expected(original, expected_version)
+            if original["status"] != "held":
+                raise PipelineConflict("only held builds need execution recovery")
+            if termination is None:
+                return None  # Receipt lookup before contacting external execution evidence.
+            if (
+                not termination.get("terminated")
+                or termination.get("build_id") != build_id
+                or termination.get("job_id") != original["document"].get("job_id")
+                or not termination.get("source_namespace")
+            ):
+                raise PipelineConflict("prior build execution termination is not established")
+            document = original["document"] | {"termination": termination, "recovery_actor": actor}
+            self.cas(connection, builds, original, document, status="failed")
+            operation_id = str(uuid5(NAMESPACE_URL, "goblin-king/build-recovery/" + key))
+            response = {
+                "operation_id": operation_id,
+                "build_id": build_id,
+                "version": expected_version + 1,
+                "status": "failed",
+            }
+            connection.execute(
+                actions.insert().values(
+                    key=key, fingerprint=fingerprint, response=encoded(response)
+                )
+            )
+            self.audit(
+                connection,
+                original["project_id"],
+                build_id,
+                "build.recovered",
+                {"operation_id": operation_id, "actor": actor, "termination": termination},
+            )
+            return response
 
     def rebuild(self, build_id, *, expected_version, actor, idempotency_key):
         """Allocate a distinct explicit attempt without replaying an automatic admission."""

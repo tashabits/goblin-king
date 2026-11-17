@@ -29,3 +29,11 @@ Admin events and the optional authenticated HTTPS notification destination use
 durable deduplicated delivery identities. Credentials come from Secret references.
 Application test failures require an explicit rebuild with a new UUID; transient
 provider and recording failures can retry without another application build.
+
+For an interrupted build on hold, I use **Verify termination and settle interrupted
+build** in the build details, or `goblin-king pipeline recover-build BUILD_ID
+EXPECTED_VERSION IDEMPOTENCY_KEY`. Recovery checks the original retained execution
+and every remaining source and publication Job and container in its recorded
+namespace. Missing evidence or running containers keep the build on hold.
+Successful recovery preserves the result as a failed attempt; I can then explicitly
+rebuild with a new UUID. Recovery itself never publishes or deploys an image.

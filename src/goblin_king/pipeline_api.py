@@ -87,6 +87,14 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
 
     if service:
         service.dispatch_validator = validate_dispatch
+        if service.settings.acceptance_faults:
+            from goblin_king.pipeline_faults import AcceptanceFaultGate
+            from goblin_king.runtime_helpers import current_kubernetes_namespace, kubernetes_clients
+
+            _, fault_core = kubernetes_clients()
+            service.state.fault_hook = AcceptanceFaultGate(
+                fault_core, current_kubernetes_namespace(), enabled=True
+            )
 
         def verify_configuration(registration):
             import json
@@ -151,9 +159,11 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
                     "retained execution differs from the durable acknowledgement"
                 )
             if not document.get("acknowledged"):
+                service.state.fault_hook("acknowledgement.before_external", job_id)
                 document.update(acknowledged=True, acknowledged_at=utc_now().isoformat())
                 record.data["execution.json"] = json.dumps(document, sort_keys=True)
                 core.replace_namespaced_config_map(name, namespace, record)
+                service.state.fault_hook("acknowledgement.after_external", job_id)
 
         service.execution_acknowledger = acknowledge_execution
 
@@ -292,6 +302,7 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
         result = {"recovery_mode": active().settings.recovery_mode}
         with app_state.store.engine.connect() as connection:
             for name, table in (
+                ("registrations", pipeline_registrations_table),
                 ("releases", pipeline_environment_states_table),
                 ("operations", pipeline_operations_table),
                 ("builds", pipeline_builds_table),
@@ -348,6 +359,29 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
         return {
             "items": active().state.list(pipeline_environment_states_table, project_id=project_id)
         }
+
+    @router.post("/builds/{build_id}/recover", status_code=202)
+    def recover_build(build_id: str, body: MutationRequest, principal=principal_dependency):
+        from goblin_king.pipeline_identity import terminated_build
+        from goblin_king.runtime_helpers import current_kubernetes_namespace, kubernetes_clients
+
+        with app_state.store.engine.connect() as connection:
+            row = active().state.row(connection, pipeline_builds_table, build_id)
+        if row is None:
+            raise HTTPException(404, "build not found")
+        authorize(principal, row["project_id"], mutation=True)
+        arguments = dict(
+            expected_version=body.expected_version,
+            actor=principal.user_id,
+            idempotency_key=body.idempotency_key,
+        )
+        replay = invoke(active().state.recover_build, build_id, **arguments)
+        if replay:
+            return replay
+        batch, core = kubernetes_clients()
+        namespace = current_kubernetes_namespace()
+        termination = invoke(terminated_build, row, core, batch, namespace)
+        return invoke(active().state.recover_build, build_id, **arguments, termination=termination)
 
     @router.post("/builds/{build_id}/rebuild", status_code=202)
     def rebuild(build_id: str, body: MutationRequest, principal=principal_dependency):

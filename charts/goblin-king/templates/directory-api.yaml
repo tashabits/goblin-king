@@ -19,6 +19,8 @@ spec:
       app.kubernetes.io/name: {{ include "goblin-king.name" . }}
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
       labels:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: directory-api
@@ -105,7 +107,7 @@ spec:
         - name: data
           {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:
-            claimName: {{ include "goblin-king.fullname" . }}-data
+            claimName: {{ .Values.persistence.existingClaim | default (printf "%s-data" (include "goblin-king.fullname" .)) }}
           {{- else }}
           emptyDir: {}
           {{- end }}

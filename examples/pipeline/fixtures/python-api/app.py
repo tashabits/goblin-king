@@ -6,6 +6,7 @@ import sys
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from uuid import uuid4
 
 
 def record_work():
@@ -25,7 +26,7 @@ class Handler(BaseHTTPRequestHandler):
         root.mkdir(parents=True, exist_ok=True)
         sentinel = root / "sentinel"
         if not sentinel.exists():
-            sentinel.write_text(os.environ.get("SENTINEL", "persistent-python-data"))
+            sentinel.write_text(str(uuid4()))
         healthy = os.environ.get("FAIL_HEALTH") != "1"
         self.send_response(200 if healthy else 503)
         self.send_header("Content-Type", "application/json")

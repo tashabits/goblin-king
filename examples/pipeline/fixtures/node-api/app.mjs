@@ -2,6 +2,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { randomUUID } from 'node:crypto';
 
 export function recordWork(root = process.env.DATA_DIR || '/data') {
   fs.mkdirSync(root, { recursive: true });
@@ -19,7 +20,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     const root = process.env.DATA_DIR || '/data';
     fs.mkdirSync(root, { recursive: true });
     const sentinel = path.join(root, 'sentinel');
-    if (!fs.existsSync(sentinel)) fs.writeFileSync(sentinel, process.env.SENTINEL || 'persistent-node-data');
+    if (!fs.existsSync(sentinel)) fs.writeFileSync(sentinel, randomUUID());
     const healthy = process.env.FAIL_HEALTH !== '1';
     res.writeHead(healthy ? 200 : 503, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ healthy, implementation: 'node',

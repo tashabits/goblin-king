@@ -16,6 +16,7 @@ from redis.exceptions import RedisError
 
 from goblin_king.container_logs import container_log_payload, log_capture_limit
 from goblin_king.contracts import GoblinContext, GoblinDefinition, GoblinResult
+from goblin_king.docker_artifacts import normalize_docker_artifacts
 from goblin_king.docker_runtime_paths import (
     DockerRuntimePathError,
     relative_to_docker_data_root,
@@ -239,6 +240,16 @@ class DockerRuntime:
                     },
                 )
                 return GoblinResult.failed(error=artifact_error, data=result.data)
+            try:
+                result = normalize_docker_artifacts(
+                    result,
+                    Path(context.artifact_root),
+                    self._artifact_container_root(Path(context.artifact_root)),
+                )
+            except (OSError, ValueError) as error:
+                return GoblinResult.failed(
+                    error=f"artifact retention failed: {error}", data=result.data
+                )
             self._emit_worker_event(
                 "worker.completed",
                 context,
@@ -261,6 +272,15 @@ class DockerRuntime:
             )
         self._emit_worker_event("worker.no_result", context, worker_id, {"kind": definition.kind})
         return GoblinResult.failed(error=f"{definition.kind} Docker worker produced no result")
+
+    def _artifact_container_root(self, artifact_root: Path) -> str:
+        if not os.environ.get("GOBLIN_KING_DOCKER_DATA_VOLUME"):
+            return "/artifacts"
+        mount = os.environ.get("GOBLIN_KING_DOCKER_DATA_MOUNT", "/goblin-data")
+        relative = relative_to_docker_data_root(
+            artifact_root, self.run_root, label="artifact directory"
+        )
+        return f"{mount}/{relative}"
 
     def _prepare_run_dir(self, context: GoblinContext, input_payload: dict[str, Any]) -> Path:
         """Write worker input/context files and create artifact/result directories."""
@@ -349,15 +369,10 @@ class DockerRuntime:
             command.extend(docker_policy_args(resource_policy))
         if data_volume:
             run_rel = relative_to_docker_data_root(run_dir, self.run_root, label="run directory")
-            artifact_rel = relative_to_docker_data_root(
-                artifact_root,
-                self.run_root,
-                label="artifact directory",
-            )
             input_path = f"{data_mount}/{run_rel}/input.json"
             context_path = f"{data_mount}/{run_rel}/context.json"
             result_path = f"{data_mount}/{run_rel}/result.json"
-            artifact_container_root = f"{data_mount}/{artifact_rel}"
+            artifact_container_root = self._artifact_container_root(artifact_root)
             command.extend(
                 [
                     "-e",

@@ -10,6 +10,7 @@ from kubernetes.client import ApiException
 
 from goblin_king.contracts import GoblinResult
 from goblin_king.pipeline_contracts import PipelineBuildRequest, PipelineServiceContract
+from goblin_king.pipeline_faults import configured_gate
 from goblin_king.pipeline_kubernetes import RecoveryHold, RetainedExecution, restricted_job
 from goblin_king.pipeline_sandbox import builder_job
 from goblin_king.runtime_helpers import current_kubernetes_namespace, kubernetes_clients
@@ -36,6 +37,7 @@ def build(payload):
         ).data["config.json"]
     )
     route = config["sources"][request.source.repository]
+    fault_hook = configured_gate(core, current_kubernetes_namespace(), config)
     namespace, node = route["namespace"], route["node"]
     helper = config["helper_image"]
     if request.environment.image_repository not in route["image_repositories"]:
@@ -46,6 +48,7 @@ def build(payload):
         namespace,
         request.build_id,
         {"request": payload, "configuration_revision": config["revision"]},
+        fault_hook=fault_hook,
     )
     if ledger.document["result"]:
         return GoblinResult.model_validate(ledger.document["result"])
@@ -101,6 +104,13 @@ def build(payload):
                 pvc = core.read_namespaced_persistent_volume_claim(claim, namespace)
                 if pvc.metadata.labels.get("goblin-king.io/build") != request.build_id:
                     raise RecoveryHold("scratch volume is not owned by this build") from None
+            pvc = core.read_namespaced_persistent_volume_claim(claim, namespace)
+            scratch_identity = {"name": claim, "uid": pvc.metadata.uid}
+            previous_scratch = ledger.document.setdefault("scratch", {}).get(stage)
+            if previous_scratch and previous_scratch != scratch_identity:
+                raise RecoveryHold("scratch volume identity changed")
+            ledger.document["scratch"][stage] = scratch_identity
+            ledger.save()
             scratch = {"name": "scratch", "persistentVolumeClaim": {"claimName": claim}}
             checkout_document = {
                 "request": payload["request"],
@@ -156,6 +166,7 @@ def build(payload):
                 "repository": repository,
                 "tag": request.build_id,
                 "labels": labels,
+                "acceptance_fault": fault_hook.plan(),
             }
             job = restricted_job(
                 f"{request.build_id}-{stage}-publish",

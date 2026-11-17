@@ -76,6 +76,7 @@ services:
       - "8000:8000"
     environment:
       GOBLIN_KING_API_TOKEN: local-dev-token
+      GOBLIN_KING_REDIS_URL: redis://redis:6379/0
       GOBLIN_KING_DOCKER_DATA_VOLUME: ${COMPOSE_PROJECT_NAME:-goblin-king}_goblin-king-data
       GOBLIN_KING_RUN_ROOT: /app/.goblin-king/runs
       GOBLIN_KING_DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-goblin-king}_default
@@ -126,6 +127,7 @@ services:
     environment:
       GOBLIN_KING_API_TOKEN: local-dev-token
       GOBLIN_KING_BOOTSTRAP_ADMIN_TOKEN: local-dev-token
+      GOBLIN_KING_REDIS_URL: redis://redis:6379/0
       GOBLIN_KING_DOCKER_DATA_VOLUME: ${COMPOSE_PROJECT_NAME:-goblin-king}_goblin-king-data
       GOBLIN_KING_RUN_ROOT: /app/.goblin-king/runs
       GOBLIN_KING_DOCKER_NETWORK: ${COMPOSE_PROJECT_NAME:-goblin-king}_default

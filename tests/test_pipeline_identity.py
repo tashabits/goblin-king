@@ -7,7 +7,7 @@ from unittest.mock import Mock
 import pytest
 from kubernetes.client.exceptions import ApiException
 
-from goblin_king.pipeline_identity import terminated_execution
+from goblin_king.pipeline_identity import terminated_build, terminated_execution
 from goblin_king.pipeline_state import PipelineConflict
 
 
@@ -50,3 +50,45 @@ def test_termination_requires_retained_identity_and_every_container():
     core.read_namespaced_config_map.side_effect = ApiException(status=404)
     with pytest.raises(PipelineConflict, match="unavailable"):
         terminated_execution(operation, core, batch, "control")
+
+
+def test_build_recovery_requires_source_jobs_and_all_containers_to_stop():
+    core, batch, central = evidence()
+    retained = json.loads(core.read_namespaced_config_map.return_value.data["execution.json"])
+    retained["source_namespace"] = "source"
+    core.read_namespaced_config_map.return_value.data["execution.json"] = json.dumps(retained)
+    source = NS(
+        metadata=NS(name="build-1-publish-pod", uid="publication-pod"),
+        spec=NS(containers=[NS(name="publish")], init_containers=[NS(name="init")]),
+        status=NS(
+            phase="Succeeded",
+            container_statuses=[NS(state=NS(terminated=NS(exit_code=0)))],
+            init_container_statuses=[],
+        ),
+    )
+    job = NS(
+        metadata=NS(name="build-1-publish", uid="publication-job"),
+        status=NS(conditions=[]),
+    )
+    batch.list_namespaced_job.return_value = NS(items=[job])
+    core.list_namespaced_pod.side_effect = lambda namespace, **_: NS(
+        items=[central] if namespace == "control" else [source]
+    )
+    build = {"id": "build-1", "document": {"job_id": "original-job"}}
+
+    with pytest.raises(PipelineConflict, match="Job is not terminal"):
+        terminated_build(build, core, batch, "control")
+    job.status.conditions = [NS(type="Complete", status="True")]
+    with pytest.raises(PipelineConflict, match="container has not terminated"):
+        terminated_build(build, core, batch, "control")
+    source.status.init_container_statuses = [NS(state=NS(terminated=NS(exit_code=0)))]
+    proof = terminated_build(build, core, batch, "control")
+    assert proof["job_id"] == "original-job"
+    assert proof["source_job_uids"] == ["publication-job"]
+    assert proof["source_pod_uids"] == ["publication-pod"]
+    source.status.phase = "Running"
+    with pytest.raises(PipelineConflict, match="container has not terminated"):
+        terminated_build(build, core, batch, "control")
+    batch.list_namespaced_job.side_effect = ApiException(status=403)
+    with pytest.raises(PipelineConflict, match="unavailable"):
+        terminated_build(build, core, batch, "control")

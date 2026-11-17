@@ -503,7 +503,10 @@ class PipelineService:
         from goblin_king.store_schema import pipeline_operations_table as operations
 
         recorder = ReleaseRecorder(
-            self.provider, self.settings.release_repository, self.settings.release_repository_id
+            self.provider,
+            self.settings.release_repository,
+            self.settings.release_repository_id,
+            fault_hook=self.state.fault_hook,
         )
         with self.state.store.engine.connect() as connection:
             ids = (
@@ -592,3 +595,4 @@ class PipelineService:
                 self.state.audit(
                     connection, release["project_id"], operation_id, "release.recorded", evidence
                 )
+            self.state.fault_hook("recording.after_ack", operation_id)

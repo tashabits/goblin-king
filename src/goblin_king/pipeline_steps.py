@@ -112,11 +112,15 @@ def main():
     if args.step == "checkout":
         result = checkout(document, Path("/scratch"))
     else:
+        from goblin_king.pipeline_faults import PublicationFaultGate
+
         client = RegistryClient(
             document["endpoint"],
             Path("/registry/username").read_text(),
             Path("/registry/password").read_text(),
             Path("/registry/ca.crt"),
+            fault_hook=PublicationFaultGate(document.get("acceptance_fault", {})),
+            fault_identity=document["repository"] + "/" + document["tag"],
         )
         result = publish_oci(
             client,

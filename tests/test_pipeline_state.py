@@ -11,6 +11,7 @@ from goblin_king.pipeline_store import PipelineAdmissionStore
 from goblin_king.store import SQLiteStore
 from goblin_king.store_schema import (
     pipeline_build_requests_table,
+    pipeline_builds_table,
     pipeline_dispatch_table,
     pipeline_environment_states_table,
     pipeline_journal_table,
@@ -60,6 +61,44 @@ def admit(state, key, **kwargs):
 def count(state, table):
     with state.store.engine.connect() as connection:
         return connection.scalar(select(func.count()).select_from(table))
+
+
+def test_build_recovery_is_fenced_idempotent_and_never_dispatches(tmp_path):
+    state, _, key = enabled(tmp_path)
+    build_id = admit(state, key).request.build_id
+    state.finish_build(
+        build_id,
+        {"status": "failure", "data": {"recovery_hold": True}},
+        job_id="original-job",
+        run_id="original-run",
+    )
+    original = state.list(pipeline_builds_table, project_id="sample-project")[0]
+    arguments = dict(
+        expected_version=original["version"], actor="operator", idempotency_key="recover"
+    )
+    dispatches = count(state, pipeline_dispatch_table)
+    assert state.recover_build(build_id, **arguments) is None
+    proof = {
+        "terminated": True,
+        "build_id": build_id,
+        "job_id": "original-job",
+        "source_namespace": "isolated-source",
+    }
+    with pytest.raises(PipelineConflict, match="termination is not established"):
+        state.recover_build(build_id, **arguments, termination=proof | {"job_id": "other-job"})
+    response = state.recover_build(build_id, **arguments, termination=proof)
+    assert response["status"] == "failed"
+    reopened = PipelineState(SQLiteStore(state.store.db_path))
+    assert reopened.recover_build(build_id, **arguments) == response
+    with pytest.raises(PipelineConflict, match="idempotency key conflicts"):
+        reopened.recover_build(build_id, **(arguments | {"actor": "someone-else"}))
+    with pytest.raises(PipelineConflict):
+        reopened.recover_build(build_id, **(arguments | {"idempotency_key": "new-key"}))
+    settled = reopened.list(pipeline_builds_table, project_id="sample-project")[0]
+    assert settled["document"]["result"] == original["document"]["result"]
+    assert settled["document"]["termination"] == proof
+    assert count(reopened, pipeline_dispatch_table) == dispatches
+    assert count(reopened, pipeline_builds_table) == 1
 
 
 def test_attach_enable_and_upgrade_never_dispatch_historical_work(tmp_path):

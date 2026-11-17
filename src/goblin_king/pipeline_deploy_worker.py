@@ -11,6 +11,7 @@ from kubernetes import client
 
 from goblin_king.contracts import GoblinResult
 from goblin_king.pipeline_deployment import HelmRelease
+from goblin_king.pipeline_faults import configured_gate
 from goblin_king.pipeline_kubernetes import RecoveryHold, RetainedExecution
 from goblin_king.runtime_helpers import current_kubernetes_namespace, kubernetes_clients
 
@@ -23,6 +24,7 @@ def deploy(payload):
         ).data["config.json"]
     )
     environment = payload["environment"]
+    fault_hook = configured_gate(core, current_kubernetes_namespace(), config)
     target = config["releases"].get(environment["namespace"] + "/" + environment["release"])
     if target is None or target["environment"] != environment["name"]:
         raise ValueError("release is outside the installed deployment profile")
@@ -56,6 +58,7 @@ def deploy(payload):
             else payload["operation_id"]
         ),
         {"request": payload, "configuration_revision": config["revision"]},
+        fault_hook=fault_hook,
     )
     if ledger.document["result"]:
         return GoblinResult.model_validate(ledger.document["result"])
@@ -66,7 +69,12 @@ def deploy(payload):
         "persistence": target["persistence"],
     }
     release = HelmRelease(
-        core, client.AppsV1Api(), batch, environment["namespace"], environment["release"]
+        core,
+        client.AppsV1Api(),
+        batch,
+        environment["namespace"],
+        environment["release"],
+        fault_hook=fault_hook,
     )
     ledger.document["helm_started"] = True
     ledger.save()

@@ -37,8 +37,8 @@ of a delivery operation.
 
 `persistence.topology: legacy` remains the default for compatibility with existing
 chart values. It provides no new placement or replica guarantee and is not the
-supported pipeline storage configuration. Installing these values does not enable
-an unimplemented pipeline controller.
+supported pipeline storage configuration. Delivery management is enabled separately
+through `pipeline.enabled` and its verified repository registrations.
 
 ## Recovery and upgrades
 
@@ -61,9 +61,55 @@ backups outside the source PVC and test restoration. A database backup does not
 include artifacts, registry images, application volumes, or externally managed
 credentials; those need their own retention and recovery procedures.
 
-Helm uninstall removes the chart-owned PVC under the current chart policy. Export
-and verify a backup before uninstalling an installation with valuable state.
+The delivery chart marks its SQLite PVC for retention on Helm uninstall. I still
+export and verify a backup before uninstalling an installation with valuable state;
+retention does not protect against namespace deletion or disk loss. Older releases
+need an upgrade before their recorded Helm manifests include that retention policy.
 The proof below intentionally creates and deletes disposable fixture data.
+
+## Delivery backup commands
+
+I use `scripts/pipeline_storage_recovery.py` for a fenced delivery installation.
+`backup` stops storage clients and exports a consistent state archive to the host.
+`artifacts` exports the recorded OCI image graphs to a separate archive and binds
+its checksum to that database snapshot. `restore --node REPLACEMENT_NODE` creates
+a separate PVC and starts the API in recovery mode with scheduling disabled.
+`reconcile --enable` verifies actual releases and service health before enabling
+delivery. All commands require `--namespace` and `--output`; `--context` defaults
+to `docker-desktop` and `--release` to `delivery`.
+
+For registry loss, I first provision an empty trusted registry, then run
+`restore-artifacts --registry-config PATH` while the original state remains fenced.
+The local configuration specifies a host-reachable HTTPS `endpoint` and a
+`repositories` mapping from each exact repository path to its publication Secret
+reference, with `namespace` and `name` fields. Each Secret supplies `username`,
+`password`, and `ca.crt`. Credentials stay in Kubernetes. Restoration checks the
+entire backup before publishing, preserves immutable build tags and image digests,
+then reads back every restored blob to verify its size and checksum. A conflicting
+existing tag fails restoration. The command writes `artifact-restoration.json`
+beside the backup. Registry endpoint/trust changes and application data restoration
+remain separate operator steps before release reconciliation.
+
+## Execution retention
+
+I retain execution results and identities in SQLite and the execution ConfigMaps.
+`scripts/pipeline_retention.py` previews expired Jobs and scratch claims after both
+the database and execution record acknowledge the same result. The default age is
+seven days; the minimum is one hour. Held, active, unacknowledged, and conflicting
+executions are excluded. Terminal container state and original resource UIDs are
+checked before deletion.
+
+```powershell
+python scripts/pipeline_retention.py --namespace DELIVERY_NAMESPACE `
+  --output C:\Backups\goblin-king\execution-retention --hours 168
+```
+
+The preview exports evidence and checksums outside the cluster. Add `--apply` to
+repeat the checks and remove eligible resources with UID and version preconditions.
+Execution ConfigMaps, database history, published images, and application data stay
+available. Older builds without recorded scratch-volume identities keep their claims;
+I do not infer ownership from a reused name. Export these records with the database
+backup before any broader archival policy removes them.
 
 ## Executable cluster proof
 

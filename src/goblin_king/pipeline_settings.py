@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from goblin_king.resource_policies import ResourcePolicy
 
@@ -43,6 +43,7 @@ class PipelineSettings(BaseModel):
 
     enabled: bool = False
     simulated_provider: bool = False
+    acceptance_faults: bool = False
     provider_url: str = "https://api.github.com"
     app_id: int = Field(default=1, gt=0)
     installation_id: int = Field(default=1, gt=0)
@@ -76,3 +77,9 @@ class PipelineSettings(BaseModel):
     deployment_profiles: tuple[str, ...] = ("http-service-v1",)
     recovery_mode: bool = False
     reconcile_seconds: int = Field(default=60, ge=1, le=60)
+
+    @model_validator(mode="after")
+    def local_faults_only(self):
+        if self.acceptance_faults and not self.simulated_provider:
+            raise ValueError("acceptance faults require the local simulated provider")
+        return self

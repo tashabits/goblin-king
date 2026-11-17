@@ -99,6 +99,8 @@ export function PipelinePanel({ api }: { api: Api }) {
           <button disabled={busy} onClick={() => void perform(() => mutate(`/pipeline/operations/${row.id}/recover`, row, {}))}>Verify termination and reconcile release</button>}
         {name === "builds" && ["failed", "published", "superseded"].includes(row.status || "") &&
           <button disabled={busy} onClick={() => void perform(() => mutate(`/pipeline/builds/${row.id}/rebuild`, row, {}))}>Rebuild as a new attempt</button>}
+        {name === "builds" && row.status === "held" && row.document.job_id &&
+          <button disabled={busy} onClick={() => void perform(() => mutate(`/pipeline/builds/${row.id}/recover`, row, {}))}>Verify termination and settle interrupted build</button>}
         <pre>{JSON.stringify(row.document, null, 2)}</pre>
       </article>)}</details>)}
   </section>;

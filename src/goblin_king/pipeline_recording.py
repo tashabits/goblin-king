@@ -4,24 +4,34 @@ import json
 import time
 from urllib.parse import quote
 
+from goblin_king.pipeline_faults import no_fault
 from goblin_king.pipeline_github import ProviderUnavailable, UnapprovedSource
 from goblin_king.pipeline_state import PipelineConflict
 
 
 class ReleaseRecorder:
-    def __init__(self, provider, repository, repository_id, branch="main"):
+    def __init__(self, provider, repository, repository_id, branch="main", *, fault_hook=no_fault):
         self.provider, self.repository, self.repository_id = provider, repository, repository_id
         self.branch = branch
+        self.fault_hook = fault_hook
+        self.operation_id = ""
 
     def request(self, suffix, *, body=None, method="GET"):
-        return self.provider._request(
+        point = suffix.split("/")[2] if method != "GET" else None
+        if point:
+            self.fault_hook("git.before_" + point, self.operation_id)
+        result = self.provider._request(
             "/repos/" + self.repository + suffix,
             token=self.provider.token(self.repository_id, write=True),
             body=body,
             method=method,
         )
+        if point:
+            self.fault_hook("git.after_" + point, self.operation_id)
+        return result
 
     def record(self, release_key, operation_id, record):
+        self.operation_id = operation_id
         raw = json.dumps(record, sort_keys=True, indent=2) + "\n"
         immutable = f"operations/{operation_id}.json"
         current = f"releases/{release_key}.json"

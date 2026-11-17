@@ -122,6 +122,15 @@ def rebuild(build_id: str, expected_version: int, idempotency_key: str):
 
 
 @app.command()
+def recover_build(build_id: str, expected_version: int, idempotency_key: str):
+    """Settle a held build after all source and publication execution has terminated."""
+    call(
+        f"/builds/{build_id}/recover",
+        {"expected_version": expected_version, "idempotency_key": idempotency_key},
+    )
+
+
+@app.command()
 def recover(operation_id: str, expected_version: int, idempotency_key: str):
     """Reconcile an interrupted release after its previous execution has terminated."""
     call(

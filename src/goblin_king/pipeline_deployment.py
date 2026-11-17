@@ -13,6 +13,7 @@ from urllib.request import urlopen
 import yaml
 from kubernetes.utils.quantity import parse_quantity
 
+from goblin_king.pipeline_faults import no_fault
 from goblin_king.pipeline_kubernetes import RecoveryHold
 
 ALLOWED_KINDS = {"Deployment", "Service", "PersistentVolumeClaim", "ServiceAccount", "CronJob"}
@@ -97,11 +98,15 @@ def validate_rendered(raw, *, namespace, release, image, pull_secret):
 class HelmRelease:
     """One fenced worker owns a bounded Helm operation and route verification."""
 
-    def __init__(self, core, apps, batch, namespace, release, *, timeout=300):
+    def __init__(self, core, apps, batch, namespace, release, *, timeout=300, fault_hook=no_fault):
         self.core, self.apps, self.batch = core, apps, batch
         self.namespace, self.release, self.timeout = namespace, release, timeout
+        self.fault_hook = fault_hook
 
     def helm(self, *args):
+        mutation = args[0] in {"upgrade", "rollback"}
+        if mutation:
+            self.fault_hook("helm.before_" + args[0], self.namespace + "/" + self.release)
         environment = os.environ | {
             "HELM_DRIVER": "configmap",
             "HELM_CACHE_HOME": "/tmp/helm/cache",
@@ -117,6 +122,8 @@ class HelmRelease:
         )
         if result.returncode:
             raise RuntimeError("Helm operation failed: " + result.stderr[-2000:])
+        if mutation:
+            self.fault_hook("helm.after_" + args[0], self.namespace + "/" + self.release)
         return result.stdout
 
     def history(self):
@@ -212,6 +219,20 @@ class HelmRelease:
             }
         if previous is None:
             raise RecoveryHold("first installation is ambiguous; no known healthy rollback exists")
+        if history[-1]["status"] == "deployed" and all(
+            actual.get(key) == previous[key] for key in ("image", "active")
+        ):
+            health = self.verify(
+                image=previous["image"],
+                active=previous["active"],
+                port=previous["port"],
+                health_path=previous["health_path"],
+            )
+            return {
+                "status": "failed",
+                "error": "previous healthy release was already restored",
+                "rollback": previous | {"health": health, "helm_revision": history[-1]["revision"]},
+            }
         self.helm(
             "rollback",
             self.release,

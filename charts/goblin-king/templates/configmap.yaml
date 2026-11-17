@@ -12,6 +12,7 @@ data:
       "redis_url": "{{ .Values.config.redisUrl }}",
       "artifact_root": "{{ .Values.config.artifactRoot }}",
       "resource_policies": "{{ .Values.config.resourcePoliciesPath }}",
+      "pipeline": {{ merge (dict "enabled" .Values.pipeline.enabled) .Values.pipeline.settings | toJson }},
       "notebook_function_image": "{{ .Values.config.notebookFunctionImage }}",
       "notebook_service_image": "{{ .Values.config.notebookServiceImage }}",
       "notebook_service_runtime": "{{ .Values.config.notebookServiceRuntime }}",
@@ -30,6 +31,9 @@ data:
         "url": {{ if $repositoryUrl }}{{ $repositoryUrl | quote }}{{ else }}null{{ end }}
       },
       "kubernetes_runtime": {
+        {{- if .Values.pipeline.enabled }}
+        "redis_secret_name": {{ .Values.pipeline.authSecret | quote }},
+        {{- end }}
         "result_forwarder_image": {{ include "goblin-king.resultForwarderImage" . | quote }},
         "worker_image_pull_policy": {{ include "goblin-king.workerImagePullPolicy" . | quote }},
         "result_forwarder_image_pull_policy": {{ include "goblin-king.resultForwarderImagePullPolicy" . | quote }},
@@ -74,6 +78,9 @@ data:
 {{ .Values.resourcePolicies | toPrettyJson | indent 4 }}
   goblin-kubernetes-runtime.json: |
     {
+      {{- if .Values.pipeline.enabled }}
+      "redis_secret_name": {{ .Values.pipeline.authSecret | quote }},
+      {{- end }}
       "workload_security_profile": {{ .Values.scheduler.workloadSecurity.profile | quote }},
       "restricted_workload": {{ include "goblin-king.restrictedWorkloadSettings" . }}
     }

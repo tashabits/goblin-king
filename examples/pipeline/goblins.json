@@ -1,0 +1,13 @@
+{
+  "goblins": [
+    {
+      "kind": "pipeline.build",
+      "display_name": "Pipeline build",
+      "module": "goblin_king.pipeline_build_worker",
+      "entrypoint": "build",
+      "timeout_seconds": 2700,
+      "max_retries": 0,
+      "metadata": {"validation_input": {"validate": true}}
+    }
+  ]
+}

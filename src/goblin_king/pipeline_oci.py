@@ -13,6 +13,8 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode, urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, HTTPSHandler, Request, build_opener
 
+from goblin_king.pipeline_faults import no_fault
+
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 MANIFEST_TYPE = "application/vnd.oci.image.manifest.v1+json"
 
@@ -29,13 +31,16 @@ class RegistryError(RuntimeError):
 class RegistryClient:
     """Keep credentials on one TLS origin and reject unexpected upload redirects."""
 
-    def __init__(self, endpoint, username, password, ca_path):
+    def __init__(
+        self, endpoint, username, password, ca_path, *, fault_hook=no_fault, fault_identity=""
+    ):
         if urlsplit(endpoint).scheme != "https":
             raise ValueError("registry requires HTTPS")
         self.endpoint = endpoint.rstrip("/")
         self.authorization = "Basic " + base64.b64encode(f"{username}:{password}".encode()).decode()
         context = ssl.create_default_context(cafile=str(ca_path))
         self.opener = build_opener(NoRedirect(), HTTPSHandler(context=context))
+        self.fault_hook, self.fault_identity = fault_hook, fault_identity
 
     def request(self, path, *, method="GET", data=None, content_type=None, expected=(200,)):
         url = urljoin(self.endpoint + "/", path)
@@ -45,11 +50,25 @@ class RegistryClient:
         if content_type:
             headers["Content-Type"] = content_type
         request = Request(url, method=method, data=data, headers=headers)
+        point = (
+            "manifest"
+            if method == "PUT" and "/manifests/" in urlsplit(url).path
+            else "blob"
+            if method == "PUT"
+            else "upload"
+            if method == "POST"
+            else None
+        )
+        if point:
+            self.fault_hook("registry.before_" + point, self.fault_identity)
         try:
             with self.opener.open(request, timeout=60) as response:
                 if response.status not in expected:
                     raise RegistryError(f"unexpected registry status {response.status}")
-                return response.status, dict(response.headers), response.read(8 * 1024 * 1024)
+                result = response.status, dict(response.headers), response.read(8 * 1024 * 1024)
+                if point:
+                    self.fault_hook("registry.after_" + point, self.fault_identity)
+                return result
         except HTTPError as error:
             if error.code in expected:
                 return error.code, dict(error.headers), error.read(8192)

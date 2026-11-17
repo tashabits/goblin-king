@@ -92,3 +92,66 @@ def test_legacy_values_remain_renderable_without_storage_guarantees() -> None:
         "persistence.topology=legacy", "api.replicas=2", "scheduler.autoscaling.enabled=true"
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_restored_claim_is_reused_without_provisioning_another_database_volume():
+    result = render(
+        "persistence.existingClaim=restored-data",
+        "pipeline.enabled=true",
+        "pipeline.authSecret=auth",
+        "pipeline.githubSecret=app",
+        "pipeline.registryReaderSecret=reader",
+        "scheduler.workloadSecurity.profile=restricted-v1",
+        "scheduler.enabled=false",
+        "pipeline.settings.recovery_mode=true",
+    )
+    assert result.returncode == 0, result.stderr
+    resources = [item for item in yaml.safe_load_all(result.stdout) if item]
+    assert not any(item["kind"] == "PersistentVolumeClaim" for item in resources)
+    api = next(
+        item
+        for item in resources
+        if item["kind"] == "Deployment" and item["metadata"]["name"] == "storage-proof-api"
+    )
+    volume = next(
+        item for item in api["spec"]["template"]["spec"]["volumes"] if item["name"] == "data"
+    )
+    assert volume["persistentVolumeClaim"]["claimName"] == "restored-data"
+    assert not any(
+        item["kind"] == "Deployment" and item["metadata"]["name"] == "storage-proof-scheduler"
+        for item in resources
+    )
+    role = next(
+        item
+        for item in resources
+        if item["kind"] == "Role" and item["metadata"]["name"] == "storage-proof-api"
+    )
+    assert any(
+        "configmaps" in rule["resources"] and "update" in rule["verbs"] for rule in role["rules"]
+    )
+    assert all("secrets" not in rule["resources"] for rule in role["rules"])
+
+
+def test_recovery_mode_change_restarts_configuration_readers():
+    def checksums(mode):
+        result = render("repository.enabled=true", f"pipeline.settings.recovery_mode={mode}")
+        assert result.returncode == 0, result.stderr
+        return {
+            item["metadata"]["name"]: item["spec"]["template"]["metadata"]["annotations"][
+                "checksum/config"
+            ]
+            for item in yaml.safe_load_all(result.stdout)
+            if item
+            and item["kind"] == "Deployment"
+            and item["metadata"]["name"]
+            in {
+                "storage-proof-api",
+                "storage-proof-scheduler",
+                "storage-proof-directory-api",
+            }
+        }
+
+    before, after = checksums("true"), checksums("false")
+    assert len(before) == 3
+    assert before.keys() == after.keys()
+    assert all(before[name] != after[name] for name in before)

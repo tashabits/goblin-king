@@ -9,6 +9,8 @@ import time
 
 from kubernetes.client import ApiException, V1ConfigMap, V1ObjectMeta
 
+from goblin_king.pipeline_faults import no_fault
+
 
 class RecoveryHold(RuntimeError):
     """External ownership or effects cannot be established safely."""
@@ -17,10 +19,11 @@ class RecoveryHold(RuntimeError):
 class RetainedExecution:
     """Record intent before Job creation and retain observations until explicit acknowledgement."""
 
-    def __init__(self, core, batch, namespace, operation_id, identity):
+    def __init__(self, core, batch, namespace, operation_id, identity, *, fault_hook=no_fault):
         self.core, self.batch, self.namespace = core, batch, namespace
         self.name = f"pipeline-{operation_id}"
         self.identity = identity
+        self.fault_hook = fault_hook
         try:
             self.record = core.read_namespaced_config_map(self.name, namespace)
         except ApiException as error:
@@ -84,7 +87,9 @@ class RetainedExecution:
                 "uid": None,
             }
             self.save()
+            self.fault_hook("kubernetes.before_create", self.name + "/" + stage)
             job = self.batch.create_namespaced_job(self.namespace, manifest)
+            self.fault_hook("kubernetes.after_create", self.name + "/" + stage)
         if job.metadata.annotations.get("goblin-king.io/fingerprint") != fingerprint:
             raise RecoveryHold("Job fingerprint does not match the operation")
         stage_record = self.document["stages"].setdefault(
@@ -94,6 +99,7 @@ class RetainedExecution:
             raise RecoveryHold("Job identity changed")
         stage_record.update(uid=job.metadata.uid, status="running")
         self.save()
+        self.fault_hook("kubernetes.after_identity_ack", self.name + "/" + stage)
         deadline = time.monotonic() + timeout + 30
         while True:
             job = self.batch.read_namespaced_job(name, self.namespace)
@@ -165,7 +171,9 @@ class RetainedExecution:
                     "logs": logs,
                 }
                 stage_record.update(status="complete", observation=observation)
+                self.fault_hook("kubernetes.before_result_ack", self.name + "/" + stage)
                 self.save()
+                self.fault_hook("kubernetes.after_result_ack", self.name + "/" + stage)
                 return observation
             if time.monotonic() > deadline:
                 raise RecoveryHold("stage deadline elapsed without confirmed container termination")
@@ -179,11 +187,13 @@ class RetainedExecution:
             job = self.batch.read_namespaced_job(record["name"], self.namespace)
             if job.metadata.uid != record["uid"] or record["status"] == "removed":
                 raise RecoveryHold("sandbox identity changed before deletion")
+            self.fault_hook("sandbox.before_delete", self.name + "/" + stage)
             self.batch.delete_namespaced_job(
                 record["name"],
                 self.namespace,
                 body={"propagationPolicy": "Foreground", "preconditions": {"uid": record["uid"]}},
             )
+            self.fault_hook("sandbox.after_delete", self.name + "/" + stage)
         except ApiException as error:
             if error.status != 404:
                 raise
@@ -204,15 +214,19 @@ class RetainedExecution:
             if time.monotonic() > deadline:
                 raise RecoveryHold("sandbox Job or Pods remain; publisher cannot start")
             time.sleep(1)
+        self.fault_hook("sandbox.before_absence_ack", self.name + "/" + stage)
         record["status"] = "removed"
         record["sandbox_absent"] = True
         self.save()
+        self.fault_hook("sandbox.after_absence_ack", self.name + "/" + stage)
 
     def finish(self, result):
         if self.document["result"] is not None and self.document["result"] != result:
             raise RecoveryHold("operation already has a different durable result")
         self.document["result"] = result
+        self.fault_hook("execution.before_result_ack", self.name)
         self.save()
+        self.fault_hook("execution.after_result_ack", self.name)
 
 
 def restricted_job(

@@ -20,6 +20,15 @@ spec:
       containers:
         - name: redis
           image: {{ .Values.redis.image }}
+          {{- if .Values.pipeline.enabled }}
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.pipeline.authSecret }}
+                  key: redis-password
+          command: ["sh", "-c", "exec redis-server --requirepass \"$REDIS_PASSWORD\""]
+          {{- end }}
           {{- include "goblin-king.containerSecurityContext" . | nindent 10 }}
           ports:
             - containerPort: {{ .Values.redis.port }}
