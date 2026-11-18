@@ -20,9 +20,9 @@ BROWSER = (
 
 def browser(network):
     delivery, proof = network.delivery, network.proof
-    output = network.output / "admin-ui"
-    output.mkdir(exist_ok=True)
     name = "network-ui-" + uuid4().hex[:10]
+    output = network.output / "admin-ui" / name
+    output.mkdir(parents=True, exist_ok=True)
     release = delivery.release("python", "test")
     configuration = {
         "project": delivery.project,

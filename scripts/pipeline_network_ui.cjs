@@ -4,10 +4,12 @@ const cfg = JSON.parse(fs.readFileSync('/inputs/config.json'));
 const token = process.env.GOBLIN_KING_AUDIT_TOKEN;
 const output = '/proof';
 fs.mkdirSync(output, {recursive: true});
+let diagnosticPage;
 
 (async () => {
   const browser = await chromium.launch({headless: true, args: ['--disable-dev-shm-usage']});
   const page = await browser.newPage({viewport: {width: 1440, height: 1100}});
+  diagnosticPage = page;
   const base = 'http://delivery-admin:8080';
   async function get(path) {
     const response = await page.request.get(base + '/admin-api' + path,
@@ -45,11 +47,10 @@ fs.mkdirSync(output, {recursive: true});
   });
   if (releases.items.length !== 4) throw Error('Four releases are required');
   await panel.locator('summary').filter({hasText: 'Networking: ingress and egress'}).click();
-  const network = panel.locator('details').filter({has: page.locator('summary',
-    {hasText: 'Networking: ingress and egress'})});
+  const network = panel.locator('details').filter({hasText: 'Configure approved application routes and outbound connections separately for each environment.'}).first();
   const inspected = {};
   async function inspect(key) {
-    await network.getByLabel('Network release', {exact: true}).selectOption(key);
+    await network.getByLabel(/^Network release/).selectOption(key);
     return response('/pipeline/releases/' + key + '/networking', 'GET', () =>
       network.getByRole('button', {name: 'Inspect networking', exact: true}).click());
   }
@@ -94,7 +95,11 @@ fs.mkdirSync(output, {recursive: true});
   fs.writeFileSync(output + '/result.json', JSON.stringify({completed: true,
     mode: 'container-headless', ...cfg, inspected, operations, final, diagnostics}, null, 2));
   await browser.close();
-})().catch(error => {
+})().catch(async error => {
+  if (diagnosticPage) {
+    fs.writeFileSync(output + '/page.txt', await diagnosticPage.locator('body').innerText());
+    await diagnosticPage.screenshot({path: output + '/failure.png'});
+  }
   fs.writeFileSync(output + '/error.txt', String(error.stack || error));
   console.error(error);
 }).finally(() => { setInterval(() => {}, 1000); });

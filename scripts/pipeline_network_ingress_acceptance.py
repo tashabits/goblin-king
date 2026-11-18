@@ -212,4 +212,27 @@ class IngressAcceptance:
 
         evidence["external"] = external_ingress(proof, delivery, "python", "test")
         evidence["secret_uid"] = original["metadata"]["uid"]
+        from pipeline_network_install import NetworkInstallation
+
+        values = json.loads((delivery.output / "networking-values.json").read_text())
+        values["approvedIssuers"] = {
+            "unavailable": {"kind": "Issuer", "name": "acceptance-unavailable"}
+        }
+        values["certificateRequests"] = [
+            {
+                "name": "unavailable",
+                "gateway": "test",
+                "certificate": "local",
+                "issuer": "unavailable",
+                "dnsNames": hosts,
+            }
+        ]
+        try:
+            NetworkInstallation(proof.state["context"]).preflight(values)
+        except ValueError as error:
+            if "cert-manager" not in str(error) and "issuer is unavailable" not in str(error):
+                raise
+            evidence["unavailable-issuer"] = {"status": "rejected", "reason": str(error)}
+        else:
+            raise RuntimeError("unavailable certificate issuer passed installation preflight")
         return network.save("tls-lifecycle", evidence)

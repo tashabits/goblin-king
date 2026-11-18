@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { NetworkingPanel } from "./NetworkingPanel";
+import { requestIdentity } from "./requestIdentity";
 
 type Row = { key?: string; id?: string; version: number; status?: string; enabled?: boolean; document: Record<string, any> };
 type Api = (path: string, options?: RequestInit) => Promise<any>;
@@ -29,7 +30,7 @@ export function PipelinePanel({ api }: { api: Api }) {
   }
   async function mutate(path: string, row: Row, body: object) {
     const result = await api(path, { method: "POST", body: JSON.stringify({ ...body,
-      expected_version: row.version, idempotency_key: crypto.randomUUID() }) });
+      expected_version: row.version, idempotency_key: requestIdentity() }) });
     setNotice(result.operation_id ? `Operation ${result.operation_id}` : "Configuration saved");
     await load();
   }
@@ -60,7 +61,7 @@ export function PipelinePanel({ api }: { api: Api }) {
             row.document.registration.service_id === input.registration.service_id &&
             row.document.registration.project_id === input.registration.project_id);
           await api("/pipeline/repositories", { method: "POST", body: JSON.stringify({ ...input,
-            expected_version: existing?.version || 0, idempotency_key: crypto.randomUUID() }) });
+            expected_version: existing?.version || 0, idempotency_key: requestIdentity() }) });
           setNotice("Repository attached with management disabled. Enabling starts with future eligible merges.");
           await load();
         })}>Attach reviewed configuration</button></>}

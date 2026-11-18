@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { requestIdentity } from "./requestIdentity";
 
 type Api = (path: string, options?: RequestInit) => Promise<any>;
 type Host = { hostname: string; port: number; protocol: "HTTP" | "HTTPS" };
@@ -85,7 +86,7 @@ export function NetworkingPanel({ api, project, releases }: {
       <button disabled={busy || !state.network_version || !capabilities?.execution_available || !!state.operation_id || !!state.hold}
         onClick={() => void perform(async () => {
           const result = await api(`/pipeline/releases/${releaseKey}/networking/probe`, { method: "POST", body: JSON.stringify({
-            expected_version: state.version, idempotency_key: crypto.randomUUID(),
+            expected_version: state.version, idempotency_key: requestIdentity(),
           }) });
           setNotice(`Networking health operation ${result.operation_id}`); await load();
         })}>Probe networking health</button>
@@ -153,13 +154,13 @@ export function NetworkingPanel({ api, project, releases }: {
           const operation = await api(`/pipeline/operations/${state.operation_id}`);
           const result = await api(`/pipeline/operations/${state.operation_id}/recover`, { method: "POST", body: JSON.stringify({
             expected_version: operation.version, networking_preview_id: preview.preview_id,
-            idempotency_key: crypto.randomUUID(),
+            idempotency_key: requestIdentity(),
           }) });
           setNotice(`Networking recovery operation ${result.operation_id}`); await load();
         })}>Verify termination and recover with this policy preview</button> : <button disabled={busy || capabilities?.execution_available === false} onClick={() => void perform(async () => {
           const result = await api(`/pipeline/releases/${releaseKey}/networking`, { method: "POST", body: JSON.stringify({
             configuration: preview.configuration, expected_version: preview.expected_version,
-            preview_id: preview.preview_id, idempotency_key: crypto.randomUUID(),
+            preview_id: preview.preview_id, idempotency_key: requestIdentity(),
           }) });
           setNotice(`Networking operation ${result.operation_id}`); await load();
         })}>Apply networking changes</button>}

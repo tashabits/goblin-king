@@ -129,12 +129,17 @@ with urlopen(request,timeout=10) as response: print(response.read().decode())
 
 
 def external_client(proof, delivery, implementation, environment, script, extra=None):
+    current = delivery.request(
+        "/pipeline/releases/" + delivery.release(implementation, environment)["key"] + "/networking"
+    )
+    ingress = current["desired"]["ingress"]
+    policy = json.loads((delivery.output / "networking-values.json").read_text())["policy"]
+    binding = policy["gateways"][ingress["gateway"]]
     selector = (
         "gateway.envoyproxy.io/owning-gateway-name="
-        + environment
+        + binding["name"]
         + ",gateway.envoyproxy.io/owning-gateway-namespace="
-        + delivery.prefix
-        + "-ingress"
+        + binding["namespace"]
     )
     services = json.loads(proof.kube("get", "services", "-A", "-l", selector, "-o", "json"))[
         "items"
@@ -145,7 +150,7 @@ def external_client(proof, delivery, implementation, environment, script, extra=
     service = services[0]
     ports = {entry["port"]: entry["nodePort"] for entry in service["spec"]["ports"]}
     address = pods[0]["status"]["hostIP"]
-    hostname = f"{implementation}.{environment}.{delivery.prefix}.example.test"
+    hostname = ingress["hostname"]
     release = delivery.release(implementation, environment)["document"]["observed"]
     build = next(row for row in delivery.collection("builds") if row["id"] == release["build_id"])
     ca = (delivery.output / (environment + "-gateway-ca.pem")).read_text()

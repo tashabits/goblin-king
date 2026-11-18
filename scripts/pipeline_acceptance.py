@@ -390,6 +390,21 @@ class Acceptance:
             ):
                 raise RuntimeError("namespace ownership mismatch; cleanup refused")
         for entry in self.state["namespaces"].values():
+            if self.state.get("networking") and not entry.get("removed"):
+                self.command(
+                    [
+                        "helm",
+                        "--kube-context",
+                        self.state["context"],
+                        "uninstall",
+                        "networking",
+                        "-n",
+                        entry["name"],
+                        "--ignore-not-found",
+                        "--wait",
+                        "--timeout=90s",
+                    ]
+                )
             if entry["name"].endswith("-demo") and not entry.get("removed"):
                 self.command(
                     [
@@ -418,6 +433,46 @@ class Acceptance:
             self.kube("delete", "namespace", entry["name"], "--wait=true", "--timeout=90s")
             entry["removed"] = True
             self.save()
+        if self.state.get("networking"):
+            removed_names = {entry["name"] for entry in self.state["namespaces"].values()}
+            deadline = time.monotonic() + 120
+            while True:
+                residual = [
+                    item
+                    for item in json.loads(
+                        self.kube(
+                            "get",
+                            "deployments,services",
+                            "-A",
+                            "-l",
+                            "gateway.envoyproxy.io/owning-gateway-namespace",
+                            "-o",
+                            "json",
+                        )
+                    )["items"]
+                    if item["metadata"]["labels"].get(
+                        "gateway.envoyproxy.io/owning-gateway-namespace"
+                    )
+                    in removed_names
+                ]
+                if not residual:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(
+                        "owned gateway data-plane resources remain after namespace cleanup"
+                    )
+                time.sleep(2)
+            if not self.state.get("networking_cleanup", {}).get("upstream"):
+                from pipeline_network_fixture import ExternalFixture
+
+                fixture = ExternalFixture(
+                    self.output / "networking/upstream",
+                    self.state["run_id"],
+                    self.state["images"]["controller"]["digest"],
+                )
+                if fixture.path.exists():
+                    self.state.setdefault("networking_cleanup", {})["upstream"] = fixture.cleanup()
+                    self.save()
         current = self.baseline()
         changed = [v for uid, v in self.state["baseline"].items() if current.get(uid) != v]
         if changed:

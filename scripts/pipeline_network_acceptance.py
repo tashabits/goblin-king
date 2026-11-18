@@ -375,9 +375,12 @@ class NetworkAcceptance:
 
     def implementations(self, original):
         from pipeline_network_authorization_acceptance import authorization
+        from pipeline_network_failure_acceptance import fail_closed
         from pipeline_network_fault_acceptance import NetworkFaultAcceptance
         from pipeline_network_ingress_acceptance import IngressAcceptance
         from pipeline_network_lifecycle_acceptance import NetworkLifecycleAcceptance
+        from pipeline_network_package_acceptance import PackageAcceptance
+        from pipeline_network_revocation_acceptance import revoke
         from pipeline_network_ui_acceptance import browser
 
         installation, onboard = self.delivery.installation, self.delivery.onboard
@@ -399,4 +402,9 @@ class NetworkAcceptance:
             "network-authorization": lambda: authorization(self),
             "network-concurrency-restart": NetworkFaultAcceptance(self).run,
             "network-admin-api-cli": lambda: browser(self),
+            "network-revocation": lambda: revoke(self),
+            "network-fail-closed": lambda: fail_closed(self),
+            "network-installation-matrix": PackageAcceptance(self).matrix,
+            "network-existing-gateway": PackageAcceptance(self).existing,
+            "network-cleanup": PackageAcceptance(self).cleanup,
         }
