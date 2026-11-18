@@ -190,6 +190,7 @@ def prepare(output, namespace, controller, admin, context="docker-desktop"):
             context,
             "upgrade",
             "--install",
+            "--server-side=false",
             "audit",
             str(ROOT / "charts/goblin-king"),
             "-n",
