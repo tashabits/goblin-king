@@ -310,6 +310,8 @@ def audit(proof, runtime):
             (output / "cleanup.json").write_text(
                 json.dumps({"compose_project": installed["name"], "removed": True})
             )
+        else:
+            retire_helm(proof, kube, namespace, output)
         return result
     finally:
         if forwarding:
@@ -320,6 +322,52 @@ def audit(proof, runtime):
             os.environ.pop("GOBLIN_KING_AUDIT_TOKEN", None)
         else:
             os.environ["GOBLIN_KING_AUDIT_TOKEN"] = previous_token
+
+
+def retire_helm(proof, kube, namespace, output):
+    """Release completed audit capacity while retaining its database and evidence."""
+    expected = proof.state["namespaces"][namespace]
+    actual = json.loads(command(kube + ["get", "namespace", namespace, "-o", "json"]))
+    if (
+        actual["metadata"]["uid"] != expected["uid"]
+        or actual["metadata"].get("labels", {}).get("goblin-king.io/acceptance")
+        != proof.state["run_id"]
+    ):
+        raise RuntimeError("completed audit namespace ownership changed")
+    jobs = json.loads(command(kube + ["get", "jobs", "-o", "json"]))["items"]
+    if any(item.get("status", {}).get("active") for item in jobs):
+        raise RuntimeError("completed audit still has an active Job")
+    deployments = json.loads(command(kube + ["get", "deployments", "-o", "json"]))["items"]
+    for item in deployments:
+        if item["metadata"].get("annotations", {}).get("meta.helm.sh/release-name") != "audit":
+            raise RuntimeError("unexpected deployment in the completed audit namespace")
+    record = {
+        "namespace": namespace,
+        "namespace_uid": expected["uid"],
+        "deployments": [
+            {"name": item["metadata"]["name"], "uid": item["metadata"]["uid"]}
+            for item in deployments
+        ],
+        "data_retained": True,
+    }
+    (output / "retirement-intent.json").write_text(json.dumps(record, indent=2))
+    for item in deployments:
+        patch = [
+            {"op": "test", "path": "/metadata/uid", "value": item["metadata"]["uid"]},
+            {"op": "replace", "path": "/spec/replicas", "value": 0},
+        ]
+        command(
+            kube
+            + [
+                "patch",
+                "deployment",
+                item["metadata"]["name"],
+                "--type=json",
+                "-p",
+                json.dumps(patch),
+            ]
+        )
+    (output / "retired-workloads.json").write_text(json.dumps(record, indent=2))
 
 
 def helm_browser(kube, config, output):
