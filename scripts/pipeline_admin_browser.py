@@ -62,7 +62,11 @@ def docker_install(proof, output):
     token = token_path.read_text()
     settings = json.loads((ROOT / "goblin-king-api.json").read_text())
     settings.update(
+        registry="/app/demo-goblins.json",
         images="/audit/images.json",
+        db="/app/.goblin-king/goblin-king.sqlite3",
+        artifact_root="/app/.goblin-king/artifacts",
+        resource_policies="/app/goblin-resource-policies.json",
         redis_url="redis://redis:6379/0",
         auth_token=token,
         bootstrap_admin_token=token,

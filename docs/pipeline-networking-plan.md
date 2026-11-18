@@ -1,10 +1,15 @@
 # Optional ingress and egress delivery plan
 
-Status: planned, 18 November 2026. This extends the local delivery proof at
+Status: implemented with full cluster acceptance in progress, 18 November 2026.
+This extends the local delivery proof at
 `437d2ca3debcdc6438dd15568fc62f4d2cc69ba6`; it does not claim networking acceptance
-has already passed. I will implement and prove both additions on Docker Desktop's
-existing two-node kind cluster. I will keep the current demonstration available
+has already passed. I am proving both additions on Docker Desktop's existing
+two-node kind cluster. I will keep the current demonstration available
 until the replacement passes acceptance.
+
+See [installation and operation](pipeline-networking.md) for the implemented
+interfaces and [the checkpoint](pipeline-networking-checkpoint.md) for the current
+evidence and remaining acceptance work.
 
 ## Finish line
 

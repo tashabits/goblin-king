@@ -1,8 +1,9 @@
 # Networking implementation checkpoint
 
-I am preserving the optional ingress and egress implementation in Git before
-continuing its integration and acceptance testing. This checkpoint does not
-claim the networking finish line in [the plan](pipeline-networking-plan.md).
+I have integrated the networking lifecycle and am completing the required cluster
+acceptance. This checkpoint does not claim the finish line in
+[the plan](pipeline-networking-plan.md). Installation and recovery commands are in
+[the operating guide](pipeline-networking.md).
 
 ## Included
 
@@ -14,8 +15,13 @@ claim the networking finish line in [the plan](pipeline-networking-plan.md).
   policies, certificate checks, retained reconciliation evidence, and recovery holds.
 - An optional networking chart, pinned dependency manifest, and local development
   preparation and capability checks.
-- Initial release-phase integration scaffolding. It is not yet connected to the
-  complete deployment lifecycle.
+- Networking phases around deployment, activation, deactivation, rollback and
+  recording, with confirmed termination before interrupted execution is replaced.
+- Protected destination checks, independent probes, diagnostics, connection
+  revocation and currently authorized route fallback.
+- A 46-scenario acceptance harness, including 63 networking effect-boundary
+  interruptions, a separate upgrade fixture, storage reconciliation and headless
+  admin audits.
 
 ## Evidence and limits
 
@@ -24,10 +30,24 @@ an allowed HTTP proxy destination, denied hostname and metadata destinations,
 and denied direct outbound access on the existing Docker Desktop kind cluster.
 These are development capability checks, not complete networking acceptance.
 
-The first scheduled networking operation stopped in a recovery hold before
-changing network resources because Kubernetes client versions used different
-response arguments. The compatibility fix and its regression test are included;
-the held operation still needs recovery with an updated image.
+The Kubernetes client compatibility issue and Helm field-ownership conflict are
+fixed. Real deployments and off/on operations completed with retained images and
+data. Later development checks passed for all four external TLS routes, denied
+outbound boundaries, DNS rebinding/mixed answers, certificate expiry and rotation,
+request limits, WebSockets, live connection revocation and dependency outages.
+
+The networking form passed an isolated headless UI audit, with final state compared
+against the API and CLI. A real HTTP-origin failure in request ID generation is
+fixed and covered by a frontend regression test. The live route-failure check
+restored healthy ingress without widening newly restricted egress. First exposure
+retained an accurate hold for an invalid certificate and recovered after repair.
+An independent installation upgraded from `437d2ca3` with its application and data
+preserved and networking disabled.
+
+The latest complete Python run at `5a34196d` passed 768 tests with six
+platform-specific skips. Those skips require the Linux supplement in final
+acceptance. Frontend tests and the production build passed after the request ID
+fix. Newer harness changes still require validation at the final combined revision.
 
 The existing delivery proof at `437d2ca3` remains separate from this networking
 checkpoint. Local provider simulation is not evidence of real GitHub App
@@ -36,16 +56,13 @@ addresses, generated certificates, and run logs remain outside Git.
 
 ## Remaining work
 
-1. Complete and test networking phases around deployment, activation,
-   deactivation, rollback, and recording, including termination checks for nested
-   execution and recovery after interruption.
-2. Rebuild pinned images and recover the held development operation through the
-   authenticated API after verifying termination.
-3. Complete controlled external fixtures, destination and identity boundary
-   tests, connection revocation, certificate rotation, diagnostics, and UI audit.
-4. Extend the mandatory cluster suite and pass it twice in fresh namespaces at
+1. Complete cluster validation of the full interruption matrix, optional package
+   combinations, existing Gateway ownership, node loss and fenced restoration.
+2. Validate background and scheduled HTTP/HTTPS activity from both fixture
+   implementations and rerun the complete Docker/Helm admin audits.
+3. Pass the mandatory cluster suite twice in fresh namespaces at
    one pinned revision, including failures, restart, upgrade, and storage recovery.
-5. Package the verified installation, update the retained demonstration, and
+4. Merge through PRs, package the verified installation, update the retained demonstration, and
    publish the proof report and recovery instructions.
 
 I keep networking disabled by default while this work remains incomplete.

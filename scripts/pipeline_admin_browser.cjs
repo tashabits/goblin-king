@@ -17,6 +17,12 @@ const record = fs.existsSync(recordPath) ? JSON.parse(fs.readFileSync(recordPath
   acceptance_run_id:config.acceptance_run_id,api_base_url:config.api_base_url,
   browser_base_url:config.browser_base_url,mode:'container-headless',jobs:{},screenshots:{},service_probes:[]
 };
+for (const key of ['runtime','revision','source_sha256','acceptance_run_id']) {
+  if (record[key] !== config[key]) throw Error('Use a fresh audit directory for a different ' + key);
+}
+if (fs.existsSync(path.join(output,'browser-error.txt'))) {
+  fs.renameSync(path.join(output,'browser-error.txt'), path.join(output,'browser-error-'+Date.now()+'.txt'));
+}
 const save = () => write('browser-proof.json',record);
 const expectedFailures = new Set(['example.controlled-failure','example.behavior-shell-failure']);
 let browser;
