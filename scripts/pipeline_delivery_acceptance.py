@@ -894,9 +894,18 @@ except HTTPError as error:
             != second["event"]["after"]
         ):
             raise RuntimeError("duplicate or old event changed desired state")
+        from pipeline_supersession_acceptance import prove_supersession
+
+        inflight = prove_supersession(self)
         return self.save(
             "duplicate-reordered-events",
-            {"receipts": received, "conflict": conflict, "builds": builds, "final": final},
+            {
+                "receipts": received,
+                "conflict": conflict,
+                "builds": builds,
+                "final": final,
+                "inflight_supersession": inflight,
+            },
         )
 
     def release_contention(self):
