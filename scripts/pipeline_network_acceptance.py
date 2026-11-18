@@ -285,9 +285,76 @@ class NetworkAcceptance:
                     document=arguments,
                 )
             )
+        activities = self.activity_egress()
         return self.save(
-            "controlled-egress", {"observations": observations, "upstream": self.fixture.control()}
+            "controlled-egress",
+            {
+                "observations": observations,
+                "activities": activities,
+                "upstream": self.fixture.control(),
+            },
         )
+
+    def activity_egress(self):
+        """Correlate service, background and scheduled requests with the exact deployed commits."""
+        expected, responses = set(), {}
+        for implementation in ("python", "node"):
+            for environment in ("test", "prod"):
+                namespace = self.delivery.prefix + "-" + implementation + "-" + environment
+                observed = self.delivery.release(implementation, environment)["document"][
+                    "observed"
+                ]
+                build = next(
+                    row
+                    for row in self.delivery.collection("builds")
+                    if row["id"] == observed["build_id"]
+                )
+                revision = build["document"]["request"]["source"]["commit"]
+                for port in (8080, 8443):
+                    for activity in ("service", "background", "schedule"):
+                        expected.add((port, "/work/" + revision + "/" + activity))
+                for endpoint in ("outbound", "outbound-tls"):
+                    script = (
+                        "import json;from urllib.request import urlopen;"
+                        "print(urlopen('http://127.0.0.1:8080/" + endpoint + "').read().decode())"
+                        if implementation == "python"
+                        else "fetch('http://127.0.0.1:8080/"
+                        + endpoint
+                        + "').then(r=>r.text()).then(console.log)"
+                    )
+                    response = json.loads(
+                        self.proof.kube(
+                            "-n",
+                            namespace,
+                            "exec",
+                            "deployment/app",
+                            "--",
+                            "python" if implementation == "python" else "node",
+                            "-c" if implementation == "python" else "-e",
+                            script,
+                        )
+                    )
+                    if response.get("status") != 200:
+                        raise RuntimeError(
+                            "fixture service outbound request failed: " + namespace + endpoint
+                        )
+                    responses[namespace + "/" + endpoint] = response
+        deadline = time.monotonic() + 100
+        while True:
+            events = self.fixture.control()["events"]
+            found = {(item["port"], item["path"]) for item in events if item["kind"] == "http"}
+            if expected <= found:
+                return {
+                    "responses": responses,
+                    "requests": [
+                        item
+                        for item in events
+                        if item["kind"] == "http" and (item["port"], item["path"]) in expected
+                    ],
+                }
+            if time.monotonic() >= deadline:
+                raise RuntimeError("missing application activity: " + str(sorted(expected - found)))
+            time.sleep(3)
 
     def denied_egress(self):
         path = self.output / "controlled-egress.json"
@@ -381,14 +448,30 @@ class NetworkAcceptance:
         from pipeline_network_lifecycle_acceptance import NetworkLifecycleAcceptance
         from pipeline_network_package_acceptance import PackageAcceptance
         from pipeline_network_revocation_acceptance import revoke
+        from pipeline_network_storage_acceptance import NetworkStorageAcceptance
         from pipeline_network_ui_acceptance import browser
+        from pipeline_network_upgrade_acceptance import upgrade
 
-        installation, onboard = self.delivery.installation, self.delivery.onboard
+        installation, onboard, merge = (
+            self.delivery.installation,
+            self.delivery.onboard,
+            self.delivery.merge,
+        )
+        self.delivery.merge = lambda name, implementation, branch, **options: merge(
+            name,
+            implementation,
+            branch,
+            public_ca=(self.fixture.output / "tls.crt").read_text(),
+            **options,
+        )
         self.delivery.onboard = lambda implementation, repository_id: self.onboard(
             onboard, implementation, repository_id
         )
         return original | {
             "fresh-installation": lambda: self.installation(installation),
+            "storage-recovery": NetworkStorageAcceptance(self).storage,
+            "network-node-loss": NetworkStorageAcceptance(self).node_loss,
+            "network-backup-restore": NetworkStorageAcceptance(self).backup_restore,
             "network-four-releases": self.four_releases,
             "network-external-ingress": self.external,
             "network-allowed-egress": self.egress,
@@ -405,6 +488,7 @@ class NetworkAcceptance:
             "network-revocation": lambda: revoke(self),
             "network-fail-closed": lambda: fail_closed(self),
             "network-installation-matrix": PackageAcceptance(self).matrix,
+            "network-upgrade": lambda: upgrade(self),
             "network-existing-gateway": PackageAcceptance(self).existing,
             "network-cleanup": PackageAcceptance(self).cleanup,
         }

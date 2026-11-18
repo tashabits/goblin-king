@@ -1,5 +1,6 @@
 const {chromium} = require('/audit/node_modules/playwright');
 const fs = require('fs');
+const {isDeepStrictEqual} = require('node:util');
 const cfg = JSON.parse(fs.readFileSync('/inputs/config.json'));
 const token = process.env.GOBLIN_KING_AUDIT_TOKEN;
 const output = '/proof';
@@ -70,8 +71,10 @@ let diagnosticPage;
       network.getByRole('button', {name: 'Apply networking changes', exact: true}).click());
     operations.push({name, preview, started, settled: await settled(started.operation_id)});
     const current = await inspect(key);
-    if (JSON.stringify(current.observed.configuration) !== JSON.stringify(preview.configuration))
+    if (!isDeepStrictEqual(current.observed.configuration, preview.configuration)) {
+      fs.writeFileSync(output + '/configuration-mismatch.json', JSON.stringify({current, preview}, null, 2));
       throw Error('Observed UI configuration differs from its preview');
+    }
     await network.screenshot({path: output + '/' + name + '-observed.png'});
     return current;
   }

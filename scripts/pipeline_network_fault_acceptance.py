@@ -92,14 +92,36 @@ class NetworkFaultAcceptance:
         if "started" not in record:
             self.faults.wait_for_acknowledgements()
             if prefix.startswith("settle/Job/"):
-                proof.kube(
-                    "-n",
-                    delivery.prefix + "-python-test",
-                    "create",
-                    "job",
-                    "fault-schedule-" + uuid4().hex[:8],
-                    "--from=cronjob/app-schedule",
+                namespace = delivery.prefix + "-python-test"
+                schedule = json.loads(
+                    proof.kube("-n", namespace, "get", "cronjob", "app-schedule", "-o", "json")
                 )
+                job = {
+                    "apiVersion": "batch/v1",
+                    "kind": "Job",
+                    "metadata": {
+                        "name": "fault-schedule-" + uuid4().hex[:8],
+                        "namespace": namespace,
+                        "labels": schedule["spec"]["jobTemplate"]["metadata"].get("labels", {}),
+                        "ownerReferences": [
+                            {
+                                "apiVersion": "batch/v1",
+                                "kind": "CronJob",
+                                "name": "app-schedule",
+                                "uid": schedule["metadata"]["uid"],
+                                "controller": True,
+                            }
+                        ],
+                    },
+                    "spec": copy.deepcopy(schedule["spec"]["jobTemplate"]["spec"]),
+                }
+                job["spec"]["template"]["spec"]["containers"][0]["command"] = [
+                    "python",
+                    "-c",
+                    "import time;time.sleep(180)",
+                ]
+                job["spec"]["template"]["spec"]["containers"][0].pop("args", None)
+                proof.kube("create", "-f", "-", document=job)
             plan = {key: record[key] for key in ("id", "point", "identity_prefix")}
             if not prefix.startswith("settle/Job/"):
                 plan["identity"] = prefix

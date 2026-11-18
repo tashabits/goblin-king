@@ -87,7 +87,7 @@ class DeliveryAcceptance:
             self.proof.save()
         return checkpoints[name]
 
-    def installation(self):
+    def installation(self, chart=None):
         images = self.proof.state.get("images")
         if not images:
             raise RuntimeError(
@@ -122,7 +122,7 @@ class DeliveryAcceptance:
                 "upgrade",
                 "--install",
                 "delivery",
-                str(ROOT / "charts/goblin-king"),
+                str(chart or ROOT / "charts/goblin-king"),
                 "-n",
                 self.control,
                 "-f",

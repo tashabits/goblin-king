@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
 import tls from 'node:tls';
 
-export function outboundTLS(ca) {
+export function outboundTLS(ca, activity = 'service') {
   return new Promise((resolve, reject) => {
     if (!process.env.HTTPS_PROXY) { reject(new Error('HTTPS proxy is not configured')); return; }
     const hostname = 'allowed.fixture.example.test';
@@ -18,7 +18,7 @@ export function outboundTLS(ca) {
       if (response.statusCode !== 200 || head.length) { socket.destroy(); reject(new Error('CONNECT denied')); return; }
       const secure = tls.connect({ socket, servername: hostname, ca }, () => {
         secure.write('GET /work/' + (process.env.SOURCE_REVISION || 'development') +
-          '/service-tls HTTP/1.1\r\nHost: ' + hostname + ':8443\r\nConnection: close\r\n\r\n');
+          '/' + activity + ' HTTP/1.1\r\nHost: ' + hostname + ':8443\r\nConnection: close\r\n\r\n');
       });
       secure.setTimeout(10000, () => secure.destroy(new Error('TLS timeout')));
       secure.on('error', reject);
@@ -64,6 +64,10 @@ export function recordWork(root = process.env.DATA_DIR || '/data') {
   if (process.env.HTTP_PROXY) void outbound(process.argv.includes('--background') ? 'background' : 'schedule').then(result => {
     fs.appendFileSync(path.join(root, 'outbound.jsonl'), JSON.stringify(result) + '\n');
   });
+  if (process.env.HTTPS_PROXY) void outboundTLS(fs.readFileSync(new URL('./fixture-ca.pem', import.meta.url)),
+    process.argv.includes('--background') ? 'background' : 'schedule')
+    .catch(error => ({ error: error.message }))
+    .then(result => fs.appendFileSync(path.join(root, 'outbound-tls.jsonl'), JSON.stringify(result) + '\n'));
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -73,9 +77,11 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     setInterval(recordWork, 2000);
   } else {
     const server = http.createServer(async (req, res) => {
-    if (req.url === '/outbound') {
+    if (req.url === '/outbound' || req.url === '/outbound-tls') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(await outbound())); return;
+      const result = req.url === '/outbound' ? await outbound() : await outboundTLS(
+        fs.readFileSync(new URL('./fixture-ca.pem', import.meta.url))).catch(error => ({ error: error.message }));
+      res.end(JSON.stringify(result)); return;
     }
     if (req.url === '/slow') await new Promise(resolve => setTimeout(resolve, 5000));
     if (req.method === 'POST') {

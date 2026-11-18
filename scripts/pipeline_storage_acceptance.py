@@ -20,7 +20,7 @@ def watchdog(container_id, seconds):
         subprocess.run(["docker", "unpause", container_id], check=True, capture_output=True)
 
 
-def node_outage(delivery):
+def node_outage(delivery, observe=None):
     proof = delivery.proof
     recovery = StorageRecovery(
         proof.state["context"], delivery.control, "delivery", delivery.output / "storage"
@@ -115,6 +115,8 @@ except Exception as error:
     health_before = api_health()
     if not health_before["available"]:
         raise RuntimeError("outage observer cannot reach the healthy API before interruption")
+    if observe:
+        observe("before")
     guard = subprocess.Popen(
         [
             sys.executable,
@@ -169,6 +171,8 @@ except Exception as error:
             raise RuntimeError(
                 "delivery API remained available after its sole storage node stopped"
             )
+        if observe:
+            observe("during")
     finally:
         state = json.loads(proof.command(["docker", "inspect", container_id]))[0]
         if state["State"]["Paused"]:
@@ -203,10 +207,12 @@ except Exception as error:
             raise RuntimeError("delivery API route did not recover after the node resumed")
         time.sleep(3)
     delivery.save("storage-outage", evidence)
+    if observe:
+        observe("after")
     return evidence
 
 
-def prove_storage_recovery(delivery):
+def prove_storage_recovery(delivery, observe=None):
     proof = delivery.proof
     output = delivery.output / "storage"
     recovery = StorageRecovery(proof.state["context"], delivery.control, "delivery", output)
@@ -224,7 +230,7 @@ def prove_storage_recovery(delivery):
         raise RuntimeError("settle release operations before storage recovery")
     if any(row["status"] in {"admitted", "held"} for row in before["builds"]):
         raise RuntimeError("settle build executions before storage recovery")
-    outage = delivery.checkpoint("storage-outage", lambda: node_outage(delivery))
+    outage = delivery.checkpoint("storage-outage", lambda: node_outage(delivery, observe))
     backup = delivery.checkpoint("storage-backup", recovery.backup)
     artifacts = delivery.checkpoint("storage-artifacts", recovery.artifacts)
     metadata = json.loads((output / "backup.json").read_text())

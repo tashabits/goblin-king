@@ -4,23 +4,40 @@ import base64
 import hashlib
 import json
 import os
+import ssl
 import struct
 import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.request import ProxyHandler, build_opener
+from urllib.request import HTTPSHandler, ProxyHandler, build_opener
 from uuid import uuid4
 
 
-def outbound(activity="service"):
-    proxy = os.environ.get("HTTP_PROXY")
+def outbound(activity="service", secure=False):
+    scheme = "https" if secure else "http"
+    proxy = os.environ.get("HTTPS_PROXY" if secure else "HTTP_PROXY")
     if not proxy:
         return {"configured": False}
     try:
-        client = build_opener(ProxyHandler({"http": proxy}))
+        handlers = [ProxyHandler({scheme: proxy})]
+        if secure:
+            handlers.append(
+                HTTPSHandler(
+                    context=ssl.create_default_context(
+                        cafile=str(Path(__file__).with_name("fixture-ca.pem"))
+                    )
+                )
+            )
+        client = build_opener(*handlers)
         with client.open(
-            "http://allowed.fixture.example.test:8080/work/" + revision() + "/" + activity,
+            scheme
+            + "://allowed.fixture.example.test:"
+            + ("8443" if secure else "8080")
+            + "/work/"
+            + revision()
+            + "/"
+            + activity,
             timeout=5,
         ) as response:
             return {"status": response.status, "body": json.load(response)}
@@ -39,6 +56,9 @@ def record_work():
                     "revision": revision(),
                     "outbound": outbound(
                         "background" if "--background" in sys.argv else "schedule"
+                    ),
+                    "outbound_tls": outbound(
+                        "background" if "--background" in sys.argv else "schedule", secure=True
                     ),
                 }
             )
@@ -90,10 +110,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/slow":
             time.sleep(5)
-        if self.path == "/outbound":
+        if self.path in {"/outbound", "/outbound-tls"}:
             self.send_response(200)
             self.end_headers()
-            self.wfile.write(json.dumps(outbound()).encode())
+            self.wfile.write(json.dumps(outbound(secure=self.path == "/outbound-tls")).encode())
             return
         root = Path(os.environ.get("DATA_DIR", "/data"))
         root.mkdir(parents=True, exist_ok=True)

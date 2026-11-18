@@ -194,6 +194,8 @@ print(json.dumps({'admission':admission,'job':job.model_dump(mode='json')}))
             "release_repository": "",
             "release_repository_id": 0,
             "deploy_image": "",
+            "network_image": "",
+            "networking": {},
             "recovery_mode": False,
         },
     }

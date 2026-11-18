@@ -1,6 +1,6 @@
 FROM python:3.12-alpine AS base
 WORKDIR /app
-COPY app.py .
+COPY app.py fixture-ca.pem ./
 USER 65532:65532
 
 FROM base AS test
