@@ -1231,6 +1231,11 @@ exact-commit tests, immutable images, bounded deployments, health verification a
 observed release records in a separate Git repository. Applications build from a
 root Dockerfile with the repository root as their build context.
 
+Start with [Deploy a service from a GitHub repository](docs/github-service-setup.md)
+for the illustrated setup process: GitHub App and branch protection, the root
+Dockerfile contract, repository attachment, reviewed test/production merges,
+optional ingress and egress, and day-to-day recovery controls.
+
 - [Repository management](docs/pipeline-management.md): discovery, attachment,
   versioned updates, builds and operator actions.
 - [Git events](docs/pipeline-events.md): authenticated admission and missed-event
