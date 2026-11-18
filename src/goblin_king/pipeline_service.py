@@ -404,7 +404,11 @@ class PipelineService:
         from goblin_king.store_schema import pipeline_environment_states_table as environments
         from goblin_king.store_schema import pipeline_operations_table as operations
 
-        manager = ReleaseOperations(self.state)
+        manager = ReleaseOperations(
+            self.state,
+            network_policy=self.settings.networking,
+            network_binding=self.network_operation_binding,
+        )
         with self.state.store.engine.connect() as connection:
             release_ids = connection.execute(select(environments.c.key)).scalars().all()
         for key in release_ids:

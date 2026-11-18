@@ -13,6 +13,7 @@ from goblin_king.contracts import GoblinResult
 from goblin_king.pipeline_deployment import HelmRelease
 from goblin_king.pipeline_faults import configured_gate
 from goblin_king.pipeline_kubernetes import RecoveryHold, RetainedExecution
+from goblin_king.pipeline_network_child import phase as network_phase
 from goblin_king.runtime_helpers import current_kubernetes_namespace, kubernetes_clients
 
 
@@ -83,6 +84,18 @@ def deploy(payload):
         environment["release"],
         fault_hook=fault_hook,
     )
+    network = payload.get("networking")
+    if network:
+        network_phase(
+            ledger,
+            core,
+            payload=payload,
+            installed=config,
+            stage="network-before",
+            active=values["active"],
+            previous=network.get("previous"),
+            prepare_only=True,
+        )
     ledger.document["helm_started"] = True
     ledger.save()
     observed = (
@@ -92,6 +105,36 @@ def deploy(payload):
             values, chart=Path("/opt/pipeline-http-service"), previous=payload["previous"]
         )
     )
+    if network:
+        restored = observed if observed["status"] == "success" else observed.get("rollback")
+        try:
+            evidence = network_phase(
+                ledger,
+                core,
+                payload=payload,
+                installed=config,
+                stage="network-after",
+                active=bool(restored and restored["active"]),
+                previous=network.get("previous"),
+            )
+        except RecoveryHold:
+            if observed["status"] != "success" or not payload["previous"]:
+                raise
+            observed = release.rollback(
+                payload["previous"], reason="network route verification failed after rollout"
+            )
+            restored = observed["rollback"]
+            evidence = network_phase(
+                ledger,
+                core,
+                payload=payload,
+                installed=config,
+                stage="network-rollback",
+                active=restored["active"],
+                previous=network.get("previous"),
+            )
+        if restored:
+            restored["networking"] = evidence
     result = GoblinResult.ok(data={"operation_id": payload["operation_id"], "release": observed})
     ledger.finish(result.model_dump(mode="json"))
     return result

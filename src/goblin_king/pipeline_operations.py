@@ -5,6 +5,7 @@ from uuid import NAMESPACE_URL, uuid5
 from sqlalchemy import select
 
 from goblin_king.contracts import JobRecord, utc_now
+from goblin_king.pipeline_networking import proxy_environment
 from goblin_king.pipeline_state import PipelineConflict, encoded
 from goblin_king.pipeline_store import _fingerprint
 from goblin_king.store_schema import pipeline_actions_table as actions
@@ -17,14 +18,16 @@ from goblin_king.store_schema import (
 from goblin_king.store_schema import (
     pipeline_environment_states_table as releases,
 )
+from goblin_king.store_schema import pipeline_networking_table as networking
 from goblin_king.store_schema import (
     pipeline_operations_table as operations,
 )
 
 
 class ReleaseOperations:
-    def __init__(self, state):
+    def __init__(self, state, *, network_policy=None, network_binding=None):
         self.state = state
+        self.network_policy, self.network_binding = network_policy, network_binding
 
     def prepare(self, operation_id, binding):
         """Select only a verified digest and persist its exact execution intent atomically."""
@@ -129,6 +132,33 @@ class ReleaseOperations:
                     "scheduledCommand": contract.get("scheduled_command") or [],
                 },
             }
+            network = state.row(connection, networking, operation["release_key"])
+            if network:
+                if not self.network_policy or not self.network_binding:
+                    raise PipelineConflict("configured networking execution is unavailable")
+                configuration = self.network_policy.validate_configuration(
+                    network["document"]["desired"],
+                    identity=document["environment"]["namespace"]
+                    + "/"
+                    + document["environment"]["release"],
+                    project_id=release["project_id"],
+                    environment=document["environment"]["name"],
+                )
+                if network["document"]["policy_revision"] != self.network_policy.revision:
+                    raise PipelineConflict("networking policy changed; preview configuration again")
+                approved = self.network_binding(document["environment"]["name"])
+                payload["networking"] = {
+                    "configuration": configuration.model_dump(mode="json"),
+                    "policy_revision": self.network_policy.revision,
+                    "image": approved["image"],
+                    "project_id": release["project_id"],
+                    "previous": network["document"].get("observed"),
+                }
+                payload["values"]["proxyEnvironment"] = proxy_environment(
+                    configuration,
+                    document["environment"]["namespace"],
+                    document["environment"]["release"],
+                )
             job_id = str(uuid5(NAMESPACE_URL, "goblin-king/release/" + operation_id))
             job = JobRecord(
                 id=job_id,
@@ -379,6 +409,25 @@ class ReleaseOperations:
                         status = "recording"
                     else:
                         status = "failed"
+            network_result = (updated.get("observed") or {}).get("networking")
+            if status == "recording" and op["execution"].get("networking"):
+                expected_network = op["execution"]["networking"]
+                if (
+                    not network_result
+                    or any(
+                        network_result.get(key) != expected_network[key]
+                        for key in ("configuration", "policy_revision")
+                    )
+                    or network_result.get("active") != updated["observed"]["active"]
+                ):
+                    raise PipelineConflict("release lacks verified networking evidence")
+                network = state.row(connection, networking, operation["release_key"])
+                state.cas(
+                    connection,
+                    networking,
+                    network,
+                    network["document"] | {"observed": network_result},
+                )
             state.cas(connection, releases, release, updated)
             state.cas(connection, operations, operation, op | {"result": result}, status=status)
             state.audit(

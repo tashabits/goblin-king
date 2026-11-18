@@ -314,6 +314,12 @@ class NetworkRuntime:
             if self.owned(item):
                 continue
             spec = item["spec"]
+            # This installation rule selects only the dedicated configuration Pods.
+            # Application and proxy templates never carry this identity label.
+            if spec.get("podSelector") == {
+                "matchLabels": {"goblin-king.io/trust": "network-control"}
+            }:
+                continue
             if any(rule != dns_rule() for rule in spec.get("egress", [])):
                 raise RecoveryHold(
                     "additional outbound policy requires installation review: "

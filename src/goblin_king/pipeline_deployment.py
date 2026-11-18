@@ -131,7 +131,10 @@ class HelmRelease:
 
     def verify(self, *, image, active, port, health_path):
         deadline = time.monotonic() + self.timeout
-        selector = f"app.kubernetes.io/instance={self.release}"
+        selector = (
+            f"app.kubernetes.io/instance={self.release},"
+            "app.kubernetes.io/component in (service,background,schedule)"
+        )
         while True:
             deployments = self.apps.list_namespaced_deployment(
                 self.namespace, label_selector=selector
@@ -326,4 +329,32 @@ class HelmRelease:
             "health": health,
             "port": values["port"],
             "health_path": values["healthPath"],
+        }
+
+    def rollback(self, previous, *, reason):
+        """Restore a recorded healthy revision while the existing release claim is held."""
+        self.helm(
+            "rollback",
+            self.release,
+            str(previous["helm_revision"]),
+            "--wait=watcher",
+            "--timeout",
+            f"{self.timeout}s",
+        )
+        if not previous["active"]:
+            self.settle_schedules()
+        health = self.verify(
+            image=previous["image"],
+            active=previous["active"],
+            port=previous["port"],
+            health_path=previous["health_path"],
+        )
+        return {
+            "status": "failed",
+            "error": reason,
+            "rollback": previous
+            | {
+                "health": health,
+                "helm_revision": self.history()[-1]["revision"],
+            },
         }

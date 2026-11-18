@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 from urllib.request import Request, urlopen
+from uuid import NAMESPACE_URL, uuid5
 
 from kubernetes import client
 
@@ -17,7 +18,7 @@ from goblin_king.runtime_helpers import current_kubernetes_namespace, kubernetes
 
 def configure(payload):
     batch, core = kubernetes_clients()
-    namespace = current_kubernetes_namespace()
+    namespace = os.environ.get("GOBLIN_CONTROL_NAMESPACE") or current_kubernetes_namespace()
     installed = json.loads(
         core.read_namespaced_config_map("pipeline-worker-config", namespace).data["config.json"]
     )
@@ -36,7 +37,11 @@ def configure(payload):
         installed["api_url"]
         + "/pipeline/internal/operations/"
         + payload["operation_id"]
-        + "/claim",
+        + (
+            "/network-claims/" + payload["parent_stage"]
+            if payload.get("parent_stage")
+            else "/claim"
+        ),
         data=b"{}",
         headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
     )
@@ -51,7 +56,9 @@ def configure(payload):
         core,
         batch,
         environment["namespace"],
-        payload["operation_id"],
+        str(uuid5(NAMESPACE_URL, payload["parent_ledger"] + "/" + payload["parent_stage"]))
+        if payload.get("parent_stage")
+        else payload["operation_id"],
         identity,
         fault_hook=configured_gate(core, namespace, installed),
     )
@@ -73,6 +80,7 @@ def configure(payload):
         port=payload["port"],
         previous=payload.get("previous"),
         health_path=payload["health_path"],
+        prepare_only=payload.get("prepare_only", False),
     )
     result = GoblinResult.ok(data={"operation_id": payload["operation_id"], "networking": observed})
     ledger.finish(result.model_dump(mode="json"))

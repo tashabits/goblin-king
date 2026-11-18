@@ -221,17 +221,33 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
         if service.settings.networking.enabled and service.settings.network_image:
 
             def network_operation_binding(environment):
+                from goblin_king.contracts import JobRecord, utc_now
+
                 kind = "pipeline.network." + environment
                 entry = app_state.workers.get(kind)
                 if entry.image != service.settings.network_image:
                     raise PipelineConflict("networking image differs from installed approval")
-                return {
+                binding = {
                     "image": entry.image,
                     "profile": service.settings.worker_profile,
                     "resource_policy": app_state.resource_policies.effective_for(
                         kind, timeout_seconds=900, max_retries=0
                     ).compact(),
                 }
+                validate_dispatch(
+                    JobRecord(
+                        id="networking-phase-validation",
+                        created_at=utc_now(),
+                        kind=kind,
+                        timeout_seconds=900,
+                        max_retries=0,
+                        metadata={
+                            "pipeline": binding,
+                            "resource_policy": binding["resource_policy"],
+                        },
+                    )
+                )
+                return binding
 
             service.network_operation_binding = network_operation_binding
 

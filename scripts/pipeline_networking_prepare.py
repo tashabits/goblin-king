@@ -160,6 +160,20 @@ def prepare(output, images, *, context, project, gateway_class, controller_name,
         "serviceType": "NodePort",
         "gatewayClassName": gateway_class,
         "controllerName": controller_name,
+        "apiServiceAccount": "delivery-api",
+        "apiServerCIDRs": [
+            json.loads(kube("get", "service", "kubernetes", "-n", "default", "-o", "json"))["spec"][
+                "clusterIP"
+            ]
+            + "/32",
+            *[
+                address["ip"] + "/32"
+                for subset in json.loads(
+                    kube("get", "endpoints", "kubernetes", "-n", "default", "-o", "json")
+                )["subsets"]
+                for address in subset["addresses"]
+            ],
+        ],
     }
     package_path = output / "networking-values.json"
     package_path.write_text(json.dumps(package, indent=2))
@@ -215,6 +229,8 @@ def prepare(output, images, *, context, project, gateway_class, controller_name,
     values["pipeline"]["settings"]["networking"] = policy
     values["pipeline"]["settings"]["network_image"] = images["network"]["digest"]
     values["pipeline"]["workerConfig"]["networking"] = policy
+    values["pipeline"]["workerConfig"]["network_image"] = images["network"]["digest"]
+    values["pipeline"]["workerConfig"]["control_namespace"] = control
     discovery = json.loads(
         kube("-n", control, "get", "configmap", "pipeline-discovery", "-o", "json")
     )
@@ -222,8 +238,9 @@ def prepare(output, images, *, context, project, gateway_class, controller_name,
     image_map = json.loads(discovery["data"]["images.json"])
     for environment in ("test", "prod"):
         kind = "pipeline.network." + environment
-        if any(item["kind"] == kind for item in definitions["goblins"]):
+        if any(item["kind"] == kind for item in definitions["goblins"]) and not resume:
             raise ValueError("networking definitions already exist")
+        definitions["goblins"] = [item for item in definitions["goblins"] if item["kind"] != kind]
         definitions["goblins"].append(
             {
                 "kind": kind,

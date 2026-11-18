@@ -22,6 +22,10 @@ env:
     value: {{ .Values.sourceRevision | quote }}
   - name: DATA_DIR
     value: /data
+  {{- range .Values.proxyEnvironment }}
+  - name: {{ .name | quote }}
+    value: {{ .value | quote }}
+  {{- end }}
 securityContext:
   allowPrivilegeEscalation: false
   readOnlyRootFilesystem: true

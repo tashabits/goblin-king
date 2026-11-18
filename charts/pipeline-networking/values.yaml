@@ -14,3 +14,5 @@ policy:
 # API and execution identities belong to the main installation namespace.
 controlNamespace: ""
 apiServiceAccount: ""
+apiPort: 8000
+apiServerCIDRs: []

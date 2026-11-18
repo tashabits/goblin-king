@@ -5,6 +5,7 @@ active: true
 port: 8080
 healthPath: /health
 pullSecret: ""
+proxyEnvironment: []
 persistence:
   enabled: false
   size: 1Gi
