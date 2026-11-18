@@ -64,7 +64,9 @@ class NetworkFaultAcceptance:
         self.output.mkdir(exist_ok=True)
 
     def save(self, path, document):
-        path.write_text(json.dumps(document, indent=2))
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(document, indent=2))
+        temporary.replace(path)
 
     def case(self, index, point, prefix, change):
         network, delivery, proof = self.network, self.delivery, self.proof
@@ -82,6 +84,7 @@ class NetworkFaultAcceptance:
         )
         if record.get("passed"):
             return record
+        self.save(path, record)
         desired = copy.deepcopy(record["configuration"])
         if change == "disable":
             desired["ingress"]["enabled"] = desired["egress"]["enabled"] = False
@@ -100,9 +103,10 @@ class NetworkFaultAcceptance:
                     "apiVersion": "batch/v1",
                     "kind": "Job",
                     "metadata": {
-                        "name": "fault-schedule-" + uuid4().hex[:8],
+                        "name": "fault-schedule-" + record["id"].removeprefix("network-fault-")[:8],
                         "namespace": namespace,
-                        "labels": schedule["spec"]["jobTemplate"]["metadata"].get("labels", {}),
+                        "labels": schedule["spec"]["jobTemplate"]["metadata"].get("labels", {})
+                        | {"goblin-king.io/acceptance-fault": record["id"]},
                         "ownerReferences": [
                             {
                                 "apiVersion": "batch/v1",
@@ -122,7 +126,31 @@ class NetworkFaultAcceptance:
                 ]
                 job["spec"]["activeDeadlineSeconds"] = 600
                 job["spec"]["template"]["spec"]["containers"][0].pop("args", None)
-                proof.kube("create", "-f", "-", document=job)
+                existing = json.loads(
+                    proof.kube(
+                        "-n",
+                        namespace,
+                        "get",
+                        "job",
+                        job["metadata"]["name"],
+                        "--ignore-not-found",
+                        "-o",
+                        "json",
+                    )
+                    or "null"
+                )
+                if existing:
+                    if (
+                        existing["metadata"]
+                        .get("labels", {})
+                        .get("goblin-king.io/acceptance-fault")
+                        != record["id"]
+                        or existing["metadata"].get("ownerReferences")
+                        != job["metadata"]["ownerReferences"]
+                    ):
+                        raise RuntimeError("scheduled fault fixture ownership changed")
+                else:
+                    proof.kube("create", "-f", "-", document=job)
             plan = {key: record[key] for key in ("id", "point", "identity_prefix")}
             plan["scope"] = "networking"
             if not prefix.startswith("settle/Job/"):
@@ -138,13 +166,16 @@ class NetworkFaultAcceptance:
             self.save(path, record)
         hit = record["hit"]
         operation = delivery.request("/pipeline/operations/" + operation_id)
+        original_job = record.setdefault(
+            "original_job_id", record.get("held", operation)["document"]["job_id"]
+        )
         if (
-            hit["pod"]["metadata"]["labels"].get("goblin-king.job-id")
-            != operation["document"]["job_id"]
+            hit["pod"]["metadata"]["labels"].get("goblin-king.job-id") != original_job
             or hit["marker"]["point"] != point
             or not hit["marker"]["identity"].startswith(prefix)
         ):
             raise RuntimeError("fault marker does not identify this networking operation")
+        self.save(path, record)
         if "terminated" not in record:
             ledger = json.loads(
                 proof.kube(
@@ -199,39 +230,48 @@ class NetworkFaultAcceptance:
             settled = delivery.operation(operation_id)
         if settled["status"] != "completed":
             raise RuntimeError("network effect did not recover: " + operation_id)
-        record["settled"] = settled
-        current = network.current("python", "test")
-        if current["observed"]["configuration"] != record["started"]["preview"]["configuration"]:
-            raise RuntimeError("recovered networking differs from the approved operation")
-        release = delivery.release("python", "test")
-        before, after = (
-            record["release_before"]["document"]["observed"],
-            release["document"]["observed"],
-        )
-        if before["image"] != after["image"] or before["helm_revision"] != after["helm_revision"]:
-            raise RuntimeError("network recovery rebuilt or redeployed the application")
-        record["resources"] = NetworkLifecycleAcceptance(network).resources()
-        ledger = json.loads(
-            proof.kube(
-                "-n",
-                delivery.prefix + "-python-test",
-                "get",
-                "configmap",
-                "pipeline-" + operation_id,
-                "-o",
-                "json",
+        if not record.get("verified"):
+            record["settled"] = settled
+            current = network.current("python", "test")
+            if (
+                current["observed"]["configuration"]
+                != record["started"]["preview"]["configuration"]
+            ):
+                raise RuntimeError("recovered networking differs from the approved operation")
+            release = delivery.release("python", "test")
+            before, after = (
+                record["release_before"]["document"]["observed"],
+                release["document"]["observed"],
             )
-        )
-        if ledger["metadata"]["uid"] != record["ledger_uid"]:
-            raise RuntimeError("network recovery replaced its retained execution identity")
-        effects = json.loads(ledger["data"]["execution.json"])["network_effects"]
-        for key, value in record["effects_at_pause"].items():
-            if value.get("complete") and effects.get(key) != value:
-                raise RuntimeError("recovery changed an acknowledged network effect")
-        if point in {"networking.after_apply", "networking.after_apply_ack"}:
-            target = prefix.removeprefix("apply/")
-            if record["resources_at_pause"][target] != record["resources"][target]:
-                raise RuntimeError("recovery repeated an already observed network apply")
+            if (
+                before["image"] != after["image"]
+                or before["helm_revision"] != after["helm_revision"]
+            ):
+                raise RuntimeError("network recovery rebuilt or redeployed the application")
+            record["resources"] = NetworkLifecycleAcceptance(network).resources()
+            ledger = json.loads(
+                proof.kube(
+                    "-n",
+                    delivery.prefix + "-python-test",
+                    "get",
+                    "configmap",
+                    "pipeline-" + operation_id,
+                    "-o",
+                    "json",
+                )
+            )
+            if ledger["metadata"]["uid"] != record["ledger_uid"]:
+                raise RuntimeError("network recovery replaced its retained execution identity")
+            effects = json.loads(ledger["data"]["execution.json"])["network_effects"]
+            for key, value in record["effects_at_pause"].items():
+                if value.get("complete") and effects.get(key) != value:
+                    raise RuntimeError("recovery changed an acknowledged network effect")
+            if point in {"networking.after_apply", "networking.after_apply_ack"}:
+                target = prefix.removeprefix("apply/")
+                if record["resources_at_pause"][target] != record["resources"][target]:
+                    raise RuntimeError("recovery repeated an already observed network apply")
+            record["verified"] = True
+            self.save(path, record)
         record["restored"] = network.apply(
             "python", "test", record["configuration"], record["id"] + "-restore"
         )

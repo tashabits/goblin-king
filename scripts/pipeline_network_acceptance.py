@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -74,23 +75,37 @@ class NetworkAcceptance:
     def begin(self, implementation, environment, configuration, name):
         delivery = self.delivery
         release = delivery.release(implementation, environment)
-        preview = delivery.request(
-            "/pipeline/networking/preview",
-            {
-                "release_key": release["key"],
-                "configuration": configuration,
-            },
-        )
+        directory = self.output / "requests"
+        directory.mkdir(exist_ok=True)
+        path = directory / (hashlib.sha256(name.encode()).hexdigest() + ".json")
+        identity = {"release_key": release["key"], "configuration": configuration, "name": name}
+        if path.exists():
+            intent = json.loads(path.read_text())
+            if intent["identity"] != identity:
+                raise RuntimeError("networking test request identity conflicts with its checkpoint")
+        else:
+            preview = delivery.request(
+                "/pipeline/networking/preview",
+                {"release_key": release["key"], "configuration": configuration},
+            )
+            intent = {
+                "identity": identity,
+                "preview": preview,
+                "body": {
+                    "configuration": configuration,
+                    "preview_id": preview["preview_id"],
+                    "expected_version": preview["expected_version"],
+                    "idempotency_key": name,
+                },
+            }
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(intent, indent=2))
+            temporary.replace(path)
         result = delivery.request(
             "/pipeline/releases/" + release["key"] + "/networking",
-            {
-                "configuration": configuration,
-                "preview_id": preview["preview_id"],
-                "expected_version": preview["expected_version"],
-                "idempotency_key": name,
-            },
+            intent["body"],
         )
-        return result | {"preview": preview}
+        return result | {"preview": intent["preview"]}
 
     def configuration(self, implementation, environment):
         delivery = self.delivery
