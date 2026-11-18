@@ -107,6 +107,9 @@ class HelmRelease:
         mutation = args[0] in {"upgrade", "rollback"}
         if mutation:
             self.fault_hook("helm.before_" + args[0], self.namespace + "/" + self.release)
+            # Networking temporarily changes replicas, schedules and proxy settings
+            # under the same release lock. Three-way merging preserves that handoff.
+            args = (*args, "--server-side=false")
         environment = os.environ | {
             "HELM_DRIVER": "configmap",
             "HELM_CACHE_HOME": "/tmp/helm/cache",
