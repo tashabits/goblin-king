@@ -239,7 +239,7 @@ def prove_storage_recovery(delivery):
     after = inventory()
     if not after["recovery_mode"]:
         raise RuntimeError("restored state did not hold delivery")
-    for collection in ("registrations", "builds", "releases", "operations"):
+    for collection in ("registrations", "builds", "releases", "operations", "networking"):
         if collection not in before or before[collection] != after[collection]:
             raise RuntimeError("restoration changed durable " + collection)
     reconciled = delivery.checkpoint("storage-reconcile", lambda: recovery.reconcile(enable=True))

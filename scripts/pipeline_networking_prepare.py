@@ -20,7 +20,7 @@ from goblin_king.pipeline_networking import NetworkingPolicy
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def certificate(hostnames):
+def certificate(hostnames, *, valid_from=None, valid_until=None):
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, hostnames[0])])
     now = datetime.datetime.now(datetime.UTC)
@@ -30,8 +30,8 @@ def certificate(hostnames):
         .issuer_name(subject)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(now - datetime.timedelta(minutes=1))
-        .not_valid_after(now + datetime.timedelta(days=7))
+        .not_valid_before(valid_from or now - datetime.timedelta(minutes=1))
+        .not_valid_after(valid_until or now + datetime.timedelta(days=7))
         .add_extension(
             x509.SubjectAlternativeName([x509.DNSName(name) for name in hostnames]), critical=False
         )

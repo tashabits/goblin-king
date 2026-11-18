@@ -16,3 +16,7 @@ controlNamespace: ""
 apiServiceAccount: ""
 apiPort: 8000
 apiServerCIDRs: []
+# Optional issuance uses an existing cert-manager installation. Issuer aliases are
+# installation policy; project forms select the corresponding certificate alias.
+approvedIssuers: {}
+certificateRequests: []

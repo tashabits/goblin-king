@@ -339,6 +339,28 @@ class NetworkRuntime:
                         return None
                 if kind == "BackendTrafficPolicy":
                     ancestors = current.get("status", {}).get("ancestors", [])
+                    parents = [
+                        route["spec"]["parentRefs"][0]
+                        for route in desired
+                        if route["kind"] == "HTTPRoute"
+                        and route["metadata"]["name"] == self.release + "-ingress"
+                    ]
+                    if len(parents) != 1:
+                        raise RecoveryHold("request limits have no approved ingress parent")
+                    parent = parents[0]
+                    binding = next(
+                        entry
+                        for entry in self.policy.gateways.values()
+                        if entry.name == parent["name"] and entry.namespace == parent["namespace"]
+                    )
+                    ancestors = [
+                        entry
+                        for entry in ancestors
+                        if entry.get("controllerName") == binding.controller_name
+                        and all(
+                            entry["ancestorRef"].get(key) == value for key, value in parent.items()
+                        )
+                    ]
                     if not ancestors or not all(
                         any(
                             condition["type"] == "Accepted"

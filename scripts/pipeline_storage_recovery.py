@@ -169,9 +169,14 @@ class StorageRecovery:
         script = """
 import json,os
 from urllib.request import Request,urlopen
-request=Request('http://127.0.0.1:8000/pipeline/recovery',
-    headers={'Authorization':'Bearer '+os.environ['GOBLIN_KING_BOOTSTRAP_ADMIN_TOKEN']})
-with urlopen(request,timeout=30) as response: print(json.dumps(json.load(response)))
+def get(path):
+ request=Request('http://127.0.0.1:8000'+path,
+     headers={'Authorization':'Bearer '+os.environ['GOBLIN_KING_BOOTSTRAP_ADMIN_TOKEN']})
+ with urlopen(request,timeout=30) as response:return json.load(response)
+state=get('/pipeline/recovery')
+state['networking']={row['key']:get('/pipeline/releases/'+row['key']+'/networking')
+                    for row in state['releases']}
+print(json.dumps(state))
 """
         return json.loads(
             self.kube(
@@ -628,6 +633,10 @@ print('restored')
             if doc["operation_id"]:
                 raise RuntimeError("release ownership remains unresolved")
             if not observed:
+                network = state.get("networking", {}).get(row["key"])
+                if network:
+                    result = self.reconcile_network(values, row, network)
+                    evidence.append({"release_key": row["key"], "networking": result})
                 continue
             namespace, release = doc["environment"]["namespace"], doc["environment"]["release"]
 
@@ -702,7 +711,16 @@ print('restored')
                     "assert response.status==200; print(response.read(8192).decode())",
                     document={"url": url},
                 )
-            evidence.append({"release_key": row["key"], "helm": history[-1], "health": health})
+            network = state.get("networking", {}).get(row["key"])
+            networking = self.reconcile_network(values, row, network) if network else None
+            evidence.append(
+                {
+                    "release_key": row["key"],
+                    "helm": history[-1],
+                    "health": health,
+                    "networking": networking,
+                }
+            )
         (self.output / "reconciliation.json").write_text(json.dumps(evidence, indent=2))
         if enable:
             values["pipeline"]["settings"]["recovery_mode"] = False
@@ -725,6 +743,49 @@ print('restored')
             if self.inventory()["recovery_mode"] is not False:
                 raise RuntimeError("live API still holds delivery in recovery mode")
         return {"reconciled_releases": len(evidence), "delivery_enabled": enable}
+
+    def reconcile_network(self, values, release, network):
+        if not network["network_version"]:
+            return None
+        from goblin_king.pipeline_kubernetes import restricted_job
+
+        name = "network-restore-" + uuid4().hex[:12]
+        target = release["document"]["environment"]
+        payload = {
+            "policy": values["pipeline"]["settings"]["networking"],
+            "release": release,
+            "network": network,
+        }
+        script = (
+            "import json; from kubernetes import config; config.load_incluster_config(); "
+            "from goblin_king.pipeline_network_recovery import verify_network_recovery; "
+            "print(json.dumps(verify_network_recovery(**json.loads("
+            + repr(json.dumps(payload))
+            + "))))"
+        )
+        job = restricted_job(
+            name,
+            target["namespace"],
+            values["pipeline"]["settings"]["network_image"],
+            ["python", "-c", script],
+            timeout=90,
+        )
+        template = job["spec"]["template"]
+        template["metadata"].setdefault("labels", {})["goblin-king.io/trust"] = "network-control"
+        template["spec"]["serviceAccountName"] = target["release"] + "-network"
+        template["spec"]["automountServiceAccountToken"] = True
+        self.kube("-n", target["namespace"], "create", "-f", "-", document=job)
+        self.kube(
+            "-n",
+            target["namespace"],
+            "wait",
+            "--for=condition=Complete",
+            "job/" + name,
+            "--timeout=120s",
+            timeout=135,
+        )
+        result = json.loads(self.kube("-n", target["namespace"], "logs", "job/" + name))
+        return {"job": name, "namespace": target["namespace"], "observation": result}
 
 
 def main():

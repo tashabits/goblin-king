@@ -52,7 +52,26 @@ class NetworkAcceptance:
         path.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
         return {"evidence": str(path.relative_to(self.proof.output))}
 
+    def current(self, implementation, environment):
+        release = self.delivery.release(implementation, environment)
+        return self.delivery.request("/pipeline/releases/" + release["key"] + "/networking")
+
+    def probe(self, implementation, environment, name):
+        release = self.delivery.release(implementation, environment)
+        result = self.delivery.request(
+            "/pipeline/releases/" + release["key"] + "/networking/probe",
+            {"expected_version": release["version"], "idempotency_key": name},
+        )
+        return self.delivery.operation(result["operation_id"])
+
     def apply(self, implementation, environment, configuration, name):
+        result = self.begin(implementation, environment, configuration, name)
+        settled = self.delivery.operation(result["operation_id"])
+        if settled["status"] != "completed":
+            raise RuntimeError("networking operation did not complete: " + settled["id"])
+        return {"request": result, "operation": settled}
+
+    def begin(self, implementation, environment, configuration, name):
         delivery = self.delivery
         release = delivery.release(implementation, environment)
         preview = delivery.request(
@@ -71,10 +90,7 @@ class NetworkAcceptance:
                 "idempotency_key": name,
             },
         )
-        settled = delivery.operation(result["operation_id"])
-        if settled["status"] != "completed":
-            raise RuntimeError("networking operation did not complete: " + settled["id"])
-        return {"preview": preview, "operation": settled}
+        return result | {"preview": preview}
 
     def configuration(self, implementation, environment):
         delivery = self.delivery
@@ -352,9 +368,16 @@ class NetworkAcceptance:
                 if time.monotonic() >= deadline:
                     raise RuntimeError("DNS fixture did not recover after restoration")
                 time.sleep(2)
+        from pipeline_network_lifecycle_acceptance import NetworkLifecycleAcceptance
+
+        self.save("additive-policy", NetworkLifecycleAcceptance(self).additive_policy())
         return result
 
     def implementations(self, original):
+        from pipeline_network_authorization_acceptance import authorization
+        from pipeline_network_ingress_acceptance import IngressAcceptance
+        from pipeline_network_lifecycle_acceptance import NetworkLifecycleAcceptance
+
         installation, onboard = self.delivery.installation, self.delivery.onboard
         self.delivery.onboard = lambda implementation, repository_id: self.onboard(
             onboard, implementation, repository_id
@@ -366,4 +389,10 @@ class NetworkAcceptance:
             "network-allowed-egress": self.egress,
             "network-denied-egress": self.denied_egress,
             "network-dns-policy": self.dns,
+            "network-negative-ingress": IngressAcceptance(self).negative,
+            "network-tls-lifecycle": IngressAcceptance(self).tls,
+            "network-recording-recovery": NetworkLifecycleAcceptance(self).recording,
+            "network-activation": NetworkLifecycleAcceptance(self).activation,
+            "network-rollout-recovery": NetworkLifecycleAcceptance(self).rollout,
+            "network-authorization": lambda: authorization(self),
         }

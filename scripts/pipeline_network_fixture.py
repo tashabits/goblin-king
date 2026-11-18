@@ -128,7 +128,7 @@ with urlopen(request,timeout=10) as response: print(response.read().decode())
         return {"removed_container": item["Id"], "identity": self.identity}
 
 
-def external_ingress(proof, delivery, implementation, environment):
+def external_client(proof, delivery, implementation, environment, script, extra=None):
     selector = (
         "gateway.envoyproxy.io/owning-gateway-name="
         + environment
@@ -157,6 +157,42 @@ def external_ingress(proof, delivery, implementation, environment):
         "implementation": implementation,
         "revision": build["document"]["request"]["source"]["commit"],
     }
+    arguments.update(extra or {})
+    result = subprocess.run(
+        [
+            "docker",
+            "run",
+            "--rm",
+            "-i",
+            "--network",
+            "kind",
+            "--read-only",
+            "--cap-drop=ALL",
+            "--security-opt=no-new-privileges",
+            "--memory=128m",
+            "--pids-limit=64",
+            "--entrypoint",
+            "python",
+            proof.state["images"]["controller"]["digest"],
+            "-c",
+            script,
+        ],
+        input=json.dumps(arguments),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if result.returncode:
+        raise RuntimeError("external ingress probe failed: " + result.stderr[-2000:])
+    return {
+        "client": json.loads(result.stdout),
+        "gateway_service": service,
+        "gateway_pods": pods,
+        "scope": "Docker network outside Kubernetes; not public Internet",
+    }
+
+
+def external_ingress(proof, delivery, implementation, environment):
     script = """
 import http.client,ssl,socket,json,sys
 a=json.load(sys.stdin)
@@ -180,35 +216,4 @@ assert observed['redirect']['location'].startswith('https://'+a['hostname']+'/')
 assert observed['unknown-host']['status'] in (404,421),observed
 print(json.dumps({'observations':observed,'tls_verified':True,'source_revision':a['revision']}))
 """
-    result = subprocess.run(
-        [
-            "docker",
-            "run",
-            "--rm",
-            "-i",
-            "--network",
-            "kind",
-            "--read-only",
-            "--cap-drop=ALL",
-            "--security-opt=no-new-privileges",
-            "--memory=128m",
-            "--pids-limit=64",
-            "--entrypoint",
-            "python",
-            proof.state["images"]["controller"]["digest"],
-            "-c",
-            script,
-        ],
-        input=json.dumps(arguments),
-        capture_output=True,
-        text=True,
-        timeout=90,
-    )
-    if result.returncode:
-        raise RuntimeError("external ingress probe failed: " + result.stderr[-2000:])
-    return {
-        "client": json.loads(result.stdout),
-        "gateway_service": service,
-        "gateway_pods": pods,
-        "scope": "Docker network outside Kubernetes; not public Internet",
-    }
+    return external_client(proof, delivery, implementation, environment, script)
