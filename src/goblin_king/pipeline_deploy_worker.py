@@ -175,6 +175,7 @@ def deploy(payload):
                 stage="network-after",
                 active=bool(restored and restored["active"]),
                 previous=network.get("previous"),
+                expected_image=restored["image"] if restored else None,
             )
         except RecoveryHold:
             if observed["status"] != "success" or not payload["previous"]:
@@ -191,6 +192,7 @@ def deploy(payload):
                 stage="network-rollback",
                 active=restored["active"],
                 previous=network.get("previous"),
+                expected_image=restored["image"],
             )
         if restored:
             restored["networking"] = evidence

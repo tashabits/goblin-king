@@ -61,13 +61,13 @@ def deployment(monkeypatch, *, active=True):
 
     def apply(*args, **kwargs):
         events.append("helm")
-        return {"status": "success", "active": active}
+        return {"status": "success", "active": active, "image": "approved"}
 
     helm.apply.side_effect = apply
 
     def rollback(*args, **kwargs):
         events.append("rollback")
-        return {"status": "failed", "rollback": {"active": True}}
+        return {"status": "failed", "rollback": {"active": True, "image": "previous"}}
 
     helm.rollback.side_effect = rollback
     monkeypatch.setattr(implementation, "HelmRelease", lambda *a, **k: helm)

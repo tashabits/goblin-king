@@ -427,6 +427,16 @@ class NetworkRuntime:
                         self.release + "-schedule",
                     }:
                         raise RecoveryHold("unexpected application workload identity")
+                    template = (
+                        item["spec"]["jobTemplate"]["spec"]["template"]
+                        if kind == "CronJob"
+                        else item["spec"]["template"]
+                    )
+                    if getattr(self, "expected_image", None) and any(
+                        container["image"] != self.expected_image
+                        for container in template["spec"]["containers"]
+                    ):
+                        raise RecoveryHold("application image differs from the verified release")
                     saved.append(
                         {
                             "kind": kind,
@@ -591,6 +601,12 @@ class NetworkRuntime:
                     raise RecoveryHold(
                         "application identity changed during networking health check"
                     )
+                if item["kind"] == "Deployment" and getattr(self, "expected_image", None):
+                    if any(
+                        container["image"] != self.expected_image
+                        for container in current["spec"]["template"]["spec"]["containers"]
+                    ):
+                        raise RecoveryHold("application image differs from the verified release")
                 if item["kind"] == "Deployment" and (
                     current.get("status", {}).get("observedGeneration")
                     != current["metadata"]["generation"]
@@ -628,8 +644,12 @@ class NetworkRuntime:
         health_path="/health",
         prepare_only=False,
         probe_only=False,
+        expected_image=None,
     ):
+        self.expected_image = expected_image
         configuration = NetworkingConfiguration.model_validate(configuration)
+        if expected_image:
+            self.application_workloads()
         desired = render_networking(
             configuration,
             self.policy,
