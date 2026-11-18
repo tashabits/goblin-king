@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from pipeline_network_fixture import ExternalFixture, external_ingress
@@ -200,6 +201,159 @@ class NetworkAcceptance:
         }
         return self.save("external-ingress", evidence)
 
+    def egress(self):
+        from pipeline_network_probes import EGRESS, NODE_TLS
+
+        delivery, proof = self.delivery, self.proof
+        upstream = json.loads(self.fixture.path.read_text())
+        node = next(
+            item
+            for item in proof.state["nodes"]["items"]
+            if "node-role.kubernetes.io/control-plane" in item["metadata"]["labels"]
+        )
+        address = next(
+            item["address"] for item in node["status"]["addresses"] if item["type"] == "InternalIP"
+        )
+        arguments = upstream | {
+            "ca": (self.fixture.output / "tls.crt").read_text(),
+            "control": delivery.control,
+            "node_address": address,
+        }
+        observations = {}
+        for environment in ("test", "prod"):
+            other = "prod" if environment == "test" else "test"
+            arguments.update(
+                other_proxy=delivery.prefix + "-node-" + environment,
+                other_namespace=delivery.prefix + "-python-" + other,
+            )
+            for namespace, deployment in (
+                (arguments["other_proxy"], "app-egress"),
+                (arguments["other_namespace"], "app"),
+                (delivery.control, "delivery-redis"),
+            ):
+                proof.kube(
+                    "-n",
+                    namespace,
+                    "rollout",
+                    "status",
+                    "deployment/" + deployment,
+                    "--timeout=60s",
+                )
+            observations["python-" + environment] = json.loads(
+                proof.kube(
+                    "-n",
+                    delivery.prefix + "-python-" + environment,
+                    "exec",
+                    "-i",
+                    "deployment/app",
+                    "--",
+                    "python",
+                    "-c",
+                    EGRESS,
+                    document=arguments,
+                )
+            )
+            observations["node-tls-" + environment] = json.loads(
+                proof.kube(
+                    "-n",
+                    delivery.prefix + "-node-" + environment,
+                    "exec",
+                    "-i",
+                    "deployment/app",
+                    "--",
+                    "node",
+                    "--input-type=module",
+                    "-e",
+                    NODE_TLS,
+                    "probe",
+                    document=arguments,
+                )
+            )
+        return self.save(
+            "controlled-egress", {"observations": observations, "upstream": self.fixture.control()}
+        )
+
+    def denied_egress(self):
+        path = self.output / "controlled-egress.json"
+        evidence = json.loads(path.read_text())
+        for environment in ("test", "prod"):
+            observed = evidence["observations"]["python-" + environment]
+            if any(
+                observed[name] != "denied"
+                for name in (
+                    "direct-bypass",
+                    "node-api",
+                    "control-redis",
+                    "other-proxy",
+                    "other-environment",
+                )
+            ):
+                raise RuntimeError("required identity boundary was not denied")
+        return {"evidence": str(path.relative_to(self.proof.output))}
+
+    def dns(self):
+        from pipeline_network_probes import DNS
+
+        upstream = json.loads(self.fixture.path.read_text())
+        node = next(
+            item
+            for item in self.proof.state["nodes"]["items"]
+            if "node-role.kubernetes.io/control-plane" in item["metadata"]["labels"]
+        )
+        address = next(
+            item["address"] for item in node["status"]["addresses"] if item["type"] == "InternalIP"
+        )
+
+        def probe():
+            return json.loads(
+                self.proof.kube(
+                    "-n",
+                    self.delivery.prefix + "-python-test",
+                    "exec",
+                    "deployment/app",
+                    "--",
+                    "python",
+                    "-c",
+                    DNS,
+                )
+            )
+
+        before = probe()
+        if not all(value == 200 for value in before.values()):
+            raise RuntimeError("DNS denial requires successful controlled baseline requests")
+        try:
+            self.fixture.control(
+                {
+                    "rebind.fixture.example.test": [address],
+                    "mixed.fixture.example.test": [upstream["address"], address, "::1"],
+                }
+            )
+            deadline = time.monotonic() + 90
+            while True:
+                after = probe()
+                if after == {"allowed": 200, "rebind": 403, "mixed": 403}:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("DNS boundary failed: " + str(after))
+                time.sleep(2)
+            result = self.save(
+                "dns-boundaries",
+                {"before": before, "after": after, "upstream": self.fixture.control()},
+            )
+        finally:
+            self.fixture.control(
+                {
+                    "rebind.fixture.example.test": [upstream["address"]],
+                    "mixed.fixture.example.test": [upstream["address"]],
+                }
+            )
+            deadline = time.monotonic() + 90
+            while probe() != before:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError("DNS fixture did not recover after restoration")
+                time.sleep(2)
+        return result
+
     def implementations(self, original):
         installation, onboard = self.delivery.installation, self.delivery.onboard
         self.delivery.onboard = lambda implementation, repository_id: self.onboard(
@@ -209,4 +363,7 @@ class NetworkAcceptance:
             "fresh-installation": lambda: self.installation(installation),
             "network-four-releases": self.four_releases,
             "network-external-ingress": self.external,
+            "network-allowed-egress": self.egress,
+            "network-denied-egress": self.denied_egress,
+            "network-dns-policy": self.dns,
         }
