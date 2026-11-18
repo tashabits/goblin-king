@@ -75,6 +75,13 @@ installation, pins the example images, verifies both node caches, and runs the
 contract checks before browser submissions. Long-running services are probed through
 Services rather than submitted as one-shot jobs.
 
+The harness now prepares both audit installations and runs Chromium in isolated
+headless containers through `scripts/pipeline_admin_browser.py`. It uses no desktop
+session or visible browser window. The Docker audit uses the pinned application
+image and a dedicated data volume; the Helm audit uses its own namespace and a
+Secret-backed admin identity. Successful Docker audit cleanup removes only its
+Compose project and volume. Helm resources remain until acceptance cleanup.
+
 If local CRI status reports a different OCI index alias, preparation verifies the
 cached reference and both index hashes against the exact node-platform runtime
 manifest. A different runtime or ambiguous platform still fails. The raw image IDs
@@ -85,7 +92,9 @@ Each acceptance directory needs `docker-admin-audit/browser-proof.json` and
 revision and hash, loopback API endpoint, job/run IDs, checksummed browser-submission
 captures, downloaded artifacts, and screenshots for kinds, runs, events, heartbeats,
 services, and artifacts. Two service-probe records must show HTTP 200 and advancing
-timestamps. Set `GOBLIN_KING_AUDIT_TOKEN` in the environment for verification.
+timestamps. The harness supplies the audit token directly for verification.
+For independent verification of an existing installation, set
+`GOBLIN_KING_AUDIT_TOKEN` in the environment.
 `scripts/pipeline_admin_acceptance.py` checks these captures against current API
 results and artifact bytes; it never submits replacement jobs. Missing browser
 evidence stays incomplete even when API-only checks pass.

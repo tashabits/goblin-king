@@ -57,7 +57,7 @@ def deploy(payload):
         ).data["config.json"]
     )
     environment = payload["environment"]
-    fault_hook = configured_gate(core, current_kubernetes_namespace(), config)
+    fault_hook = configured_gate(core, current_kubernetes_namespace(), config, "deployment")
     target = config["releases"].get(environment["namespace"] + "/" + environment["release"])
     if target is None or target["environment"] != environment["name"]:
         raise ValueError("release is outside the installed deployment profile")
@@ -175,6 +175,7 @@ def deploy(payload):
                 stage="network-after",
                 active=bool(restored and restored["active"]),
                 previous=network.get("previous"),
+                expected_image=restored["image"] if restored else None,
             )
         except RecoveryHold:
             if observed["status"] != "success" or not payload["previous"]:
@@ -191,6 +192,7 @@ def deploy(payload):
                 stage="network-rollback",
                 active=restored["active"],
                 previous=network.get("previous"),
+                expected_image=restored["image"],
             )
         if restored:
             restored["networking"] = evidence

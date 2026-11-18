@@ -40,6 +40,7 @@ class NetworkOperations:
                 "port": observed.get("port", 8080) if observed else 8080,
                 "health_path": observed.get("health_path", "/health") if observed else "/health",
                 "previous": network["document"].get("observed"),
+                "expected_image": observed["image"] if observed else None,
                 "probe_only": operation["document"].get("probe_only", False),
             }
             job_id = str(uuid5(NAMESPACE_URL, "goblin-king/networking/" + operation_id))
@@ -100,14 +101,44 @@ class NetworkOperations:
             updated = release["document"].copy()
             if success:
                 observed = result["data"].get("networking", {})
+                expected_configuration = network["document"]["desired"]
+                rollback = result["data"].get("route_rollback", False)
+                if rollback:
+                    prior = operation["document"]["execution"].get("previous")
+                    if (
+                        not prior
+                        or not prior.get("active")
+                        or not operation["document"]["execution"]["active"]
+                        or operation["document"].get("probe_only")
+                        or not expected_configuration["ingress"]["enabled"]
+                        or not prior["configuration"]["ingress"]["enabled"]
+                    ):
+                        raise PipelineConflict("route rollback has no prior authorized ingress")
+                    expected_configuration = expected_configuration | {
+                        "ingress": prior["configuration"]["ingress"],
+                    }
+                    target = release["document"]["environment"]
+                    self.policy.validate_configuration(
+                        expected_configuration,
+                        identity=target["namespace"] + "/" + target["release"],
+                        project_id=release["project_id"],
+                        environment=target["name"],
+                    )
                 if (
-                    observed.get("configuration") != network["document"]["desired"]
+                    observed.get("configuration") != expected_configuration
                     or observed.get("policy_revision") != network["document"]["policy_revision"]
                     or observed.get("active") != operation["document"]["execution"]["active"]
                 ):
                     raise PipelineConflict("observed networking differs from approved execution")
                 state.cas(
-                    connection, networking, network, network["document"] | {"observed": observed}
+                    connection,
+                    networking,
+                    network,
+                    network["document"]
+                    | {
+                        "observed": observed,
+                        "last_probe": result if operation["document"].get("probe_only") else None,
+                    },
                 )
                 if (
                     operation["document"]["execution"].get("recover")
@@ -121,7 +152,7 @@ class NetworkOperations:
                     status = "recording"
                 else:
                     updated["operation_id"] = None
-                    status = "completed"
+                    status = "failed" if rollback else "completed"
             elif operation["document"].get("probe_only"):
                 updated["operation_id"] = None
                 state.cas(
@@ -139,7 +170,9 @@ class NetworkOperations:
                 connection,
                 operations,
                 operation,
-                operation["document"] | {"result": result},
+                operation["document"]
+                | {"result": result}
+                | ({"terminal_status": "failed"} if success and rollback else {}),
                 status=status,
             )
             state.audit(

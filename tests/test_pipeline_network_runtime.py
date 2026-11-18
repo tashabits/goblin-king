@@ -115,6 +115,59 @@ def test_additional_allow_policy_cannot_hide_behind_an_ownership_label():
         current.inspect_policy_boundary()
 
 
+def test_named_foreign_namespace_is_not_an_approved_ingress_peer():
+    current = runtime()
+    current.api.resources["/apis/networking.k8s.io/v1/namespaces/app-test/networkpolicies"] = {
+        "items": [
+            {
+                "metadata": {"name": "foreign", "namespace": "app-test"},
+                "spec": {
+                    "podSelector": {},
+                    "ingress": [
+                        {
+                            "from": [
+                                {
+                                    "namespaceSelector": {
+                                        "matchLabels": {
+                                            "kubernetes.io/metadata.name": "another-project"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                },
+            }
+        ]
+    }
+    with pytest.raises(RecoveryHold, match="additional ingress peer"):
+        current.inspect_policy_boundary()
+
+
+def test_unprogrammed_gateway_cannot_claim_certificate_readiness():
+    from goblin_king.pipeline_networking import IngressConfiguration
+
+    current = runtime()
+    current.api.resources[
+        "/apis/gateway.networking.k8s.io/v1/namespaces/gateways/gateways/test"
+    ] = {
+        "metadata": {"generation": 2},
+        "status": {
+            "conditions": [
+                {"type": "Programmed", "status": "True", "observedGeneration": 1},
+                {"type": "Accepted", "status": "True", "observedGeneration": 2},
+            ]
+        },
+    }
+    with pytest.raises(RecoveryHold, match="not accepted and programmed"):
+        current.verify_certificate(
+            IngressConfiguration(
+                enabled=True, gateway="test", certificate="test", hostname="one.apps.example.com"
+            )
+        )
+    assert current.api.writes == 0
+
+
 @pytest.mark.parametrize("drift", ["identity", "configuration"])
 def test_acknowledged_resource_drift_holds_instead_of_overwriting(drift):
     current = runtime()

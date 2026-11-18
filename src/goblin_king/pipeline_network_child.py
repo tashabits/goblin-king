@@ -21,6 +21,7 @@ def phase(
     previous,
     prepare_only=False,
     probe_only=False,
+    expected_image=None,
 ):
     network = payload["networking"]
     image = network["image"]
@@ -46,6 +47,7 @@ def phase(
         "parent_ledger": ledger.name,
         "prepare_only": prepare_only,
         "probe_only": probe_only,
+        "expected_image": expected_image,
     }
     requests = ledger.document.setdefault("network_requests", {})
     if stage in requests and requests[stage] != request:

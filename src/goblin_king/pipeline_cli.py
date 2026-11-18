@@ -29,6 +29,12 @@ def networking_inspect(release_key: str):
     call(f"/releases/{release_key}/networking")
 
 
+@networking_app.command("diagnostics")
+def networking_diagnostics(project: str):
+    """Show retained health evidence and actionable configuration problems."""
+    call("/networking/diagnostics?" + urlencode({"project_id": project}))
+
+
 @networking_app.command("preview")
 def networking_preview(release_key: str, configuration: Path):
     """Validate a configuration file without changing any resources."""

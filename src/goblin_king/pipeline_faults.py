@@ -13,8 +13,8 @@ def no_fault(point, identity):
 class AcceptanceFaultGate:
     """A disabled gate makes no requests; applications cannot configure this gate."""
 
-    def __init__(self, core, namespace, *, enabled=False):
-        self.core, self.namespace, self.enabled = core, namespace, enabled
+    def __init__(self, core, namespace, *, enabled=False, scope=None):
+        self.core, self.namespace, self.enabled, self.scope = core, namespace, enabled, scope
 
     def plan(self):
         if not self.enabled:
@@ -34,7 +34,11 @@ class AcceptanceFaultGate:
 
     def __call__(self, point, identity):
         plan = self.plan()
+        if plan.get("scope") is not None and plan["scope"] != self.scope:
+            return
         if plan.get("point") != point or not identity.startswith(plan.get("identity_prefix", "")):
+            return
+        if plan.get("identity") is not None and plan["identity"] != identity:
             return
         if not plan.get("id"):
             raise ValueError("acceptance fault requires a unique identity")
@@ -51,11 +55,11 @@ class AcceptanceFaultGate:
             time.sleep(1)
 
 
-def configured_gate(core, namespace, config):
+def configured_gate(core, namespace, config, scope=None):
     enabled = bool(config.get("acceptance_faults"))
     if enabled and not config.get("provider", {}).get("simulated_provider"):
         raise ValueError("acceptance faults require the local simulated provider")
-    return AcceptanceFaultGate(core, namespace, enabled=enabled)
+    return AcceptanceFaultGate(core, namespace, enabled=enabled, scope=scope)
 
 
 class PublicationFaultGate:

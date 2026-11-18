@@ -23,6 +23,7 @@ from uuid import uuid4
 
 import jwt
 import uvicorn
+from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import FastAPI, HTTPException
@@ -157,6 +158,18 @@ class Simulator:
         return self.git(directory, "rev-parse", f"refs/heads/{branch}")
 
     def merge(self, body):
+        public_ca = body.get("public_ca")
+        if public_ca is not None:
+            try:
+                if (
+                    not isinstance(public_ca, str)
+                    or len(public_ca) > 16384
+                    or "PRIVATE" in public_ca
+                ):
+                    raise ValueError("invalid public certificate")
+                x509.load_pem_x509_certificate(public_ca.encode())
+            except ValueError:
+                raise HTTPException(422, "fixture CA must be a public PEM certificate") from None
         key = body.get("idempotency_key")
         if key and key in self.state.get("merge_requests", {}):
             prior = self.state["merge_requests"][key]
@@ -201,6 +214,8 @@ class Simulator:
             (directory / "pipeline-service.json").write_text('{"port":0}')
         elif fault:
             raise HTTPException(422, "unknown fixture fault")
+        if public_ca is not None:
+            (directory / "fixture-ca.pem").write_text(public_ca)
         self.git(directory, "add", ".")
         self.git(directory, "commit", "-m", f"Synthetic reviewed change {number}")
         commit = self.head(directory, branch)

@@ -1,0 +1,47 @@
+{{- if and .Values.policy.enabled .Values.policy.ingress_available .Values.certificateRequests }}
+{{- if not (.Capabilities.APIVersions.Has "cert-manager.io/v1/Certificate") }}
+{{- fail "certificateRequests requires an existing cert-manager.io/v1 Certificate API" }}
+{{- end }}
+{{- range $request := .Values.certificateRequests }}
+{{- $gateway := index $.Values.policy.gateways $request.gateway }}
+{{- if not $gateway }}{{ fail "certificate request has no approved gateway" }}{{ end }}
+{{- if ne $gateway.mode "managed" }}
+{{- fail "existing Gateway certificates remain externally owned" }}
+{{- end }}
+{{- $secret := index $gateway.certificates $request.certificate }}
+{{- if not $secret }}{{ fail "certificate request has no approved certificate alias" }}{{ end }}
+{{- $issuer := index $.Values.approvedIssuers $request.issuer }}
+{{- if not $issuer }}{{ fail "certificate request has no approved issuer alias" }}{{ end }}
+{{- if not (has $issuer.kind (list "Issuer" "ClusterIssuer")) }}
+{{- fail "approved issuer kind must be Issuer or ClusterIssuer" }}
+{{- end }}
+{{- if not $request.dnsNames }}{{ fail "certificate request requires exact DNS names" }}{{ end }}
+{{- range $hostname := $request.dnsNames }}
+{{- if not (regexMatch "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$" $hostname) }}
+{{- fail "certificate DNS names must be exact canonical hostnames" }}
+{{- end }}
+{{- $approved := false }}
+{{- range $suffix := $gateway.hostname_suffixes }}
+{{- if or (eq $hostname $suffix) (hasSuffix (printf ".%s" $suffix) $hostname) }}
+{{- $approved = true }}
+{{- end }}
+{{- end }}
+{{- if not $approved }}{{ fail "certificate DNS name is outside approved gateway domains" }}{{ end }}
+{{- end }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ required "certificate request requires name" $request.name }}
+  namespace: {{ $gateway.namespace }}
+spec:
+  secretName: {{ $secret }}
+  dnsNames: {{ $request.dnsNames | toJson }}
+  privateKey:
+    rotationPolicy: Always
+  issuerRef:
+    group: cert-manager.io
+    kind: {{ $issuer.kind }}
+    name: {{ required "approved issuer requires name" $issuer.name }}
+{{- end }}
+{{- end }}

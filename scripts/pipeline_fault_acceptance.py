@@ -397,6 +397,12 @@ print(json.dumps({'previous':head,'commit':commit,'path':path,'content':content}
             self.save(point, record)
         if "hit" not in record:
             plan = {"id": record["id"], "point": point}
+            if point.startswith("kubernetes."):
+                plan["scope"] = "execution"
+            elif point.startswith("execution."):
+                plan["scope"] = "deployment"
+            elif point.startswith("sandbox."):
+                plan["scope"] = "build"
             if point.startswith("registry."):
                 plan["identity_prefix"] = (
                     record["release_before"]["document"]["environment"]["image_repository"].split(
@@ -587,14 +593,31 @@ print(json.dumps({'status':status,'digest':'sha256:'+hashlib.sha256(raw).hexdige
             )
         )
 
-    def run(self):
+    def run(self, terminal_evidence=None):
+        if terminal_evidence is not None:
+            terminal = json.loads(terminal_evidence.read_text())
+            if (
+                terminal.get("point") != "kubernetes.before_create"
+                or terminal.get("status") != "passed"
+                or not terminal.get("identity_verified")
+                or terminal.get("settled", {}).get("status") != "held"
+                or not terminal.get("release_after", {}).get("document", {}).get("operation_id")
+            ):
+                raise RuntimeError("isolated absent-Job evidence is incomplete")
         for point in POINTS:
+            if point == "kubernetes.before_create" and terminal_evidence is not None:
+                continue
             self.run_point(point)
         return self.delivery.save(
             "side-effect-faults",
             {
                 "points": list(POINTS),
                 "evidence_directory": str(self.directory.relative_to(self.proof.output)),
+                "isolated_terminal_evidence": (
+                    str(terminal_evidence.relative_to(self.proof.output))
+                    if terminal_evidence is not None
+                    else None
+                ),
             },
         )
 

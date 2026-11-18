@@ -76,7 +76,7 @@ def run_retained_worker(runtime, definition, payload, context, timeout_seconds, 
         runtime.namespace,
         stable_id,
         identity,
-        fault_hook=configured_gate(core, runtime.namespace, config),
+        fault_hook=configured_gate(core, runtime.namespace, config, "execution"),
     )
     if execution.document["result"] is not None:
         return KubernetesRunObservation(

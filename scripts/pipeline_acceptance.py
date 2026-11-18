@@ -119,7 +119,18 @@ class Acceptance:
             and not (item["kind"] == "Namespace" and item["metadata"]["name"] in owned)
         }
 
-    def prepare(self, context, image, images=None):
+    def scenarios(self):
+        if self.state.get("networking"):
+            from pipeline_network_acceptance import SCENARIOS as networking_scenarios
+
+            # The isolated upgrade fixture retains the deliberately ambiguous absent-Job case.
+            # Prove that hold before retiring it; the main fixture remains usable afterwards.
+            foundation = tuple(name for name in SCENARIOS[:-1] if name != "side-effect-faults")
+            networking = tuple(name for name in networking_scenarios if name != "network-cleanup")
+            return foundation + networking + ("side-effect-faults", "network-cleanup", "cleanup")
+        return SCENARIOS
+
+    def prepare(self, context, image, images=None, networking=None):
         if self.state:
             raise ValueError("output already has a run; use resume or a fresh output directory")
         self.state = {
@@ -128,9 +139,11 @@ class Acceptance:
             "context": context,
             "image": image,
             "images": images,
+            "networking": networking,
             "namespaces": {},
             "scenarios": {name: {"status": "pending"} for name in SCENARIOS},
         }
+        self.state["scenarios"] = {name: {"status": "pending"} for name in self.scenarios()}
         self.save()
         self.state["revision"] = self.command(["git", "rev-parse", "HEAD"]).strip()
         self.state["source_status"] = self.command(["git", "status", "--porcelain"])
@@ -311,7 +324,7 @@ class Acceptance:
         return {"evidence": "network-policy.json", "namespace": ns}
 
     def run(self, only=None):
-        from pipeline_admin_acceptance import verify as verify_admin
+        from pipeline_admin_browser import audit as verify_admin
         from pipeline_validation import validate
 
         implementations = {"network-policy": self.network_policy, "cleanup": self.cleanup_scenario}
@@ -330,8 +343,13 @@ class Acceptance:
         if self.state.get("images"):
             from pipeline_delivery_acceptance import DeliveryAcceptance
 
-            implementations.update(DeliveryAcceptance(self).implementations())
-        for name in SCENARIOS:
+            delivery = DeliveryAcceptance(self)
+            implementations.update(delivery.implementations())
+            if self.state.get("networking"):
+                from pipeline_network_acceptance import NetworkAcceptance
+
+                implementations = NetworkAcceptance(delivery).implementations(implementations)
+        for name in self.scenarios():
             if only and name != only:
                 continue
             if self.state["scenarios"][name]["status"] == "passed":
@@ -351,7 +369,7 @@ class Acceptance:
     def cleanup_scenario(self):
         incomplete = [
             name
-            for name in SCENARIOS
+            for name in self.scenarios()
             if name != "cleanup" and self.state["scenarios"][name]["status"] != "passed"
         ]
         if incomplete:
@@ -376,6 +394,21 @@ class Acceptance:
             ):
                 raise RuntimeError("namespace ownership mismatch; cleanup refused")
         for entry in self.state["namespaces"].values():
+            if self.state.get("networking") and not entry.get("removed"):
+                self.command(
+                    [
+                        "helm",
+                        "--kube-context",
+                        self.state["context"],
+                        "uninstall",
+                        "networking",
+                        "-n",
+                        entry["name"],
+                        "--ignore-not-found",
+                        "--wait",
+                        "--timeout=90s",
+                    ]
+                )
             if entry["name"].endswith("-demo") and not entry.get("removed"):
                 self.command(
                     [
@@ -404,6 +437,46 @@ class Acceptance:
             self.kube("delete", "namespace", entry["name"], "--wait=true", "--timeout=90s")
             entry["removed"] = True
             self.save()
+        if self.state.get("networking"):
+            removed_names = {entry["name"] for entry in self.state["namespaces"].values()}
+            deadline = time.monotonic() + 120
+            while True:
+                residual = [
+                    item
+                    for item in json.loads(
+                        self.kube(
+                            "get",
+                            "deployments,services",
+                            "-A",
+                            "-l",
+                            "gateway.envoyproxy.io/owning-gateway-namespace",
+                            "-o",
+                            "json",
+                        )
+                    )["items"]
+                    if item["metadata"]["labels"].get(
+                        "gateway.envoyproxy.io/owning-gateway-namespace"
+                    )
+                    in removed_names
+                ]
+                if not residual:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(
+                        "owned gateway data-plane resources remain after namespace cleanup"
+                    )
+                time.sleep(2)
+            if not self.state.get("networking_cleanup", {}).get("upstream"):
+                from pipeline_network_fixture import ExternalFixture
+
+                fixture = ExternalFixture(
+                    self.output / "networking/upstream",
+                    self.state["run_id"],
+                    self.state["images"]["controller"]["digest"],
+                )
+                if fixture.path.exists():
+                    self.state.setdefault("networking_cleanup", {})["upstream"] = fixture.cleanup()
+                    self.save()
         current = self.baseline()
         changed = [v for uid, v in self.state["baseline"].items() if current.get(uid) != v]
         if changed:
@@ -419,7 +492,9 @@ class Acceptance:
         self.save()
 
     def report(self):
-        passed = all(self.state["scenarios"][name]["status"] == "passed" for name in SCENARIOS)
+        passed = all(
+            self.state["scenarios"][name]["status"] == "passed" for name in self.scenarios()
+        )
         images = self.state.get("images") or {}
         current_revision = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, timeout=30
@@ -470,13 +545,28 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--context", default="docker-desktop")
     parser.add_argument("--image", default="goblin-king:pipeline-foundation-proof-v2")
-    parser.add_argument("--only", choices=SCENARIOS)
+    from pipeline_network_acceptance import SCENARIOS as networking_scenarios
+
+    parser.add_argument("--only", choices=SCENARIOS + networking_scenarios)
+    parser.add_argument("--networking", action="store_true")
+    parser.add_argument("--gateway-class")
+    parser.add_argument("--controller-name")
     parser.add_argument("--images", type=Path)
     args = parser.parse_args()
     proof = Acceptance(args.output)
     if args.command == "prepare":
+        if args.networking and not (args.images and args.gateway_class and args.controller_name):
+            parser.error("networking acceptance requires images, gateway-class and controller-name")
         proof.prepare(
-            args.context, args.image, json.loads(args.images.read_text()) if args.images else None
+            args.context,
+            args.image,
+            json.loads(args.images.read_text()) if args.images else None,
+            networking={
+                "gateway_class": args.gateway_class,
+                "controller_name": args.controller_name,
+            }
+            if args.networking
+            else None,
         )
     elif not proof.state:
         parser.error("prepare this output directory first")

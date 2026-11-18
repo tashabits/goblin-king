@@ -222,10 +222,42 @@ class NetworkRuntime:
         gateway = self.read("Gateway", binding.name, namespace=binding.namespace)
         if not gateway:
             raise ValueError("approved gateway is absent")
+        generation = gateway["metadata"]["generation"]
+        if not all(
+            any(
+                condition.get("type") == kind
+                and condition.get("status") == "True"
+                and condition.get("observedGeneration") == generation
+                for condition in gateway.get("status", {}).get("conditions", [])
+            )
+            for kind in ("Accepted", "Programmed")
+        ):
+            raise RecoveryHold("approved gateway is not accepted and programmed")
         listeners = [
             item for item in gateway["spec"]["listeners"] if item["name"] == binding.listener
         ]
         secret_name = binding.certificates[ingress.certificate]
+        if (
+            not listeners
+            or listeners[0].get("protocol") != "HTTPS"
+            or listeners[0].get("tls", {}).get("mode", "Terminate") != "Terminate"
+        ):
+            raise ValueError("approved listener must terminate HTTPS")
+        statuses = [
+            item
+            for item in gateway.get("status", {}).get("listeners", [])
+            if item.get("name") == binding.listener
+        ]
+        if not statuses or not all(
+            any(
+                condition.get("type") == kind
+                and condition.get("status") == "True"
+                and condition.get("observedGeneration") == generation
+                for condition in statuses[0].get("conditions", [])
+            )
+            for kind in ("Accepted", "Programmed", "ResolvedRefs")
+        ):
+            raise RecoveryHold("approved gateway listener is not ready")
         if not listeners or not any(
             ref.get("name") == secret_name
             and ref.get("namespace", binding.namespace) == binding.namespace
@@ -286,6 +318,13 @@ class NetworkRuntime:
                         if all(
                             entry["parentRef"].get(key) == value for key, value in expected.items()
                         )
+                        and entry.get("controllerName")
+                        == next(
+                            binding.controller_name
+                            for binding in self.policy.gateways.values()
+                            if binding.name == expected["name"]
+                            and binding.namespace == expected["namespace"]
+                        )
                     ]
                     if not matches or not all(
                         any(
@@ -300,6 +339,28 @@ class NetworkRuntime:
                         return None
                 if kind == "BackendTrafficPolicy":
                     ancestors = current.get("status", {}).get("ancestors", [])
+                    parents = [
+                        route["spec"]["parentRefs"][0]
+                        for route in desired
+                        if route["kind"] == "HTTPRoute"
+                        and route["metadata"]["name"] == self.release + "-ingress"
+                    ]
+                    if len(parents) != 1:
+                        raise RecoveryHold("request limits have no approved ingress parent")
+                    parent = parents[0]
+                    binding = next(
+                        entry
+                        for entry in self.policy.gateways.values()
+                        if entry.name == parent["name"] and entry.namespace == parent["namespace"]
+                    )
+                    ancestors = [
+                        entry
+                        for entry in ancestors
+                        if entry.get("controllerName") == binding.controller_name
+                        and all(
+                            entry["ancestorRef"].get(key) == value for key, value in parent.items()
+                        )
+                    ]
                     if not ancestors or not all(
                         any(
                             condition["type"] == "Accepted"
@@ -359,6 +420,17 @@ class NetworkRuntime:
                         "kubernetes.io/metadata.name"
                     ):
                         raise RecoveryHold("additional namespace ingress policy requires review")
+                    if source not in (
+                        {"podSelector": {}},
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": self.policy.control_namespace,
+                                }
+                            }
+                        },
+                    ):
+                        raise RecoveryHold("additional ingress peer requires installation review")
 
     def application_workloads(self):
         if "application_workloads" not in self.ledger.document:
@@ -377,6 +449,16 @@ class NetworkRuntime:
                         self.release + "-schedule",
                     }:
                         raise RecoveryHold("unexpected application workload identity")
+                    template = (
+                        item["spec"]["jobTemplate"]["spec"]["template"]
+                        if kind == "CronJob"
+                        else item["spec"]["template"]
+                    )
+                    if getattr(self, "expected_image", None) and any(
+                        container["image"] != self.expected_image
+                        for container in template["spec"]["containers"]
+                    ):
+                        raise RecoveryHold("application image differs from the verified release")
                     saved.append(
                         {
                             "kind": kind,
@@ -444,6 +526,7 @@ class NetworkRuntime:
             self.ledger.fault_hook("networking.after_job_removal", key)
             effect["complete"] = True
             self.ledger.save()
+            self.ledger.fault_hook("networking.after_job_removal_ack", key)
         selector = (
             "app.kubernetes.io/instance="
             + self.release
@@ -541,6 +624,12 @@ class NetworkRuntime:
                     raise RecoveryHold(
                         "application identity changed during networking health check"
                     )
+                if item["kind"] == "Deployment" and getattr(self, "expected_image", None):
+                    if any(
+                        container["image"] != self.expected_image
+                        for container in current["spec"]["template"]["spec"]["containers"]
+                    ):
+                        raise RecoveryHold("application image differs from the verified release")
                 if item["kind"] == "Deployment" and (
                     current.get("status", {}).get("observedGeneration")
                     != current["metadata"]["generation"]
@@ -578,8 +667,12 @@ class NetworkRuntime:
         health_path="/health",
         prepare_only=False,
         probe_only=False,
+        expected_image=None,
     ):
+        self.expected_image = expected_image
         configuration = NetworkingConfiguration.model_validate(configuration)
+        if expected_image:
+            self.application_workloads()
         desired = render_networking(
             configuration,
             self.policy,
@@ -619,7 +712,11 @@ class NetworkRuntime:
         if not active:
             self.remove("HTTPRoute", self.release + "-ingress")
             self.remove("HTTPRoute", self.release + "-redirect")
-        if old.egress != configuration.egress or not active:
+        if (
+            old.egress != configuration.egress
+            or (previous or {}).get("policy_revision") != self.policy.revision
+            or not active
+        ):
             self.settle_application()
             # Terminate old CONNECT tunnels before publishing a changed destination policy.
             if not self.ledger.document.get("proxy_quiesced"):

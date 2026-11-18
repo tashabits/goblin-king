@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import secrets
 import subprocess
 from pathlib import Path
 from uuid import uuid4
@@ -64,6 +65,20 @@ def prepare(output, namespace, controller, admin, context="docker-desktop"):
         }
         state_path.write_text(json.dumps(state, indent=2))
     image_map = json.loads((ROOT / "demo-images.json").read_text())
+    token_path = output / "admin-token"
+    if not token_path.exists():
+        token_path.write_text(secrets.token_urlsafe(48))
+    kube(
+        "apply",
+        "-f",
+        "-",
+        document={
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {"name": "audit-auth"},
+            "stringData": {"bootstrap-admin-token": token_path.read_text()},
+        },
+    )
     tags = {"controller": controller, "admin": admin}
     tags.update({kind: entry["image"] for kind, entry in image_map["workers"].items()})
     images = {}
@@ -149,6 +164,7 @@ def prepare(output, namespace, controller, admin, context="docker-desktop"):
     values = {
         "fullnameOverride": "audit",
         "image": {"repository": repository, "digest": digest},
+        "api": {"existingSecret": "audit-auth", "bootstrapAdminToken": ""},
         "persistence": {"topology": "sqlite-single-node", "sqliteNode": "desktop-worker"},
         "config": {"imagesPath": "/audit/images.json", "redisUrl": "redis://audit-redis:6379/0"},
         "scheduler": {"workerImagePullPolicy": "IfNotPresent"},

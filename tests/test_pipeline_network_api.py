@@ -39,6 +39,12 @@ def test_network_api_auth_preview_and_missing_execution(tmp_path):
         ).json()
         assert capabilities["execution_available"] is False
         assert "test-tls" not in str(capabilities)
+        diagnostics_url = "/pipeline/networking/diagnostics?project_id=sample-project"
+        assert client.get(diagnostics_url).status_code == 401
+        diagnostics = client.get(diagnostics_url, headers=headers).json()
+        assert any(item["release_key"] == key for item in diagnostics["items"])
+        assert all(item["status"] == "not-configured" for item in diagnostics["items"])
+        assert "test-tls" not in str(diagnostics)
         preview = client.post(
             "/pipeline/networking/preview",
             headers=headers,

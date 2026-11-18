@@ -352,6 +352,13 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
         authorize(principal, row["project_id"])
         return invoke(manager.inspect, key)
 
+    @router.get("/networking/diagnostics")
+    def network_diagnostics(project_id: str, principal=principal_dependency):
+        authorize(principal, project_id)
+        return network_management().diagnostics(project_id) | {
+            "execution_available": active().network_operation_binding is not None,
+        }
+
     @router.post("/networking/preview")
     def network_preview(body: NetworkPreviewRequest, principal=principal_dependency):
         manager = network_management()

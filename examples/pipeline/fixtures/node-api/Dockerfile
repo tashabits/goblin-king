@@ -1,6 +1,6 @@
 FROM node:22-alpine AS base
 WORKDIR /app
-COPY app.mjs .
+COPY app.mjs fixture-ca.pem ./
 USER 65532:65532
 
 FROM base AS test
