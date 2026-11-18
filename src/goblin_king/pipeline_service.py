@@ -53,6 +53,7 @@ class PipelineService:
         self.dispatch_validator = None
         self.result_verifier = None
         self.operation_binding = None
+        self.network_operation_binding = None
         self.operation_verifier = None
         self.configuration_verifier = None
         self.execution_acknowledger = None
@@ -398,6 +399,7 @@ class PipelineService:
             )
 
     def reconcile_operations(self):
+        from goblin_king.pipeline_network_operations import NetworkOperations
         from goblin_king.pipeline_operations import ReleaseOperations
         from goblin_king.store_schema import pipeline_environment_states_table as environments
         from goblin_king.store_schema import pipeline_operations_table as operations
@@ -436,7 +438,9 @@ class PipelineService:
             ids = (
                 connection.execute(
                     select(operations.c.id).where(
-                        operations.c.status.in_(["pending", "queued", "running"])
+                        operations.c.status.in_(
+                            ["pending", "networking-pending", "queued", "running"]
+                        )
                     )
                 )
                 .scalars()
@@ -446,16 +450,23 @@ class PipelineService:
             with self.state.store.engine.connect() as connection:
                 op = self.state.row(connection, operations, operation_id)
                 release = self.state.row(connection, environments, op["release_key"])
-            if op["status"] == "pending":
+            is_network = op["document"]["action"] == "networking"
+            current_manager = (
+                NetworkOperations(self.state, self.settings.networking) if is_network else manager
+            )
+            binding = self.network_operation_binding if is_network else self.operation_binding
+            if op["status"] in {"pending", "networking-pending"}:
                 try:
-                    manager.prepare(
+                    if binding is None:
+                        raise PipelineConflict("networking execution is not installed")
+                    current_manager.prepare(
                         operation_id,
-                        self.operation_binding(release["document"]["environment"]["name"]),
+                        binding(release["document"]["environment"]["name"]),
                     )
                 except PipelineConflict as error:
                     with self.state.transaction() as connection:
                         current = self.state.row(connection, operations, operation_id)
-                        if current["status"] == "pending":
+                        if current["status"] in {"pending", "networking-pending"}:
                             release = self.state.row(
                                 connection, environments, current["release_key"]
                             )
@@ -493,7 +504,7 @@ class PipelineService:
             run = self.state.store.get_run(run_id) if run_id else None
             if run and run.result:
                 self.operation_verifier(job, run.result)
-                manager.finish(operation_id, run.result.model_dump(mode="json"))
+                current_manager.finish(operation_id, run.result.model_dump(mode="json"))
 
     def record_releases(self):
         import time

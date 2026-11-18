@@ -86,6 +86,7 @@ def build(output, *, development=False):
         ("builder", "workers/pipeline.build/Dockerfile", "."),
         ("provider", "examples/pipeline/Dockerfile.simulator", "."),
         ("deployer", "workers/pipeline.deploy/Dockerfile", "."),
+        ("network", "workers/pipeline.network/Dockerfile", "."),
         ("admin", "admin-ui/Dockerfile", "admin-ui"),
     ):
         repository = "goblin-king-admin-ui" if purpose == "admin" else "goblin-king"

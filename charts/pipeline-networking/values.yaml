@@ -1,0 +1,16 @@
+# Install the pinned Gateway API implementation separately; existing controllers
+# and CRDs are never adopted or upgraded by this chart.
+controllerName: goblin-king.io/pipeline-networking
+gatewayClassName: goblin-king
+createGatewayClass: false
+serviceType: ClusterIP
+proxyImage: envoyproxy/envoy@sha256:ccb37e93d8274a525fe00d67287716dbe3d58bc4237d7627af9e64fae0fd25c8
+policy:
+  enabled: false
+  ingress_available: false
+  egress_available: false
+  gateways: {}
+  releases: {}
+# API and execution identities belong to the main installation namespace.
+controlNamespace: ""
+apiServiceAccount: ""

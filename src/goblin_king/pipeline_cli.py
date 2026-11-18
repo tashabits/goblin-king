@@ -13,6 +13,46 @@ from urllib.request import Request, urlopen
 import typer
 
 app = typer.Typer(help="Manage repository delivery through the authenticated API.")
+networking_app = typer.Typer(help="Inspect and configure approved ingress and egress.")
+app.add_typer(networking_app, name="networking")
+
+
+@networking_app.command("capabilities")
+def networking_capabilities(project: str):
+    """Show installed networking choices for a project."""
+    call("/networking/capabilities?" + urlencode({"project_id": project}))
+
+
+@networking_app.command("inspect")
+def networking_inspect(release_key: str):
+    """Inspect desired and observed network configuration."""
+    call(f"/releases/{release_key}/networking")
+
+
+@networking_app.command("preview")
+def networking_preview(release_key: str, configuration: Path):
+    """Validate a configuration file without changing any resources."""
+    call(
+        "/networking/preview",
+        {"release_key": release_key, "configuration": json.loads(configuration.read_text())},
+    )
+
+
+@networking_app.command("apply")
+def networking_apply(release_key: str, preview: Path, idempotency_key: str):
+    """Apply a saved preview; changed state or policy requires a new preview."""
+    value = json.loads(preview.read_text())
+    if value.get("release_key") != release_key:
+        raise typer.BadParameter("preview belongs to another release")
+    call(
+        f"/releases/{release_key}/networking",
+        {
+            "configuration": value["configuration"],
+            "expected_version": value["expected_version"],
+            "preview_id": value["preview_id"],
+            "idempotency_key": idempotency_key,
+        },
+    )
 
 
 def call(path, body=None, method=None):

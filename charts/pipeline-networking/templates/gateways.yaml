@@ -1,0 +1,92 @@
+{{- if and .Values.policy.enabled .Values.policy.ingress_available }}
+{{- if not (has .Values.serviceType (list "ClusterIP" "NodePort" "LoadBalancer")) }}
+{{- fail "gateway serviceType must be ClusterIP, NodePort, or LoadBalancer" }}
+{{- end }}
+{{- if .Values.createGatewayClass }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: {{ .Values.gatewayClassName }}
+spec:
+  controllerName: {{ .Values.controllerName }}
+{{- end }}
+{{- range $alias, $gateway := .Values.policy.gateways }}
+{{- if eq $gateway.mode "managed" }}
+{{- if and (eq $gateway.exposure "external") (eq $.Values.serviceType "ClusterIP") }}
+{{- fail "external gateways require an explicit NodePort or LoadBalancer serviceType" }}
+{{- end }}
+{{- $namespaces := list }}
+{{- range $identity, $release := $.Values.policy.releases }}
+{{- if has $alias $release.gateways }}
+{{- $namespaces = append $namespaces (first (splitList "/" $identity)) }}
+{{- end }}
+{{- end }}
+{{- if not $namespaces }}
+{{- fail "managed gateway requires at least one approved release namespace" }}
+{{- end }}
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: EnvoyProxy
+metadata:
+  name: {{ $gateway.name }}
+  namespace: {{ $gateway.namespace }}
+spec:
+  provider:
+    type: Kubernetes
+    kubernetes:
+      envoyService:
+        type: {{ ternary "ClusterIP" $.Values.serviceType (eq $gateway.exposure "internal") }}
+      envoyDeployment:
+        replicas: 1
+        container:
+          image: {{ $.Values.proxyImage | quote }}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: "1", memory: 512Mi}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ $gateway.name }}
+  namespace: {{ $gateway.namespace }}
+spec:
+  gatewayClassName: {{ $.Values.gatewayClassName }}
+  infrastructure:
+    parametersRef:
+      group: gateway.envoyproxy.io
+      kind: EnvoyProxy
+      name: {{ $gateway.name }}
+  listeners:
+    - name: {{ $gateway.listener | default "https" }}
+      protocol: HTTPS
+      port: 443
+      tls:
+        mode: Terminate
+        certificateRefs:
+          {{- range $name := $gateway.certificates }}
+          - name: {{ $name }}
+          {{- end }}
+      allowedRoutes:
+        kinds: [{group: gateway.networking.k8s.io, kind: HTTPRoute}]
+        namespaces:
+          from: Selector
+          selector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: {{ $namespaces | uniq | toJson }}
+    - name: {{ $gateway.http_listener | default "http" }}
+      protocol: HTTP
+      port: 80
+      allowedRoutes:
+        kinds: [{group: gateway.networking.k8s.io, kind: HTTPRoute}]
+        namespaces:
+          from: Selector
+          selector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: {{ $namespaces | uniq | toJson }}
+{{- end }}
+{{- end }}
+{{- end }}

@@ -253,7 +253,8 @@ class ReleaseOperations:
             payload = old["execution"] | {"recover": True, "recovery_attempt": attempt}
             job = JobRecord(
                 id=job_id,
-                kind="pipeline.deploy." + payload["environment"]["name"],
+                kind=("pipeline.network." if old["action"] == "networking" else "pipeline.deploy.")
+                + payload["environment"]["name"],
                 project_id=operation["project_id"],
                 created_at=utc_now(),
                 created_by="pipeline",

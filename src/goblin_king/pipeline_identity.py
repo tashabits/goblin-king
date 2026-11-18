@@ -18,7 +18,8 @@ def verify_execution_identity(token, operation, core, namespace):
     )
     status = response.status
     environment = operation["document"]["execution"]["environment"]["name"]
-    expected = f"system:serviceaccount:{namespace}:pipeline-deploy-{environment}"
+    action = "network" if operation["document"].get("action") == "networking" else "deploy"
+    expected = f"system:serviceaccount:{namespace}:pipeline-{action}-{environment}"
     if not status.authenticated or status.user.username != expected:
         raise PipelineConflict("execution identity is not approved for this environment")
     extra = status.user.extra or {}
@@ -69,6 +70,74 @@ def terminated_execution(operation, core, batch, namespace):
         raise PipelineConflict(
             "termination evidence is unavailable; restore access or reconcile fencing"
         ) from error
+
+
+def verify_network_phase_identity(token, operation, stage, core):
+    """Bind a nested networking phase to the original retained Job and one live Pod."""
+    if not token or len(token) > 16384 or stage not in {"network-before", "network-after"}:
+        raise PipelineConflict("approved network phase identity required")
+    execution = operation["document"]["execution"]
+    if not execution.get("networking") or operation["status"] != "running":
+        raise PipelineConflict("network phase has no running parent release")
+    namespace = execution["environment"]["namespace"]
+    account = execution["environment"]["release"] + "-network"
+    status = (
+        client.AuthenticationV1Api()
+        .create_token_review(client.V1TokenReview(spec=client.V1TokenReviewSpec(token=token)))
+        .status
+    )
+    if (
+        not status
+        or not status.authenticated
+        or status.user.username != f"system:serviceaccount:{namespace}:{account}"
+    ):
+        raise PipelineConflict("network phase identity is outside its release")
+    extra = status.user.extra or {}
+    names, uids = (
+        extra.get("authentication.kubernetes.io/pod-name", []),
+        extra.get("authentication.kubernetes.io/pod-uid", []),
+    )
+    if len(names) != 1 or len(uids) != 1:
+        raise PipelineConflict("network phase identity must be bound to one Pod")
+    suffix = (
+        str(
+            uuid5(
+                NAMESPACE_URL,
+                execution["operation_id"] + "/recovery/" + str(execution["recovery_attempt"]),
+            )
+        )
+        if execution.get("recover")
+        else execution["operation_id"]
+    )
+    ledger_name = "pipeline-" + suffix
+    deadline = time.monotonic() + 5
+    while True:
+        ledger = json.loads(
+            core.read_namespaced_config_map(ledger_name, namespace).data["execution.json"]
+        )
+        if ledger["identity"]["request"] != execution:
+            raise PipelineConflict("network phase parent intent differs from admission")
+        identity = ledger.get("stages", {}).get(stage, {})
+        request = ledger.get("network_requests", {}).get(stage)
+        if identity.get("uid") and request:
+            break
+        if time.monotonic() >= deadline:
+            raise PipelineConflict("network phase identity has not been acknowledged")
+        time.sleep(0.1)
+    pod = core.read_namespaced_pod(names[0], namespace)
+    if (
+        pod.metadata.uid != uids[0]
+        or pod.metadata.deletion_timestamp
+        or pod.spec.service_account_name != account
+        or len(pod.spec.containers) != 1
+        or pod.spec.containers[0].image != execution["networking"]["image"]
+        or not any(
+            ref.kind == "Job" and ref.uid == identity["uid"]
+            for ref in pod.metadata.owner_references or []
+        )
+    ):
+        raise PipelineConflict("network phase Pod does not match retained authority")
+    return {"pod_uid": pod.metadata.uid, "job_uid": identity["uid"], "request": request}
 
 
 def _terminated_execution(operation, core, batch, namespace):

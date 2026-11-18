@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from goblin_king.pipeline_contracts import PipelineRegistration
 from goblin_king.pipeline_github import ProviderUnavailable, UnapprovedSource
+from goblin_king.pipeline_network_management import NetworkManagement
+from goblin_king.pipeline_networking import NetworkingConfiguration
 from goblin_king.pipeline_service import PipelineService
 from goblin_king.pipeline_state import PipelineConflict
 from goblin_king.store_schema import (
@@ -41,6 +43,17 @@ class ManagementRequest(MutationRequest):
 class ReleaseRequest(MutationRequest):
     action: str
     payload: dict = Field(default_factory=dict)
+
+
+class NetworkPreviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    release_key: str = Field(min_length=1, max_length=128)
+    configuration: NetworkingConfiguration
+
+
+class NetworkApplyRequest(MutationRequest):
+    configuration: NetworkingConfiguration
+    preview_id: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 def install_pipeline_api(app, app_state, require_principal, project_for_request):
@@ -205,6 +218,23 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
             service.operation_binding = operation_binding
             service.operation_verifier = verify_execution
 
+        if service.settings.networking.enabled and service.settings.network_image:
+
+            def network_operation_binding(environment):
+                kind = "pipeline.network." + environment
+                entry = app_state.workers.get(kind)
+                if entry.image != service.settings.network_image:
+                    raise PipelineConflict("networking image differs from installed approval")
+                return {
+                    "image": entry.image,
+                    "profile": service.settings.worker_profile,
+                    "resource_policy": app_state.resource_policies.effective_for(
+                        kind, timeout_seconds=900, max_retries=0
+                    ).compact(),
+                }
+
+            service.network_operation_binding = network_operation_binding
+
         def verify_build_result(job, result):
             import hashlib
             import json
@@ -281,6 +311,50 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
         project_for_request(principal, project)
         if not project:
             raise HTTPException(422, "an explicit project is required")
+
+    def network_management():
+        current = active()
+        return NetworkManagement(
+            current.state, current.settings.networking, recovery_mode=current.settings.recovery_mode
+        )
+
+    @router.get("/networking/capabilities")
+    def network_capabilities(project_id: str, principal=principal_dependency):
+        authorize(principal, project_id)
+        return network_management().capabilities(project_id) | {
+            "execution_available": active().network_operation_binding is not None,
+        }
+
+    @router.get("/releases/{key}/networking")
+    def network_inspect(key: str, principal=principal_dependency):
+        manager = network_management()
+        row = invoke(manager.release, key)
+        authorize(principal, row["project_id"])
+        return invoke(manager.inspect, key)
+
+    @router.post("/networking/preview")
+    def network_preview(body: NetworkPreviewRequest, principal=principal_dependency):
+        manager = network_management()
+        row = invoke(manager.release, body.release_key)
+        authorize(principal, row["project_id"], mutation=True)
+        return invoke(manager.preview, body.release_key, body.configuration)
+
+    @router.post("/releases/{key}/networking", status_code=202)
+    def network_apply(key: str, body: NetworkApplyRequest, principal=principal_dependency):
+        manager = network_management()
+        row = invoke(manager.release, key)
+        authorize(principal, row["project_id"], mutation=True)
+        if active().network_operation_binding is None:
+            raise HTTPException(503, "networking execution is not installed")
+        return invoke(
+            manager.apply,
+            key,
+            body.configuration,
+            expected_version=body.expected_version,
+            preview_id=body.preview_id,
+            actor=principal.user_id,
+            idempotency_key=body.idempotency_key,
+        )
 
     @router.get("/status")
     def status(principal=principal_dependency):
@@ -458,9 +532,11 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
             actor=principal.user_id,
             termination=termination,
             idempotency_key=body.idempotency_key,
-            binding=active().operation_binding(
-                operation["document"]["execution"]["environment"]["name"]
-            ),
+            binding=(
+                active().network_operation_binding
+                if operation["document"]["action"] == "networking"
+                else active().operation_binding
+            )(operation["document"]["execution"]["environment"]["name"]),
         )
 
     @router.post("/webhooks/github", status_code=202)
@@ -500,6 +576,58 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
             current_kubernetes_namespace(),
         )
         return invoke(ReleaseOperations(state).claim, operation_id, pod_uid)
+
+    @router.post("/internal/operations/{operation_id}/network-claims/{stage}")
+    def claim_network_phase(operation_id: str, stage: str, request: Request):
+        from goblin_king.pipeline_identity import verify_network_phase_identity
+        from goblin_king.runtime_helpers import kubernetes_clients
+
+        state = active().state
+        if active().settings.recovery_mode:
+            raise HTTPException(409, "delivery is held in recovery mode")
+        with state.store.engine.connect() as connection:
+            operation = state.row(connection, pipeline_operations_table, operation_id)
+        if operation is None:
+            raise HTTPException(404, "operation not found")
+        _, core = kubernetes_clients()
+        proof = invoke(
+            verify_network_phase_identity,
+            request.headers.get("authorization", "").removeprefix("Bearer "),
+            operation,
+            stage,
+            core,
+        )
+        with state.transaction() as connection:
+            current = state.row(connection, pipeline_operations_table, operation_id)
+            release = state.row(
+                connection, pipeline_environment_states_table, current["release_key"]
+            )
+            if (
+                current["status"] != "running"
+                or release["document"]["operation_id"] != operation_id
+                or current["document"]["execution"] != operation["document"]["execution"]
+            ):
+                raise HTTPException(409, "network phase parent ownership changed")
+            phases = current["document"].get("network_claims", {})
+            phase_key = proof["request"]["parent_ledger"] + "/" + stage
+            identity = {key: proof[key] for key in ("pod_uid", "job_uid")}
+            if phase_key in phases and phases[phase_key] != identity:
+                raise HTTPException(409, "network phase is already claimed by another Pod")
+            if phase_key not in phases:
+                state.cas(
+                    connection,
+                    pipeline_operations_table,
+                    current,
+                    current["document"] | {"network_claims": phases | {phase_key: identity}},
+                )
+                state.audit(
+                    connection,
+                    current["project_id"],
+                    operation_id,
+                    "network.phase.claimed",
+                    {"stage": stage, **identity},
+                )
+        return proof["request"]
 
     app.include_router(router)
     if service:

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { NetworkingPanel } from "./NetworkingPanel";
 
 type Row = { key?: string; id?: string; version: number; status?: string; enabled?: boolean; document: Record<string, any> };
 type Api = (path: string, options?: RequestInit) => Promise<any>;
@@ -43,6 +44,7 @@ export function PipelinePanel({ api }: { api: Api }) {
     {status?.last_error && <p role="alert">{status.last_error}</p>}
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
+    <NetworkingPanel key={project} api={api} project={project} releases={collections.releases || []} />
     <details><summary>Attach or update a repository</summary>
       <label>Repository configuration
         <textarea rows={12} value={registration} onChange={event => { setRegistration(event.target.value); setPreview(null); }} />

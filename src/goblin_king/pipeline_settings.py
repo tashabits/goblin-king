@@ -4,6 +4,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from goblin_king.pipeline_networking import NetworkingPolicy
 from goblin_king.resource_policies import ResourcePolicy
 
 
@@ -42,6 +43,7 @@ class PipelineSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
+    networking: NetworkingPolicy = Field(default_factory=NetworkingPolicy)
     simulated_provider: bool = False
     acceptance_faults: bool = False
     provider_url: str = "https://api.github.com"
@@ -52,6 +54,7 @@ class PipelineSettings(BaseModel):
     worker_image: str = ""
     worker_profile: str = "restricted-v1"
     deploy_image: str = ""
+    network_image: str = ""
     release_repository: str = ""
     release_repository_id: int = Field(default=0, ge=0)
     notification_url: str = ""

@@ -64,6 +64,15 @@ pipeline_environment_states_table = Table(
     Column("document", Text, nullable=False),
 )
 
+pipeline_networking_table = Table(
+    "pipeline_networking",
+    metadata,
+    Column("key", String, primary_key=True),
+    Column("project_id", String, nullable=False, index=True),
+    Column("version", Integer, nullable=False),
+    Column("document", Text, nullable=False),
+)
+
 pipeline_dispatch_table = Table(
     "pipeline_dispatch",
     metadata,

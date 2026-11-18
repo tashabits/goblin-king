@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -18,6 +17,7 @@ from goblin_king.pipeline_contracts import (
     PipelineRegistration,
     SourceChange,
 )
+from goblin_king.pipeline_hashing import fingerprint as _fingerprint
 from goblin_king.store import SQLiteStore
 from goblin_king.store_schema import pipeline_build_requests_table, pipeline_receipts_table
 
@@ -32,12 +32,6 @@ class PipelineAdmission:
 
     request: PipelineBuildRequest
     created: bool
-
-
-def _fingerprint(value: Any) -> str:
-    """Hash unambiguous canonical JSON identities rather than delimiter-joined fields."""
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def _request_from_row(row: Any) -> PipelineBuildRequest:
