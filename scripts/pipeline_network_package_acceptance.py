@@ -157,7 +157,74 @@ class PackageAcceptance:
             )["items"]
             if any(item["metadata"]["name"].startswith("pipeline-network-") for item in remaining):
                 raise RuntimeError("optional package uninstall retained its authority")
+        evidence["application_modes"] = self.application_modes()
         return network.save("network-installation-matrix", evidence)
+
+    def application_modes(self):
+        from pipeline_network_fixture import external_ingress
+        from pipeline_network_ingress_acceptance import IngressAcceptance
+        from pipeline_network_probes import DNS
+
+        network, delivery, proof = self.network, self.delivery, self.proof
+        original = copy.deepcopy(network.current("python", "test")["desired"])
+        namespace = delivery.prefix + "-python-test"
+        before = delivery.release("python", "test")["document"]["observed"]
+        identity = "package-modes-" + uuid4().hex
+        evidence = {}
+        try:
+            for name, ingress, egress in (
+                ("neither", False, False),
+                ("ingress", True, False),
+                ("egress", False, True),
+                ("both", True, True),
+            ):
+                requested = copy.deepcopy(original)
+                requested["ingress"]["enabled"], requested["egress"]["enabled"] = ingress, egress
+                operation = network.apply("python", "test", requested, identity + name)
+                health = delivery.route_health(delivery.release("python", "test"))
+                external = (
+                    external_ingress(proof, delivery, "python", "test")
+                    if ingress
+                    else IngressAcceptance(network).client("withdrawn")
+                )
+                deployments = json.loads(
+                    proof.kube("-n", namespace, "get", "deployments", "-o", "json")
+                )["items"]
+                proxy = [item for item in deployments if item["metadata"]["name"] == "app-egress"]
+                app = next(item for item in deployments if item["metadata"]["name"] == "app")
+                names = {
+                    item["name"]
+                    for item in app["spec"]["template"]["spec"]["containers"][0].get("env", [])
+                }
+                if bool(proxy) != egress or ("HTTP_PROXY" in names) != egress:
+                    raise RuntimeError("optional egress mode differs from the live application")
+                outbound = None
+                if egress:
+                    outbound = json.loads(
+                        proof.kube(
+                            "-n", namespace, "exec", "deployment/app", "--", "python", "-c", DNS
+                        )
+                    )
+                    if any(value != 200 for value in outbound.values()):
+                        raise RuntimeError("enabled egress mode cannot reach approved upstreams")
+                after = delivery.release("python", "test")["document"]["observed"]
+                if (before["image"], before["helm_revision"]) != (
+                    after["image"],
+                    after["helm_revision"],
+                ):
+                    raise RuntimeError(
+                        "optional networking mode rebuilt or redeployed the application"
+                    )
+                evidence[name] = {
+                    "operation": operation,
+                    "health": health,
+                    "external": external,
+                    "outbound": outbound,
+                    "deployments": deployments,
+                }
+        finally:
+            network.apply("python", "test", original, identity + "-restore")
+        return evidence
 
     def existing(self):
         # Clone the owned gateway configuration into a separate operator-owned Gateway.

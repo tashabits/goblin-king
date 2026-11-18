@@ -123,9 +123,30 @@ with urlopen(request,timeout=10) as response: print(response.read().decode())
         )
 
     def cleanup(self):
-        item = self.inspect()
-        self.docker("rm", "--force", item["Id"])
-        return {"removed_container": item["Id"], "identity": self.identity}
+        path = self.output / "cleanup.json"
+        if path.exists():
+            state = json.loads(path.read_text())
+            original = json.loads(self.path.read_text())
+            if (
+                state["identity"] != self.identity
+                or state["container_id"] != original["container_id"]
+            ):
+                raise RuntimeError("retained fixture cleanup identity changed")
+        else:
+            item = self.inspect()
+            state = {"container_id": item["Id"], "identity": self.identity, "complete": False}
+            path.write_text(json.dumps(state, indent=2))
+        present = self.docker(
+            "ps", "-aq", "--no-trunc", "--filter", "id=" + state["container_id"]
+        ).strip()
+        if present:
+            item = self.inspect()
+            if item["Id"] != state["container_id"]:
+                raise RuntimeError("external fixture changed after cleanup intent")
+            self.docker("rm", "--force", item["Id"])
+        state["complete"] = True
+        path.write_text(json.dumps(state, indent=2))
+        return {"removed_container": state["container_id"], "identity": self.identity}
 
 
 def external_client(proof, delivery, implementation, environment, script, extra=None):
