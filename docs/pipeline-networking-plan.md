@@ -1,15 +1,15 @@
 # Optional ingress and egress delivery plan
 
-Status: implemented with full cluster acceptance in progress, 18 November 2026.
-This extends the local delivery proof at
-`437d2ca3debcdc6438dd15568fc62f4d2cc69ba6`; it does not claim networking acceptance
-has already passed. I am proving both additions on Docker Desktop's existing
-two-node kind cluster. I will keep the current demonstration available
-until the replacement passes acceptance.
+This plan defines the networking scope and completion criteria. It extends the
+local delivery proof at `437d2ca3debcdc6438dd15568fc62f4d2cc69ba6` with ingress and
+egress on Docker Desktop's existing two-node kind cluster. I keep the current
+demonstration available until its replacement passes acceptance.
 
 See [installation and operation](pipeline-networking.md) for the implemented
-interfaces and [the checkpoint](pipeline-networking-checkpoint.md) for the current
-evidence and remaining acceptance work.
+interfaces and [the development checkpoint](pipeline-networking-checkpoint.md) for
+historical validation. Release-specific acceptance reports identify the exact
+verified revision, completed scenarios and limits. This plan and its development
+checkpoint do not themselves claim complete networking acceptance.
 
 ## Finish line
 

@@ -1223,12 +1223,45 @@ Goblin King provides:
 - [Detailed Contributing Guide](docs/CONTRIBUTING.md): Branch, PR, local CI,
   commenting, goblin documentation, and test expectations.
 
-## Future Work
+## Repository Delivery
 
-The [Repository Delivery Pipeline Roadmap](docs/pipeline-delivery-roadmap.md) defines
-reusable repository attachment and cluster delivery. Its first
-[contracts and durable admission](docs/pipeline-foundation.md) slice is implemented;
-the controller, build/deploy workers, and end-to-end cluster proof remain planned.
+The delivery pipeline attaches repositories through the authenticated admin UI,
+API, or `goblin-king pipeline` CLI. Reviewed changes on configured branches lead to
+exact-commit tests, immutable images, bounded deployments, health verification and
+observed release records in a separate Git repository. Applications build from a
+root Dockerfile with the repository root as their build context.
+
+- [Repository management](docs/pipeline-management.md): discovery, attachment,
+  versioned updates, builds and operator actions.
+- [Git events](docs/pipeline-events.md): authenticated admission and missed-event
+  reconciliation.
+- [Build execution](docs/pipeline-execution.md): isolated tests, rootless builds
+  and publication.
+- [Release operations](docs/pipeline-releases.md): activation, rollback, recovery
+  holds and Git recording.
+- [Optional ingress and egress](docs/pipeline-networking.md): approved Gateways,
+  certificates, outbound destinations, admin previews, API/CLI actions and recovery.
+- [Storage recovery](docs/pipeline-storage.md): backup, fencing, restoration and
+  reconciliation for the single-node SQLite control plane.
+
+Ingress and egress are independently optional and disabled by default. The
+networking package supports managed or operator-approved existing Gateways and
+per-release outbound proxies with NetworkPolicy enforcement. Public exposure
+requires the installation's DNS, reachable addresses, certificates and firewall
+configuration.
+
+The [local acceptance guide](docs/pipeline-local-acceptance.md) describes the
+required cluster scenarios and retained evidence. Local fixture repositories and
+provider/review responses are simulated; this does not prove a real GitHub App
+installation or genuine review enforcement. Release-specific proof reports
+identify the verified revision and completed scenarios. Historical development
+checkpoints do not establish complete acceptance.
+
+The [delivery roadmap](docs/pipeline-delivery-roadmap.md) and
+[networking plan](docs/pipeline-networking-plan.md) retain the design and completion
+criteria.
+
+## Future Work
 
 The following roadmaps describe planned or exploratory work. They are not required for
 the current quickstart path and may not be implemented yet.
