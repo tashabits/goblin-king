@@ -315,7 +315,8 @@ class NetworkAcceptance:
                         expected.add((port, "/work/" + revision + "/" + activity))
                 for endpoint in ("outbound", "outbound-tls"):
                     script = (
-                        "import json;from urllib.request import urlopen;"
+                        "import json;from urllib.request import build_opener,ProxyHandler;"
+                        "urlopen=build_opener(ProxyHandler({})).open;"
                         "print(urlopen('http://127.0.0.1:8080/" + endpoint + "').read().decode())"
                         if implementation == "python"
                         else "fetch('http://127.0.0.1:8080/"

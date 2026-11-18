@@ -118,8 +118,9 @@ class NetworkFaultAcceptance:
                 job["spec"]["template"]["spec"]["containers"][0]["command"] = [
                     "python",
                     "-c",
-                    "import time;time.sleep(180)",
+                    "import time;time.sleep(600)",
                 ]
+                job["spec"]["activeDeadlineSeconds"] = 600
                 job["spec"]["template"]["spec"]["containers"][0].pop("args", None)
                 proof.kube("create", "-f", "-", document=job)
             plan = {key: record[key] for key in ("id", "point", "identity_prefix")}

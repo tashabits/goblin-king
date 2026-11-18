@@ -44,10 +44,22 @@ retained an accurate hold for an invalid certificate and recovered after repair.
 An independent installation upgraded from `437d2ca3` with its application and data
 preserved and networking disabled.
 
-The latest complete Python run at `5a34196d` passed 768 tests with six
+The latest complete Python run at `39a8a6d3` passed 770 tests with six
 platform-specific skips. Those skips require the Linux supplement in final
 acceptance. Frontend tests and the production build passed after the request ID
 fix. Newer harness changes still require validation at the final combined revision.
+
+Both complete Docker and Helm admin audits passed at `492769ee`, covering all 23
+one-shot kinds, artifacts, events, heartbeats and service probes in headless
+containers. All four fixture revisions also produced HTTP and verified HTTPS
+activity from services, background processes and schedules. A localhost probe
+needed an explicit direct connection because the application environment enables
+the outbound proxy.
+
+Interruption selection now distinguishes nested networking from deployment
+execution. The deliberately ambiguous absent-Job case uses the isolated upgrade
+fixture and retains its hold; it cannot prevent the main fixture's remaining
+networking checks and cleanup.
 
 The existing delivery proof at `437d2ca3` remains separate from this networking
 checkpoint. Local provider simulation is not evidence of real GitHub App
@@ -58,8 +70,8 @@ addresses, generated certificates, and run logs remain outside Git.
 
 1. Complete cluster validation of the full interruption matrix, optional package
    combinations, existing Gateway ownership, node loss and fenced restoration.
-2. Validate background and scheduled HTTP/HTTPS activity from both fixture
-   implementations and rerun the complete Docker/Helm admin audits.
+2. Reproduce background and scheduled HTTP/HTTPS activity and the complete
+   Docker/Helm admin audits in each final acceptance run.
 3. Pass the mandatory cluster suite twice in fresh namespaces at
    one pinned revision, including failures, restart, upgrade, and storage recovery.
 4. Merge through PRs, package the verified installation, update the retained demonstration, and
