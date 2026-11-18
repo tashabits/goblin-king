@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import case, create_engine, delete, func, or_, select, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
 
@@ -77,6 +78,7 @@ from goblin_king.store_schema import (
     handoffs_table,
     heartbeats_table,
     image_promotions_table,
+    job_submissions_table,
     jobs_table,
     long_services_table,
     memberships_table,
@@ -169,6 +171,71 @@ class SQLiteStore:
                     last_error=job.last_error,
                 )
             )
+
+    def submit_job_once(self, job: JobRecord) -> tuple[JobRecord, bool]:
+        """Insert a stable submission or return it, rejecting a conflicting payload.
+
+        The immutable fingerprint survives scheduler changes to status, leases,
+        attempts, and due times. A pre-existing job without this receipt is never
+        adopted, including historical jobs created before this migration.
+        """
+        identity = job.model_dump(
+            mode="json",
+            include={
+                "kind",
+                "input",
+                "created_by",
+                "project_id",
+                "correlation_id",
+                "fanout_id",
+                "metadata",
+                "priority",
+                "schedule_id",
+                "max_retries",
+                "timeout_seconds",
+            },
+        )
+        fingerprint = json.dumps(identity, sort_keys=True, separators=(",", ":"))
+        with self.engine.connect() as connection:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+            try:
+                existing = (
+                    connection.execute(select(jobs_table).where(jobs_table.c.id == job.id))
+                    .mappings()
+                    .one_or_none()
+                )
+                receipt = connection.execute(
+                    select(job_submissions_table.c.fingerprint).where(
+                        job_submissions_table.c.job_id == job.id
+                    )
+                ).scalar_one_or_none()
+                if existing is not None:
+                    if receipt != fingerprint:
+                        raise ValueError("job ID conflicts with an existing submission")
+                    result = _row_to_job(existing)
+                    created = False
+                else:
+                    if receipt is not None:
+                        raise RuntimeError("submission receipt refers to a missing job")
+                    if job.status != "queued" or job.attempt_count or job.lease_owner:
+                        raise ValueError("new submissions must be unclaimed queued jobs")
+                    values = job.model_dump(exclude={"input", "metadata", "is_terminal"})
+                    values = {key: value for key, value in values.items() if key in jobs_table.c}
+                    values.update(
+                        input_json=json.dumps(job.input), metadata_json=json.dumps(job.metadata)
+                    )
+                    connection.execute(jobs_table.insert().values(**values))
+                    connection.execute(
+                        job_submissions_table.insert().values(
+                            job_id=job.id, fingerprint=fingerprint
+                        )
+                    )
+                    result, created = job, True
+                connection.commit()
+                return result, created
+            except Exception:
+                connection.rollback()
+                raise
 
     def save_event(self, event: EventRecord) -> None:
         """Insert one durable event while preserving the original public return contract."""
@@ -1156,40 +1223,30 @@ class SQLiteStore:
         *,
         key: str,
         window_started_at: datetime,
-        reset_existing: bool,
     ) -> RateLimitRecord:
-        """Increment one rate-limit counter and return the current window state."""
-        with self.engine.begin() as connection:
-            row = (
-                connection.execute(select(rate_limits_table).where(rate_limits_table.c.key == key))
-                .mappings()
-                .one_or_none()
+        """Atomically count a request, resetting an expired one-minute window."""
+        expired = rate_limits_table.c.window_started_at <= window_started_at - timedelta(minutes=1)
+        statement = (
+            sqlite_insert(rate_limits_table)
+            .values(key=key, window_started_at=window_started_at, count=1)
+            .on_conflict_do_update(
+                index_elements=[rate_limits_table.c.key],
+                set_={
+                    "count": case((expired, 1), else_=rate_limits_table.c.count + 1),
+                    "window_started_at": case(
+                        (expired, window_started_at), else_=rate_limits_table.c.window_started_at
+                    ),
+                },
             )
-            if row is None:
-                count = 1
-                connection.execute(
-                    rate_limits_table.insert().values(
-                        key=key,
-                        window_started_at=window_started_at,
-                        count=count,
-                    )
-                )
-            elif reset_existing:
-                count = 1
-                connection.execute(
-                    update(rate_limits_table)
-                    .where(rate_limits_table.c.key == key)
-                    .values(window_started_at=window_started_at, count=count)
-                )
-            else:
-                count = row["count"] + 1
-                window_started_at = _coerce_datetime(row["window_started_at"])
-                connection.execute(
-                    update(rate_limits_table)
-                    .where(rate_limits_table.c.key == key)
-                    .values(count=count)
-                )
-        return RateLimitRecord(key=key, window_started_at=window_started_at, count=count)
+            .returning(rate_limits_table.c.window_started_at, rate_limits_table.c.count)
+        )
+        with self.engine.begin() as connection:
+            row = connection.execute(statement).mappings().one()
+        return RateLimitRecord(
+            key=key,
+            window_started_at=_coerce_datetime(row["window_started_at"]),
+            count=row["count"],
+        )
 
     def upsert_heartbeat(self, heartbeat: HeartbeatRecord) -> None:
         """Insert or replace the latest heartbeat for one scheduler or worker owner."""

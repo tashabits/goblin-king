@@ -381,6 +381,7 @@ class Scheduler:
             for key, value in {
                 "goblin_source": job.metadata.get("goblin_source"),
                 "goblin_definition": job.metadata.get("goblin_definition"),
+                "pipeline": job.metadata.get("pipeline"),
             }.items()
             if value is not None
         }
@@ -579,6 +580,12 @@ class Scheduler:
         resource_policy: dict,
     ) -> str | None:
         """Ensure the current worker image identity has passed contract validation."""
+        if kind.startswith("pipeline."):
+            from goblin_king.pipeline_state import PipelineState
+
+            error = PipelineState(self.store).authorize_scheduler_job(job)
+            if error:
+                return error
         worker_map = workers or self.workers
         active_registry = registry or self.registry
         active_runtime = runtime or self.runtime

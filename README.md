@@ -1225,6 +1225,11 @@ Goblin King provides:
 
 ## Future Work
 
+The [Repository Delivery Pipeline Roadmap](docs/pipeline-delivery-roadmap.md) defines
+reusable repository attachment and cluster delivery. Its first
+[contracts and durable admission](docs/pipeline-foundation.md) slice is implemented;
+the controller, build/deploy workers, and end-to-end cluster proof remain planned.
+
 The following roadmaps describe planned or exploratory work. They are not required for
 the current quickstart path and may not be implemented yet.
 

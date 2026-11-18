@@ -143,6 +143,15 @@ scheduler:
     enabled: false
     minAvailable: 1
 
+pipeline:
+  enabled: false
+  authSecret: ""
+  githubSecret: ""
+  registryReaderSecret: ""
+  notificationSecret: ""
+  settings: {}
+  workerConfig: {}
+
 redis:
   image: redis:7-alpine
   port: 6379
@@ -152,6 +161,10 @@ redis:
   affinity: {}
 
 persistence:
+  # Legacy preserves existing installations; delivery requires sqlite-single-node.
+  topology: legacy
+  sqliteNode: ""
+  existingClaim: ""
   enabled: true
   size: 1Gi
   storageClassName: ""

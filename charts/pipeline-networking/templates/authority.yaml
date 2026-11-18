@@ -1,0 +1,103 @@
+{{- if .Values.policy.enabled }}
+{{- $control := required "networking requires controlNamespace" .Values.controlNamespace }}
+{{- range $environment := list "test" "prod" }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pipeline-network-{{ $environment }}
+  namespace: {{ $control }}
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pipeline-network-{{ $environment }}-config
+  namespace: {{ $control }}
+subjects:
+  - kind: ServiceAccount
+    name: pipeline-network-{{ $environment }}
+    namespace: {{ $control }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pipeline-build-config
+{{- end }}
+{{- range $identity, $release := .Values.policy.releases }}
+{{- $namespace := first (splitList "/" $identity) }}
+{{- $name := last (splitList "/" $identity) }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}-networking
+  namespace: {{ $namespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "services"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["cronjobs", "jobs"]
+    verbs: ["get", "list", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["httproutes"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: ["gateway.envoyproxy.io"]
+    resources: ["backendtrafficpolicies"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}-networking
+  namespace: {{ $namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: pipeline-network-{{ $release.environment }}
+    namespace: {{ $control }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}-networking
+{{- end }}
+{{- range $alias, $gateway := .Values.policy.gateways }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $gateway.name }}-networking-observe
+  namespace: {{ $gateway.namespace }}
+rules:
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways"]
+    resourceNames: [{{ $gateway.name | quote }}]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: {{ values $gateway.certificates | toJson }}
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $gateway.name }}-networking-observe
+  namespace: {{ $gateway.namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: pipeline-network-{{ $gateway.environment }}
+    namespace: {{ $control }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $gateway.name }}-networking-observe
+{{- end }}
+{{- end }}

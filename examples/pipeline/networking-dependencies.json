@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "gateway_chart": {
+    "reference": "oci://docker.io/envoyproxy/gateway-helm",
+    "version": "v1.9.4",
+    "digest": "sha256:34ea35e4e79924115ed18f454caaa26d0d416cd5536de53f10a2b1f419776e44"
+  },
+  "gateway_image": "envoyproxy/gateway@sha256:defcc385af0998a5e879d56c2760825cd6f107b2ddd62002166c3731f8173164",
+  "envoy_image": "envoyproxy/envoy@sha256:ccb37e93d8274a525fe00d67287716dbe3d58bc4237d7627af9e64fae0fd25c8",
+  "squid_image": "ubuntu/squid@sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029",
+  "squid_version": "6.13-0ubuntu0.24.04.3",
+  "squid_distribution": "Ubuntu 24.04",
+  "capability_evidence": "Development spike only; full package acceptance remains required."
+}

@@ -1,0 +1,38 @@
+{{- /* The chart cannot verify filesystem locking; operators must select local/block storage. */ -}}
+{{- if not (has .Values.persistence.topology (list "legacy" "sqlite-single-node")) -}}
+{{- fail "persistence.topology must be legacy or sqlite-single-node" -}}
+{{- end -}}
+{{- if eq .Values.persistence.topology "sqlite-single-node" -}}
+{{- if not .Values.persistence.enabled -}}
+{{- fail "sqlite-single-node requires persistence.enabled" -}}
+{{- end -}}
+{{- if not .Values.persistence.sqliteNode -}}
+{{- fail "sqlite-single-node requires persistence.sqliteNode (kubernetes.io/hostname)" -}}
+{{- end -}}
+{{- if not (deepEqual .Values.persistence.accessModes (list "ReadWriteOnce")) -}}
+{{- fail "sqlite-single-node requires exactly the ReadWriteOnce access mode" -}}
+{{- end -}}
+{{- if not (regexMatch "^/data/[^/]+[.]sqlite3$" .Values.config.dbPath) -}}
+{{- fail "sqlite-single-node requires config.dbPath to be /data/<name>.sqlite3" -}}
+{{- end -}}
+{{- if .Values.config.projectSettingsPath -}}
+{{- fail "sqlite-single-node does not support projectSettingsPath overrides of storage" -}}
+{{- end -}}
+{{- range .Values.project.extraVolumeMounts -}}
+{{- if or (eq .mountPath "/") (eq .mountPath "/data") (hasPrefix "/data/" .mountPath) (eq .mountPath "/config") (hasPrefix "/config/" .mountPath) -}}
+{{- fail "sqlite-single-node forbids extra mounts over data or configuration" -}}
+{{- end -}}
+{{- end -}}
+{{- range $component := list "api" "scheduler" "repository" -}}
+{{- $settings := index $.Values $component -}}
+{{- if or (eq $component "api") $settings.enabled -}}
+{{- if or (ne (toString $settings.replicas) "1") $settings.autoscaling.enabled -}}
+{{- fail (printf "sqlite-single-node requires %s.replicas=1 and autoscaling disabled" $component) -}}
+{{- end -}}
+{{- $node := index $settings.nodeSelector "kubernetes.io/hostname" -}}
+{{- if and $node (ne $node $.Values.persistence.sqliteNode) -}}
+{{- fail (printf "%s.nodeSelector conflicts with persistence.sqliteNode" $component) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}

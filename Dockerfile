@@ -11,6 +11,7 @@ COPY src /app/src
 COPY directory-ui/static /app/directory-ui/static
 COPY examples /app/examples
 COPY workers /app/workers
+COPY scripts /app/scripts
 COPY goblin-images.json demo-goblins.json demo-images.json goblin-king-api.json goblin-king-project.json goblin-resource-policies.json /app/
 
 RUN pip install --no-cache-dir -e .

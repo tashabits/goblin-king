@@ -1,0 +1,218 @@
+{{- if .Values.pipeline.enabled }}
+{{- if ne .Values.persistence.topology "sqlite-single-node" }}
+{{- fail "pipeline requires persistence.topology=sqlite-single-node" }}
+{{- end }}
+{{- $seen := dict }}
+{{- $role := printf "pipeline-source-recovery-%s" (printf "%s/%s" .Release.Namespace .Release.Name | sha256sum | trunc 12) }}
+{{- range $repository, $source := .Values.pipeline.workerConfig.sources }}
+{{- $namespace := required "pipeline source requires a namespace" $source.namespace }}
+{{- if not (hasKey $seen $namespace) }}
+{{- $_ := set $seen $namespace true }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $role }}
+  namespace: {{ $namespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $role }}
+  namespace: {{ $namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "goblin-king.serviceAccountName" (dict "root" $ "component" "api") }}
+    namespace: {{ $.Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $role }}
+{{- end }}
+{{- end }}
+{{- if or (not .Values.pipeline.authSecret) (not .Values.pipeline.githubSecret) (not .Values.pipeline.registryReaderSecret) }}
+{{- fail "pipeline requires existing authSecret, githubSecret, and registryReaderSecret references" }}
+{{- end }}
+{{- if ne .Values.scheduler.workloadSecurity.profile "restricted-v1" }}
+{{- fail "pipeline orchestration workers require restricted-v1" }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pipeline-worker-config
+data:
+  config.json: |
+{{ .Values.pipeline.workerConfig | toPrettyJson | indent 4 }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pipeline-build
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pipeline-build-config
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["pipeline-worker-config"]
+    verbs: ["get"]
+  {{- if .Values.pipeline.settings.acceptance_faults }}
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["pipeline-acceptance-faults"]
+    verbs: ["get"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pipeline-build-config
+subjects:
+  - kind: ServiceAccount
+    name: pipeline-build
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pipeline-build-config
+{{- end }}
+{{- if and .Values.pipeline.enabled .Values.pipeline.workerConfig.provider }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pipeline-webhook-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: api
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              goblin-king.io/local-delivery: "true"
+          podSelector:
+            matchLabels:
+              app: pipeline-provider
+      ports:
+        - protocol: TCP
+          port: {{ .Values.api.port }}
+{{- end }}
+{{- if and .Values.pipeline.enabled .Values.pipeline.settings.deploy_image }}
+{{- range $environment := list "test" "prod" }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pipeline-deploy-{{ $environment }}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pipeline-deploy-{{ $environment }}-config
+subjects:
+  - kind: ServiceAccount
+    name: pipeline-deploy-{{ $environment }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pipeline-build-config
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Namespace }}-pipeline-token-review
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Namespace }}-pipeline-token-review
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "goblin-king.serviceAccountName" (dict "root" . "component" "api") }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .Release.Namespace }}-pipeline-token-review
+{{- range $identity, $target := .Values.pipeline.workerConfig.releases }}
+{{- $namespace := first (splitList "/" $identity) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pipeline-application-isolation
+  namespace: {{ $namespace }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $.Release.Namespace }}
+        - podSelector: {}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pipeline-deploy
+  namespace: {{ $namespace }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "services", "serviceaccounts", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["cronjobs", "jobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pipeline-deploy
+  namespace: {{ $namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: pipeline-deploy-{{ $target.environment }}
+    namespace: {{ $.Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pipeline-deploy
+{{- end }}
+{{- end }}

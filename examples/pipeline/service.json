@@ -1,0 +1,9 @@
+{
+  "apiVersion": "goblin-king/pipeline-service/v1alpha1",
+  "kind": "PipelineService",
+  "context": ".",
+  "dockerfile": "Dockerfile",
+  "test_command": ["sh", "ci/test.sh"],
+  "port": 8080,
+  "health_path": "/health"
+}

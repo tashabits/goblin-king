@@ -1,0 +1,28 @@
+{{- if .Values.backgroundCommand }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-background
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  replicas: {{ ternary 1 0 .Values.active }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: background
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: background
+    spec:
+      {{- include "pipeline.podSecurity" . | nindent 6 }}
+      containers:
+        - name: background
+          command: {{ .Values.backgroundCommand | toJson }}
+          {{- include "pipeline.container" . | nindent 10 }}
+      {{- include "pipeline.volumes" . | nindent 6 }}
+{{- end }}

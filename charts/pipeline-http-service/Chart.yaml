@@ -1,0 +1,6 @@
+apiVersion: v2
+name: pipeline-http-service
+description: Versioned HTTP service profile for verified Goblin King releases
+type: application
+version: 0.1.0
+appVersion: "1"

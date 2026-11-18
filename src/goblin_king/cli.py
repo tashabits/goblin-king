@@ -104,6 +104,7 @@ from goblin_king.kubernetes_runtime_settings import (
 )
 from goblin_king.kubernetes_validation import validate_workers_with_kubernetes
 from goblin_king.metadata import goblin_job_metadata
+from goblin_king.pipeline_cli import app as pipeline_app
 from goblin_king.registry import GoblinRegistry, RegistryError
 from goblin_king.resource_policies import ResourcePolicyError, ResourcePolicySet
 from goblin_king.runtime import DockerRuntime, InProcessRuntime, new_run_context
@@ -150,6 +151,7 @@ DockerRunRootOption = Annotated[
 ]
 ValidationRuntimeOption = Literal["docker", "kubernetes"]
 app.add_typer(api_app, name="api")
+app.add_typer(pipeline_app, name="pipeline")
 app.add_typer(auth_app, name="auth")
 app.add_typer(goblins_app, name="goblins")
 app.add_typer(jobs_app, name="jobs")
@@ -169,6 +171,7 @@ app.add_typer(smoke_app, name="smoke")
 app.add_typer(workers_app, name="workers")
 app.add_typer(resource_policies_app, name="resource-policies")
 app.add_typer(directory_ui_app, name="directory-ui")
+
 
 @auth_app.command("create-user")
 def create_auth_user(
@@ -433,10 +436,7 @@ def list_project_template_profiles(
     if json_output:
         typer.echo(
             pretty_json(
-                [
-                    {"name": profile.name, "description": profile.description}
-                    for profile in profiles
-                ]
+                [{"name": profile.name, "description": profile.description} for profile in profiles]
             )
         )
         return
@@ -606,7 +606,9 @@ def submit_job(
     ] = DEFAULT_IMAGES_PATH,
     redis_url: Annotated[
         str,
-        typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
+        typer.Option(
+            "--redis-url", envvar="GOBLIN_KING_REDIS_URL", help="Redis result transport URL."
+        ),
     ] = DEFAULT_REDIS_URL,
     run_root: DockerRunRootOption = None,
     resource_policies: Annotated[
@@ -614,9 +616,7 @@ def submit_job(
         typer.Option("--resource-policies", help="Optional resource policy JSON path."),
     ] = DEFAULT_RESOURCE_POLICIES_PATH,
     result_forwarder_image: ResultForwarderImageOption = DEFAULT_RESULT_FORWARDER_IMAGE,
-    worker_image_pull_policy: WorkerImagePullPolicyOption = (
-        DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
-    ),
+    worker_image_pull_policy: WorkerImagePullPolicyOption = (DEFAULT_KUBERNETES_IMAGE_PULL_POLICY),
     result_forwarder_image_pull_policy: ResultForwarderImagePullPolicyOption = (
         DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
     ),
@@ -661,9 +661,7 @@ def submit_job(
     context = new_run_context(job.id, definition.kind)
     if policy is not None:
         context = context.model_copy(
-            update={
-                "metadata": {**context.metadata, "resource_policy": policy.compact()}
-            }
+            update={"metadata": {**context.metadata, "resource_policy": policy.compact()}}
         )
     started_at = utc_now()
     if runtime == "docker":
@@ -951,9 +949,7 @@ def show_run(
                 "run": run.model_dump(mode="json"),
                 "job": job.model_dump(mode="json") if job else None,
                 "goblin_source": (job.metadata.get("goblin_source") if job else None),
-                "goblin_definition": (
-                    job.metadata.get("goblin_definition") if job else None
-                ),
+                "goblin_definition": (job.metadata.get("goblin_definition") if job else None),
             },
             indent=2,
         )
@@ -1065,7 +1061,9 @@ def scheduler_run_once(
     ] = DEFAULT_IMAGES_PATH,
     redis_url: Annotated[
         str,
-        typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
+        typer.Option(
+            "--redis-url", envvar="GOBLIN_KING_REDIS_URL", help="Redis result transport URL."
+        ),
     ] = DEFAULT_REDIS_URL,
     run_root: DockerRunRootOption = None,
     resource_policies: Annotated[
@@ -1073,9 +1071,7 @@ def scheduler_run_once(
         typer.Option("--resource-policies", help="Optional resource policy JSON path."),
     ] = DEFAULT_RESOURCE_POLICIES_PATH,
     result_forwarder_image: ResultForwarderImageOption = DEFAULT_RESULT_FORWARDER_IMAGE,
-    worker_image_pull_policy: WorkerImagePullPolicyOption = (
-        DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
-    ),
+    worker_image_pull_policy: WorkerImagePullPolicyOption = (DEFAULT_KUBERNETES_IMAGE_PULL_POLICY),
     result_forwarder_image_pull_policy: ResultForwarderImagePullPolicyOption = (
         DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
     ),
@@ -1129,7 +1125,9 @@ def scheduler_run(
     ] = DEFAULT_IMAGES_PATH,
     redis_url: Annotated[
         str,
-        typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
+        typer.Option(
+            "--redis-url", envvar="GOBLIN_KING_REDIS_URL", help="Redis result transport URL."
+        ),
     ] = DEFAULT_REDIS_URL,
     run_root: DockerRunRootOption = None,
     resource_policies: Annotated[
@@ -1137,9 +1135,7 @@ def scheduler_run(
         typer.Option("--resource-policies", help="Optional resource policy JSON path."),
     ] = DEFAULT_RESOURCE_POLICIES_PATH,
     result_forwarder_image: ResultForwarderImageOption = DEFAULT_RESULT_FORWARDER_IMAGE,
-    worker_image_pull_policy: WorkerImagePullPolicyOption = (
-        DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
-    ),
+    worker_image_pull_policy: WorkerImagePullPolicyOption = (DEFAULT_KUBERNETES_IMAGE_PULL_POLICY),
     result_forwarder_image_pull_policy: ResultForwarderImagePullPolicyOption = (
         DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
     ),
@@ -1384,12 +1380,12 @@ def validate_worker_contracts(
     ] = None,
     redis_url: Annotated[
         str,
-        typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
+        typer.Option(
+            "--redis-url", envvar="GOBLIN_KING_REDIS_URL", help="Redis result transport URL."
+        ),
     ] = DEFAULT_REDIS_URL,
     result_forwarder_image: ResultForwarderImageOption = DEFAULT_RESULT_FORWARDER_IMAGE,
-    worker_image_pull_policy: WorkerImagePullPolicyOption = (
-        DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
-    ),
+    worker_image_pull_policy: WorkerImagePullPolicyOption = (DEFAULT_KUBERNETES_IMAGE_PULL_POLICY),
     result_forwarder_image_pull_policy: ResultForwarderImagePullPolicyOption = (
         DEFAULT_KUBERNETES_IMAGE_PULL_POLICY
     ),
@@ -1461,9 +1457,7 @@ def validate_worker_contracts(
             if effective_kubernetes_settings is not None
             else None
         )
-        store.save_worker_validation(
-            validation_record(result, effective_policy=effective_policy)
-        )
+        store.save_worker_validation(validation_record(result, effective_policy=effective_policy))
     _print_validation_results(results, json_output=json_output)
 
 
@@ -1497,7 +1491,9 @@ def validate_worker_image(
     ] = None,
     redis_url: Annotated[
         str,
-        typer.Option("--redis-url", help="Redis URL used by Docker result transport."),
+        typer.Option(
+            "--redis-url", envvar="GOBLIN_KING_REDIS_URL", help="Redis result transport URL."
+        ),
     ] = DEFAULT_REDIS_URL,
     run_root: DockerRunRootOption = None,
     json_output: Annotated[

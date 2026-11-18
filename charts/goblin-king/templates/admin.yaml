@@ -24,7 +24,7 @@ spec:
       {{- include "goblin-king.podSecurityContext" . | nindent 6 }}
       containers:
         - name: admin
-          image: "{{ .Values.admin.image.repository }}:{{ .Values.admin.image.tag }}"
+          image: "{{ .Values.admin.image.repository }}{{ if .Values.admin.image.digest }}@{{ .Values.admin.image.digest }}{{ else }}:{{ .Values.admin.image.tag }}{{ end }}"
           imagePullPolicy: {{ .Values.admin.image.pullPolicy }}
           {{- include "goblin-king.containerSecurityContext" . | nindent 10 }}
           ports:

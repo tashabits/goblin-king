@@ -29,6 +29,7 @@ import {
   usefulServicesFirst,
 } from "./adminData";
 import { EffectivePolicy, Table } from "./components";
+import { PipelinePanel } from "./PipelinePanel";
 import type {
   AdminConfig,
   ArtifactCleanupResponse,
@@ -96,6 +97,9 @@ export function App() {
   const [serviceUrl, setServiceUrl] = useState(DEFAULT_LONG_HELLO_URL);
   const [retryJobId, setRetryJobId] = useState("");
   const [artifactRunId, setArtifactRunId] = useState("");
+  const [inspectedArtifacts, setInspectedArtifacts] = useState<{
+    runId: string; items: { name: string; media_type?: string }[];
+  } | null>(null);
   const [artifactStorage, setArtifactStorage] = useState<ArtifactStorageStatus | null>(null);
   const [artifactCleanup, setArtifactCleanup] = useState<ArtifactCleanupResponse | null>(null);
   const [cleanupPreview, setCleanupPreview] = useState<CleanupResponse | null>(null);
@@ -349,7 +353,26 @@ export function App() {
 
   async function inspectArtifacts(runId: string) {
     if (!runId) return;
-    await api(`/runs/${runId}/artifacts`, {}, "GET /runs/{run_id}/artifacts");
+    setError("");
+    setInspectedArtifacts(null);
+    try {
+      const items = await api(`/runs/${encodeURIComponent(runId)}/artifacts`, {}, "GET /runs/{run_id}/artifacts");
+      setInspectedArtifacts({ runId, items });
+    } catch (failure) { setError(String(failure)); }
+  }
+
+  async function downloadArtifact(runId: string, name: string) {
+    setError("");
+    try {
+      const path = `/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(name)}`;
+      const response = await fetch(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!response.ok) throw new Error(`Artifact download failed (${response.status})`);
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url; link.download = name;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (failure) { setError(String(failure)); }
   }
 
   async function cleanupArtifacts(dryRun: boolean) {
@@ -493,6 +516,7 @@ export function App() {
       onRefresh={refreshAll}
     >
         <DashboardPanel counts={counts} />
+        <PipelinePanel api={api} />
 
         <GoblinLabPanel
           goblins={goblins}
@@ -543,7 +567,14 @@ export function App() {
             <label>Run ID</label>
             <input value={artifactRunId} onChange={(event) => setArtifactRunId(event.target.value)} placeholder="run id" />
             <button onClick={() => void inspectArtifacts(artifactRunId)}>Inspect artifacts</button>
-            <p className="muted">Download links are returned by `GET /runs/{"{run_id}"}/artifacts`.</p>
+            {inspectedArtifacts && <>
+              <p>Artifacts for {inspectedArtifacts.runId}</p>
+              {inspectedArtifacts.items.length === 0 && <p>No artifacts were recorded.</p>}
+              {inspectedArtifacts.items.map(artifact => <div key={artifact.name}>
+                <p>{artifact.name} · {artifact.media_type || "application/octet-stream"}</p>
+                <button onClick={() => void downloadArtifact(inspectedArtifacts.runId, artifact.name)}>Download {artifact.name}</button>
+              </div>)}
+            </>}
             <h3><Boxes /> Artifact Volume</h3>
             <p className="muted">Volume/PVC storage health and cleanup proof for filesystem-backed artifacts.</p>
             <Table

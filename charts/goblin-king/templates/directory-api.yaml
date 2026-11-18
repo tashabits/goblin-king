@@ -5,6 +5,10 @@ kind: Deployment
 metadata:
   name: {{ include "goblin-king.fullname" . }}-directory-api
 spec:
+  {{- if eq .Values.persistence.topology "sqlite-single-node" }}
+  strategy:
+    type: Recreate
+  {{- end }}
   {{- if not .Values.repository.autoscaling.enabled }}
   replicas: {{ .Values.repository.replicas }}
   {{- end }}
@@ -15,6 +19,8 @@ spec:
       app.kubernetes.io/name: {{ include "goblin-king.name" . }}
   template:
     metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
       labels:
         app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: directory-api
@@ -33,6 +39,22 @@ spec:
           {{- include "goblin-king.containerSecurityContext" . | nindent 10 }}
           ports:
             - containerPort: {{ .Values.repository.port }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.repository.port }}
+            periodSeconds: 2
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.repository.port }}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.repository.port }}
+            periodSeconds: 10
           env:
             - name: GOBLIN_KING_BOOTSTRAP_ADMIN_TOKEN
               {{- if .Values.api.existingSecret }}
@@ -85,14 +107,14 @@ spec:
         - name: data
           {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:
-            claimName: {{ include "goblin-king.fullname" . }}-data
+            claimName: {{ .Values.persistence.existingClaim | default (printf "%s-data" (include "goblin-king.fullname" .)) }}
           {{- else }}
           emptyDir: {}
           {{- end }}
         {{- with .Values.project.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- include "goblin-king.podPlacement" .Values.repository | nindent 6 }}
+      {{- include "goblin-king.storagePlacement" (dict "root" . "component" "repository") | nindent 6 }}
 ---
 apiVersion: v1
 kind: Service

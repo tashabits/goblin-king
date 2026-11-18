@@ -162,3 +162,11 @@ tolerations:
 {{- toYaml . | nindent 2 }}
 {{- end }}
 {{- end -}}
+
+{{- define "goblin-king.storagePlacement" -}}
+{{- $settings := deepCopy (index .root.Values .component) -}}
+{{- if eq .root.Values.persistence.topology "sqlite-single-node" -}}
+{{- $_ := set $settings.nodeSelector "kubernetes.io/hostname" .root.Values.persistence.sqliteNode -}}
+{{- end -}}
+{{- include "goblin-king.podPlacement" $settings -}}
+{{- end -}}
