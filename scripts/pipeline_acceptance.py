@@ -123,7 +123,11 @@ class Acceptance:
         if self.state.get("networking"):
             from pipeline_network_acceptance import SCENARIOS as networking_scenarios
 
-            return SCENARIOS[:-1] + networking_scenarios + SCENARIOS[-1:]
+            # The isolated upgrade fixture retains the deliberately ambiguous absent-Job case.
+            # Prove that hold before retiring it; the main fixture remains usable afterwards.
+            foundation = tuple(name for name in SCENARIOS[:-1] if name != "side-effect-faults")
+            networking = tuple(name for name in networking_scenarios if name != "network-cleanup")
+            return foundation + networking + ("side-effect-faults", "network-cleanup", "cleanup")
         return SCENARIOS
 
     def prepare(self, context, image, images=None, networking=None):

@@ -123,6 +123,7 @@ class NetworkFaultAcceptance:
                 job["spec"]["template"]["spec"]["containers"][0].pop("args", None)
                 proof.kube("create", "-f", "-", document=job)
             plan = {key: record[key] for key in ("id", "point", "identity_prefix")}
+            plan["scope"] = "networking"
             if not prefix.startswith("settle/Job/"):
                 plan["identity"] = prefix
             self.faults.gate(plan)

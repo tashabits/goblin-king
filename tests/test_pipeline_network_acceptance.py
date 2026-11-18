@@ -21,6 +21,8 @@ def test_networking_matrix_is_required_and_cleanup_remains_last(monkeypatch, tmp
     names = proof.scenarios()
     assert len(names) == len(set(names)) == len(module.SCENARIOS) + 21
     assert names[-1] == "cleanup"
+    assert names[-3:] == ("side-effect-faults", "network-cleanup", "cleanup")
+    assert names.index("network-upgrade") < names.index("side-effect-faults")
     assert "network-tls-lifecycle" in names and "network-backup-restore" in names
     proof.state["scenarios"] = {name: {"status": "passed"} for name in names}
     proof.state["scenarios"]["network-dns-policy"] = {"status": "skipped"}

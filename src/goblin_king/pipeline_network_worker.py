@@ -91,7 +91,7 @@ def configure(payload):
             else payload["operation_id"]
         ),
         identity,
-        fault_hook=configured_gate(core, namespace, installed),
+        fault_hook=configured_gate(core, namespace, installed, "networking"),
     )
     if ledger.document["result"]:
         return GoblinResult.model_validate(ledger.document["result"])
@@ -137,7 +137,7 @@ def configure(payload):
             environment["namespace"],
             str(uuid5(NAMESPACE_URL, ledger.name + "/authorized-route-fallback")),
             identity | {"fallback": fallback["configuration"]},
-            fault_hook=configured_gate(core, namespace, installed),
+            fault_hook=configured_gate(core, namespace, installed, "networking"),
         )
         observed = execute(
             fallback_ledger,

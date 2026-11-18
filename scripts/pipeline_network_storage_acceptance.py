@@ -11,6 +11,9 @@ from pipeline_storage_acceptance import prove_storage_recovery
 PROBE = r"""
 import json,socket,sys,urllib.request
 a=json.load(sys.stdin)
+with urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3) as response:
+ application=json.load(response)
+ assert response.status==200 and application['revision']==a['revision'],application
 client=urllib.request.build_opener(urllib.request.ProxyHandler({'http':a['proxy']}))
 try:
  with client.open('http://allowed.fixture.example.test:8080/node-loss',timeout=4) as response:
@@ -22,6 +25,7 @@ try:
 except OSError: result['direct']='denied'
 assert result['direct']=='denied',result
 if a['phase']!='during':assert result['proxy']==200,result
+result['application']=application
 print(json.dumps(result))
 """
 
@@ -41,6 +45,42 @@ class NetworkStorageAcceptance:
         proxy = json.loads(
             proof.kube("-n", namespace, "get", "service", "app-egress", "-o", "json")
         )
+        build = next(
+            row for row in delivery.collection("builds") if row["id"] == release["build_id"]
+        )
+        revision = build["document"]["request"]["source"]["commit"]
+        placement_path = network.output / "outage-proxy-placement.json"
+        if placement_path.exists():
+            placement = json.loads(placement_path.read_text())
+        else:
+            placement = json.loads(
+                proof.kube("-n", namespace, "get", "deployment", "app-egress", "-o", "json")
+            )
+            placement_path.write_text(json.dumps(placement, indent=2))
+        patch = [
+            {"op": "test", "path": "/metadata/uid", "value": placement["metadata"]["uid"]},
+            {
+                "op": "add",
+                "path": "/spec/template/spec/nodeSelector",
+                "value": {"kubernetes.io/hostname": "desktop-control-plane"},
+            },
+            {
+                "op": "add",
+                "path": "/spec/template/spec/tolerations",
+                "value": [{"operator": "Exists"}],
+            },
+        ]
+        proof.kube(
+            "-n",
+            namespace,
+            "patch",
+            "deployment",
+            "app-egress",
+            "--type=json",
+            "-p",
+            json.dumps(patch),
+        )
+        proof.kube("-n", namespace, "rollout", "status", "deployment/app-egress", "--timeout=120s")
         pod = {
             "apiVersion": "v1",
             "kind": "Pod",
@@ -63,15 +103,20 @@ class NetworkStorageAcceptance:
                 "securityContext": {
                     "runAsNonRoot": True,
                     "runAsUser": 65532,
+                    "fsGroup": 65532,
                     "seccompProfile": {"type": "RuntimeDefault"},
                 },
                 "containers": [
                     {
                         "name": "probe",
                         "image": release["image"],
-                        "command": ["python", "-c", "import time;time.sleep(3600)"],
+                        "command": ["python", "/app/app.py"],
+                        "env": [{"name": "SOURCE_REVISION", "value": revision}],
+                        "readinessProbe": {"httpGet": {"path": "/health", "port": 8080}},
+                        "volumeMounts": [{"name": "data", "mountPath": "/data"}],
                         "securityContext": {
                             "allowPrivilegeEscalation": False,
+                            "readOnlyRootFilesystem": True,
                             "capabilities": {"drop": ["ALL"]},
                         },
                         "resources": {
@@ -80,6 +125,7 @@ class NetworkStorageAcceptance:
                         },
                     }
                 ],
+                "volumes": [{"name": "data", "emptyDir": {"sizeLimit": "16Mi"}}],
             },
         }
         proof.apply(pod)
@@ -105,6 +151,7 @@ class NetworkStorageAcceptance:
                         "phase": phase,
                         "proxy": "http://" + proxy["spec"]["clusterIP"] + ":3128",
                         "address": upstream["address"],
+                        "revision": revision,
                     },
                 )
             )
@@ -123,6 +170,17 @@ class NetworkStorageAcceptance:
                         "json",
                     )
                 )["items"],
+                "proxy_pods": json.loads(
+                    proof.kube(
+                        "get",
+                        "pods",
+                        "-A",
+                        "-l",
+                        "app.kubernetes.io/component=egress",
+                        "-o",
+                        "json",
+                    )
+                )["items"],
             }
             self.path.write_text(json.dumps(observations, indent=2))
 
@@ -133,6 +191,35 @@ class NetworkStorageAcceptance:
             if current["metadata"]["uid"] != identity["metadata"]["uid"]:
                 raise RuntimeError("network outage observer identity changed")
             proof.kube("-n", namespace, "delete", "pod", name, "--wait=true", "--timeout=60s")
+            current_proxy = json.loads(
+                proof.kube("-n", namespace, "get", "deployment", "app-egress", "-o", "json")
+            )
+            patch = [{"op": "test", "path": "/metadata/uid", "value": placement["metadata"]["uid"]}]
+            for field in ("nodeSelector", "tolerations"):
+                original = placement["spec"]["template"]["spec"]
+                if field in original:
+                    patch.append(
+                        {
+                            "op": "add",
+                            "path": "/spec/template/spec/" + field,
+                            "value": original[field],
+                        }
+                    )
+                elif field in current_proxy["spec"]["template"]["spec"]:
+                    patch.append({"op": "remove", "path": "/spec/template/spec/" + field})
+            proof.kube(
+                "-n",
+                namespace,
+                "patch",
+                "deployment",
+                "app-egress",
+                "--type=json",
+                "-p",
+                json.dumps(patch),
+            )
+            proof.kube(
+                "-n", namespace, "rollout", "status", "deployment/app-egress", "--timeout=120s"
+            )
         self.backup_restore()
         return result
 
@@ -149,6 +236,15 @@ class NetworkStorageAcceptance:
             row["connection"]["direct"] != "denied" for row in evidence.values()
         ):
             raise RuntimeError("network node loss did not preserve the boundary across both nodes")
+        proxy_nodes = {
+            pod["spec"]["nodeName"]
+            for phase in evidence.values()
+            for pod in phase["proxy_pods"]
+            if pod["metadata"]["namespace"].startswith(self.delivery.prefix + "-")
+            and pod["status"]["phase"] == "Running"
+        }
+        if len(proxy_nodes) < 2:
+            raise RuntimeError("network node loss did not exercise proxies on both nodes")
         return self.network.save("network-node-loss", evidence)
 
     def backup_restore(self):

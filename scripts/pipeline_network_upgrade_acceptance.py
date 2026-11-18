@@ -128,7 +128,7 @@ def upgrade(network):
     )["items"]
     if any(item["metadata"]["namespace"].startswith(delivery.prefix + "-") for item in resources):
         raise RuntimeError("disabled upgrade created network resources")
-    return network.save(
+    result = network.save(
         "network-upgrade",
         {
             "baseline": BASELINE,
@@ -138,3 +138,58 @@ def upgrade(network):
             "networking": network_state,
         },
     )
+    # This case intentionally retains a hold. Keep its real execution isolated from
+    # the four releases used by the remaining networking and cleanup checks.
+    FaultAcceptance(delivery).run_point("kubernetes.before_create")
+    retired = []
+    for entry in child.state["namespaces"].values():
+        namespace = entry["name"]
+        if not namespace.startswith(delivery.prefix + "-"):
+            continue
+        actual = json.loads(proof.kube("get", "namespace", namespace, "-o", "json"))
+        if (
+            actual["metadata"]["uid"] != entry["uid"]
+            or actual["metadata"]["labels"].get("goblin-king.io/acceptance")
+            != proof.state["run_id"]
+        ):
+            raise RuntimeError("completed upgrade fixture ownership changed")
+        for kind, field, value in (("deployment", "replicas", 0), ("cronjob", "suspend", True)):
+            for item in json.loads(proof.kube("-n", namespace, "get", kind, "-o", "json"))["items"]:
+                patch = [
+                    {"op": "test", "path": "/metadata/uid", "value": item["metadata"]["uid"]},
+                    {"op": "replace", "path": "/spec/" + field, "value": value},
+                ]
+                proof.kube(
+                    "-n",
+                    namespace,
+                    "patch",
+                    kind,
+                    item["metadata"]["name"],
+                    "--type=json",
+                    "-p",
+                    json.dumps(patch),
+                )
+                retired.append(
+                    {"namespace": namespace, "kind": kind, "uid": item["metadata"]["uid"]}
+                )
+        for item in json.loads(proof.kube("-n", namespace, "get", "daemonsets", "-o", "json"))[
+            "items"
+        ]:
+            if item["metadata"]["name"] != "pipeline-image-cache":
+                raise RuntimeError("unexpected DaemonSet in the completed upgrade fixture")
+            proof.kube(
+                "delete",
+                "--raw",
+                f"/apis/apps/v1/namespaces/{namespace}/daemonsets/pipeline-image-cache",
+                "-f",
+                "-",
+                document={
+                    "apiVersion": "v1",
+                    "kind": "DeleteOptions",
+                    "preconditions": {"uid": item["metadata"]["uid"]},
+                },
+            )
+    (output / "retired-workloads.json").write_text(
+        json.dumps({"retired": retired, "data_retained": True}, indent=2)
+    )
+    return result

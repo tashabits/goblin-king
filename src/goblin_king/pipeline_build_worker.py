@@ -37,7 +37,7 @@ def build(payload):
         ).data["config.json"]
     )
     route = config["sources"][request.source.repository]
-    fault_hook = configured_gate(core, current_kubernetes_namespace(), config)
+    fault_hook = configured_gate(core, current_kubernetes_namespace(), config, "build")
     namespace, node = route["namespace"], route["node"]
     helper = config["helper_image"]
     if request.environment.image_repository not in route["image_repositories"]:

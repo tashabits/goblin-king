@@ -47,3 +47,18 @@ def test_matching_pause_emits_evidence_and_waits_for_explicit_release(monkeypatc
         "identity": "selected-job",
     }
     assert released == [True]
+
+
+def test_nested_network_phase_cannot_consume_deployment_pause(monkeypatch, capsys):
+    plan = {"id": "selected", "point": "execution.before_result_ack", "scope": "deployment"}
+    core = Mock()
+    core.read_namespaced_config_map.side_effect = lambda *_: NS(
+        data={"fault.json": json.dumps(plan)}
+    )
+    nested = AcceptanceFaultGate(core, "control", enabled=True, scope="networking")
+    nested("execution.before_result_ack", "pipeline-child")
+    assert capsys.readouterr().out == ""
+    monkeypatch.setattr("goblin_king.pipeline_faults.time.sleep", lambda _: plan.clear())
+    parent = AcceptanceFaultGate(core, "control", enabled=True, scope="deployment")
+    parent("execution.before_result_ack", "pipeline-parent")
+    assert json.loads(capsys.readouterr().out)["pipeline_fault"]["identity"] == "pipeline-parent"

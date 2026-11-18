@@ -441,6 +441,7 @@ class NetworkAcceptance:
         return result
 
     def implementations(self, original):
+        from pipeline_fault_acceptance import FaultAcceptance
         from pipeline_network_authorization_acceptance import authorization
         from pipeline_network_failure_acceptance import fail_closed
         from pipeline_network_fault_acceptance import NetworkFaultAcceptance
@@ -468,6 +469,9 @@ class NetworkAcceptance:
             onboard, implementation, repository_id
         )
         return original | {
+            "side-effect-faults": lambda: FaultAcceptance(self.delivery).run(
+                self.output / "upgrade" / "delivery" / "faults" / "kubernetes.before_create.json"
+            ),
             "fresh-installation": lambda: self.installation(installation),
             "storage-recovery": NetworkStorageAcceptance(self).storage,
             "network-node-loss": NetworkStorageAcceptance(self).node_loss,

@@ -418,6 +418,19 @@ class PackageAcceptance:
             "name": identity,
             "uid": observed["metadata"]["uid"],
             "spec": observed["spec"],
+            "proxy": json.loads(
+                proof.kube("-n", binding["namespace"], "get", "envoyproxy", identity, "-o", "json")
+            ),
+            "certificate_uid": proof.kube(
+                "-n",
+                binding["namespace"],
+                "get",
+                "secret",
+                binding["certificates"]["local"],
+                "-o",
+                "jsonpath={.metadata.uid}",
+            ).strip(),
+            "certificate_name": binding["certificates"]["local"],
         }
         proof.save()
         return network.save(
@@ -473,10 +486,51 @@ class PackageAcceptance:
         )
         if gateway["metadata"]["uid"] != existing["uid"] or gateway["spec"] != existing["spec"]:
             raise RuntimeError("networking uninstall changed externally owned Gateway state")
+        proxy = json.loads(
+            proof.kube(
+                "-n", existing["namespace"], "get", "envoyproxy", existing["name"], "-o", "json"
+            )
+        )
+        if (
+            proxy["metadata"]["uid"] != existing["proxy"]["metadata"]["uid"]
+            or proxy["spec"] != existing["proxy"]["spec"]
+        ):
+            raise RuntimeError(
+                "networking uninstall changed the external Gateway's data-plane configuration"
+            )
+        certificate_uid = proof.kube(
+            "-n",
+            existing["namespace"],
+            "get",
+            "secret",
+            existing["certificate_name"],
+            "-o",
+            "jsonpath={.metadata.uid}",
+        ).strip()
+        if certificate_uid != existing["certificate_uid"]:
+            raise RuntimeError("networking uninstall replaced the external Gateway's certificate")
+        proof.kube(
+            "-n",
+            existing["namespace"],
+            "wait",
+            "gateway/" + existing["name"],
+            "--for=condition=Programmed",
+            "--timeout=90s",
+        )
+        from pipeline_network_ingress_acceptance import IngressAcceptance
+
+        withdrawn = IngressAcceptance(network).client("withdrawn")
         removed = network.fixture.cleanup()
         proof.state["networking_cleanup"] = {"package_removed": True, "upstream": removed}
         proof.save()
         return network.save(
             "network-cleanup",
-            {"operations": operations, "external_apis": after, "upstream": removed},
+            {
+                "operations": operations,
+                "external_apis": after,
+                "upstream": removed,
+                "retained_gateway": gateway,
+                "retained_proxy": proxy,
+                "withdrawn": withdrawn,
+            },
         )
