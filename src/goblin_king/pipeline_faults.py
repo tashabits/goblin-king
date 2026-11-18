@@ -36,6 +36,8 @@ class AcceptanceFaultGate:
         plan = self.plan()
         if plan.get("point") != point or not identity.startswith(plan.get("identity_prefix", "")):
             return
+        if plan.get("identity") is not None and plan["identity"] != identity:
+            return
         if not plan.get("id"):
             raise ValueError("acceptance fault requires a unique identity")
         print(

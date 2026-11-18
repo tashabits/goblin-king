@@ -526,6 +526,7 @@ class NetworkRuntime:
             self.ledger.fault_hook("networking.after_job_removal", key)
             effect["complete"] = True
             self.ledger.save()
+            self.ledger.fault_hook("networking.after_job_removal_ack", key)
         selector = (
             "app.kubernetes.io/instance="
             + self.release
