@@ -153,6 +153,7 @@ class GatewayBinding(NetworkModel):
     dataplane_namespace: Name
     probe_address: str = ""
     probe_port: Port = 443
+    controller_name: str = Field(default="goblin-king.io/pipeline-networking", min_length=1)
 
     @field_validator("hostname_suffixes")
     @classmethod
@@ -222,6 +223,7 @@ class NetworkingPolicy(NetworkModel):
     )
     proxy_image: str = ""
     protected_cidrs: tuple[str, ...] = ()
+    control_namespace: Name | None = None
 
     @field_validator("forbidden_cidrs", "protected_cidrs")
     @classmethod

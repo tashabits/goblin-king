@@ -222,10 +222,42 @@ class NetworkRuntime:
         gateway = self.read("Gateway", binding.name, namespace=binding.namespace)
         if not gateway:
             raise ValueError("approved gateway is absent")
+        generation = gateway["metadata"]["generation"]
+        if not all(
+            any(
+                condition.get("type") == kind
+                and condition.get("status") == "True"
+                and condition.get("observedGeneration") == generation
+                for condition in gateway.get("status", {}).get("conditions", [])
+            )
+            for kind in ("Accepted", "Programmed")
+        ):
+            raise RecoveryHold("approved gateway is not accepted and programmed")
         listeners = [
             item for item in gateway["spec"]["listeners"] if item["name"] == binding.listener
         ]
         secret_name = binding.certificates[ingress.certificate]
+        if (
+            not listeners
+            or listeners[0].get("protocol") != "HTTPS"
+            or listeners[0].get("tls", {}).get("mode", "Terminate") != "Terminate"
+        ):
+            raise ValueError("approved listener must terminate HTTPS")
+        statuses = [
+            item
+            for item in gateway.get("status", {}).get("listeners", [])
+            if item.get("name") == binding.listener
+        ]
+        if not statuses or not all(
+            any(
+                condition.get("type") == kind
+                and condition.get("status") == "True"
+                and condition.get("observedGeneration") == generation
+                for condition in statuses[0].get("conditions", [])
+            )
+            for kind in ("Accepted", "Programmed", "ResolvedRefs")
+        ):
+            raise RecoveryHold("approved gateway listener is not ready")
         if not listeners or not any(
             ref.get("name") == secret_name
             and ref.get("namespace", binding.namespace) == binding.namespace
@@ -285,6 +317,13 @@ class NetworkRuntime:
                         for entry in parents
                         if all(
                             entry["parentRef"].get(key) == value for key, value in expected.items()
+                        )
+                        and entry.get("controllerName")
+                        == next(
+                            binding.controller_name
+                            for binding in self.policy.gateways.values()
+                            if binding.name == expected["name"]
+                            and binding.namespace == expected["namespace"]
                         )
                     ]
                     if not matches or not all(
@@ -359,6 +398,17 @@ class NetworkRuntime:
                         "kubernetes.io/metadata.name"
                     ):
                         raise RecoveryHold("additional namespace ingress policy requires review")
+                    if source not in (
+                        {"podSelector": {}},
+                        {
+                            "namespaceSelector": {
+                                "matchLabels": {
+                                    "kubernetes.io/metadata.name": self.policy.control_namespace,
+                                }
+                            }
+                        },
+                    ):
+                        raise RecoveryHold("additional ingress peer requires installation review")
 
     def application_workloads(self):
         if "application_workloads" not in self.ledger.document:

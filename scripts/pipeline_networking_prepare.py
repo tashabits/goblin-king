@@ -109,6 +109,7 @@ def prepare(
         "proxy_image": dependencies["squid_image"],
         "gateways": {},
         "releases": {},
+        "control_namespace": control,
     }
     nodes = json.loads(kube("get", "nodes", "-o", "json"))["items"]
     protected = set()
@@ -154,6 +155,7 @@ def prepare(
         (output / (environment + "-gateway-ca.pem")).write_bytes(cert)
         policy["gateways"][environment] = {
             "name": environment,
+            "controller_name": controller_name,
             "namespace": namespace,
             "mode": "managed",
             "environment": environment,
