@@ -233,4 +233,3 @@ Secret access is prohibited. Reference existing application secrets by name.
 The initial pilot is a test release. Existing production delivery remains in place
 until cluster failure, recovery, isolation, and rollback evidence passes. This
 roadmap does not claim compliance certification or production readiness.
-

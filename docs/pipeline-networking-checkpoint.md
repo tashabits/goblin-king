@@ -49,3 +49,19 @@ addresses, generated certificates, and run logs remain outside Git.
    publish the proof report and recovery instructions.
 
 I keep networking disabled by default while this work remains incomplete.
+
+## Integration validation
+
+I validated the implementation at `a8064cf7` before integration:
+
+- Full Python suite: 715 passed, 6 platform-dependent skips.
+- Linux filesystem and networking subset: 58 passed in a container against the
+  checked-out source, including the filesystem cases unavailable on Windows.
+- Ruff: passed.
+- Frontend: 14 tests passed; TypeScript and production build passed.
+- Helm: all three charts passed lint; the service chart used an immutable image
+  digest, and the networking chart rendered no resources with its default values.
+
+These checks do not replace the outstanding full networking cluster acceptance.
+The before-integration release is `v0.1.0-alpha.7` at
+`4a5ebe36060487e02b97a4d83cdf02560b670dd0`.
