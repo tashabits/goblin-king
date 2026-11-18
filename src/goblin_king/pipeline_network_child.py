@@ -10,7 +10,18 @@ from goblin_king.pipeline_kubernetes import RecoveryHold
 from goblin_king.pipeline_runtime import inspected_result
 
 
-def phase(ledger, core, *, payload, installed, stage, active, previous, prepare_only=False):
+def phase(
+    ledger,
+    core,
+    *,
+    payload,
+    installed,
+    stage,
+    active,
+    previous,
+    prepare_only=False,
+    probe_only=False,
+):
     network = payload["networking"]
     image = network["image"]
     if image != installed.get("network_image") or not re.fullmatch(
@@ -34,6 +45,7 @@ def phase(ledger, core, *, payload, installed, stage, active, previous, prepare_
         "parent_stage": stage,
         "parent_ledger": ledger.name,
         "prepare_only": prepare_only,
+        "probe_only": probe_only,
     }
     requests = ledger.document.setdefault("network_requests", {})
     if stage in requests and requests[stage] != request:

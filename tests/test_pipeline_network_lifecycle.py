@@ -169,3 +169,34 @@ def test_application_health_does_not_require_component_label_on_deployment():
         apps.list_namespaced_deployment.call_args.kwargs["label_selector"]
         == "app.kubernetes.io/instance=app"
     )
+
+
+def test_recorded_first_failure_recovery_rejects_different_build():
+    core = Mock()
+    payload = {
+        "recover": True,
+        "recovery_attempt": 1,
+        "operation_id": "operation",
+        "build_id": "approved-build",
+        "environment": {"namespace": "test"},
+        "values": {"image": "approved"},
+        "previous": None,
+    }
+    failed = {"status": "failed", "rollback": None, "error": "first health failed"}
+    core.read_namespaced_config_map.return_value = NS(
+        data={
+            "execution.json": json.dumps(
+                {
+                    "identity": {"request": payload},
+                    "result": {"status": "success", "data": {"release": failed}},
+                }
+            )
+        }
+    )
+    assert implementation.recorded_first_failure(core, payload) == failed
+    with pytest.raises(RecoveryHold, match="differs from selected"):
+        implementation.recorded_first_failure(core, payload | {"build_id": "another-build"})
+    assert (
+        implementation.recorded_first_failure(core, payload | {"previous": {"image": "healthy"}})
+        is None
+    )

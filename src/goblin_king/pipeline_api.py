@@ -554,7 +554,11 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
         if operation is None:
             raise HTTPException(404, "operation not found")
         authorize(principal, operation["project_id"], mutation=True)
-        manager = ReleaseOperations(active().state, network_policy=active().settings.networking)
+        manager = ReleaseOperations(
+            active().state,
+            network_policy=active().settings.networking,
+            network_binding=active().network_operation_binding,
+        )
         replay = invoke(
             manager.recovery_receipt,
             operation_id,

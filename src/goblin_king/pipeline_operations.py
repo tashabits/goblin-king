@@ -295,6 +295,15 @@ class ReleaseOperations:
                 uuid5(NAMESPACE_URL, f"goblin-king/release/{operation_id}/recovery/{attempt}")
             )
             payload = old["execution"] | {"recover": True, "recovery_attempt": attempt}
+            if payload.get("networking"):
+                if not self.network_policy or not self.network_binding:
+                    raise PipelineConflict("networking recovery execution is unavailable")
+                if payload["networking"]["policy_revision"] != self.network_policy.revision:
+                    raise PipelineConflict(
+                        "release recovery requires its approved networking policy"
+                    )
+                approved = self.network_binding(payload["environment"]["name"])
+                payload["networking"] = payload["networking"] | {"image": approved["image"]}
             if old["action"] == "networking" and self.network_policy:
                 if payload["policy_revision"] != self.network_policy.revision:
                     from goblin_king.pipeline_network_management import NetworkManagement
@@ -455,6 +464,8 @@ class ReleaseOperations:
                         status = "recording"
                     else:
                         status = "failed"
+                        if op["execution"].get("recover") and not op["execution"].get("previous"):
+                            updated["hold"] = None
             network_result = (updated.get("observed") or {}).get("networking")
             if status == "recording" and op["execution"].get("networking"):
                 expected_network = op["execution"]["networking"]
