@@ -1,5 +1,9 @@
 # Networking implementation checkpoint
 
+Historical development record, 18 November 2026. The revisions and observations
+below describe intermediate validation. Release-specific acceptance reports and
+installation handoffs identify later verified revisions and running installations.
+
 I have integrated the networking lifecycle and am completing the required cluster
 acceptance. This checkpoint does not claim the finish line in
 [the plan](pipeline-networking-plan.md). Installation and recovery commands are in
