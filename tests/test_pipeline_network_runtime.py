@@ -85,6 +85,36 @@ def test_response_lost_after_external_update_is_observed_without_second_write():
     assert current.api.writes == 1
 
 
+def test_kubernetes_omitted_empty_network_rules_preserve_deny_semantics():
+    current = runtime()
+    current.api.resources[
+        "/apis/networking.k8s.io/v1/namespaces/app-test/networkpolicies/app-networking"
+    ] = {"spec": {"policyTypes": ["Ingress", "Egress"], "podSelector": {}}}
+    observed = current.read("NetworkPolicy", "app-networking")
+    assert observed["spec"]["ingress"] == observed["spec"]["egress"] == []
+    assert current.api.writes == 0
+
+
+def test_additional_allow_policy_cannot_hide_behind_an_ownership_label():
+    current = runtime()
+    current.api.resources["/apis/networking.k8s.io/v1/namespaces/app-test/networkpolicies"] = {
+        "items": [
+            {
+                "metadata": {
+                    "name": "app-extra",
+                    "labels": {
+                        "app.kubernetes.io/instance": "app",
+                        "goblin-king.io/networking": "true",
+                    },
+                },
+                "spec": {"podSelector": {}, "egress": [{}]},
+            }
+        ]
+    }
+    with pytest.raises(RecoveryHold, match="additional outbound policy"):
+        current.inspect_policy_boundary()
+
+
 @pytest.mark.parametrize("drift", ["identity", "configuration"])
 def test_acknowledged_resource_drift_holds_instead_of_overwriting(drift):
     current = runtime()

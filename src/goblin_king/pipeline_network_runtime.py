@@ -90,7 +90,12 @@ class NetworkRuntime:
 
     def read(self, kind, name, *, namespace=None):
         try:
-            return self.call(kind, "GET", name, namespace=namespace)
+            resource = self.call(kind, "GET", name, namespace=namespace)
+            if kind == "NetworkPolicy":
+                for direction in ("Ingress", "Egress"):
+                    if direction in resource["spec"].get("policyTypes", []):
+                        resource["spec"].setdefault(direction.lower(), [])
+            return resource
         except ApiException as error:
             if error.status != 404:
                 raise
@@ -324,7 +329,10 @@ class NetworkRuntime:
     def inspect_policy_boundary(self):
         """Additional Kubernetes allow rules cannot be counteracted by a deny policy."""
         for item in self.call("NetworkPolicy", "GET")["items"]:
-            if self.owned(item):
+            if self.owned(item) and item["metadata"]["name"] in {
+                self.release + "-networking",
+                self.release + "-egress",
+            }:
                 continue
             spec = item["spec"]
             # This installation rule selects only the dedicated configuration Pods.

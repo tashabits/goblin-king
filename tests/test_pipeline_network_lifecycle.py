@@ -194,6 +194,8 @@ def test_recorded_first_failure_recovery_rejects_different_build():
         }
     )
     assert implementation.recorded_first_failure(core, payload) == failed
+    assert implementation.recorded_first_failure(core, payload | {"recovery_attempt": 2}) == failed
+    assert core.read_namespaced_config_map.call_args.args == ("pipeline-operation", "test")
     with pytest.raises(RecoveryHold, match="differs from selected"):
         implementation.recorded_first_failure(core, payload | {"build_id": "another-build"})
     assert (

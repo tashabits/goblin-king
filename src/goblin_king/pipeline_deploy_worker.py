@@ -22,16 +22,10 @@ def recorded_first_failure(core, payload):
     """Recover an acknowledged first-install failure without repeating its Helm operation."""
     if not payload.get("recover") or payload.get("previous"):
         return None
-    attempt = payload["recovery_attempt"] - 1
-    suffix = (
-        str(uuid5(NAMESPACE_URL, payload["operation_id"] + "/recovery/" + str(attempt)))
-        if attempt
-        else payload["operation_id"]
-    )
     try:
         previous = json.loads(
             core.read_namespaced_config_map(
-                "pipeline-" + suffix, payload["environment"]["namespace"]
+                "pipeline-" + payload["operation_id"], payload["environment"]["namespace"]
             ).data["execution.json"]
         )
     except ApiException as error:
