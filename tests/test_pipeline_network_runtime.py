@@ -234,3 +234,61 @@ def test_new_kubernetes_client_uses_status_response_map():
         environment="test",
     )
     assert current.apply(resource())["metadata"]["uid"] == "original"
+
+
+@pytest.mark.parametrize("change", ["status", "identity", "configuration", "owner", "endless"])
+def test_update_conflicts_retry_only_status_changes(change):
+    current = runtime()
+    current.apply(resource())
+    current.ledger.document = {}
+    desired = resource()
+    desired["metadata"]["annotations"]["goblin-king.io/operation"] = "two"
+    call = current.api.call_api
+    attempts = []
+
+    def conflicting(path, method, **kwargs):
+        if method == "PUT":
+            attempts.append(kwargs["body"]["metadata"]["resourceVersion"])
+            if len(attempts) == 1 or change == "endless":
+                stored = current.api.resources[path]
+                stored["metadata"]["resourceVersion"] = str(10 + len(attempts))
+                stored["status"] = {"accepted": True}
+                if change == "identity":
+                    stored["metadata"]["uid"] = "replacement"
+                elif change == "configuration":
+                    stored["data"]["squid.conf"] = "foreign change"
+                elif change == "owner":
+                    stored["metadata"]["labels"]["app.kubernetes.io/instance"] = "other"
+                raise ApiException(status=409)
+        return call(path, method, **kwargs)
+
+    current.api.call_api = conflicting
+    if change == "status":
+        result = current.apply(desired)
+        assert result["metadata"]["annotations"]["goblin-king.io/operation"] == "two"
+        assert attempts == ["1", "11"]
+        assert current.api.writes == 2
+    else:
+        with pytest.raises(RecoveryHold, match="conflict"):
+            current.apply(desired)
+        assert len(attempts) == (3 if change == "endless" else 1)
+        assert current.api.writes == 1
+
+
+def test_network_failure_retains_status_without_response_secrets(monkeypatch, tmp_path):
+    from goblin_king import pipeline_network_worker
+
+    source, result = tmp_path / "input.json", tmp_path / "result.json"
+    source.write_text("{}")
+    monkeypatch.setenv("GOBLIN_INPUT_PATH", str(source))
+    monkeypatch.setenv("GOBLIN_RESULT_PATH", str(result))
+
+    def fail(payload):
+        error = ApiException(status=403, reason="private response")
+        error.body = "private credential"
+        raise error
+
+    monkeypatch.setattr(pipeline_network_worker, "configure", fail)
+    pipeline_network_worker.main()
+    assert "HTTP 403" in result.read_text()
+    assert "private" not in result.read_text()

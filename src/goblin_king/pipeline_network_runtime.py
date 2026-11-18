@@ -129,6 +129,33 @@ class NetworkRuntime:
             self.ledger.save()
         return effects[key]
 
+    def replace(self, kind, name, body, current):
+        def stable_content(resource):
+            content = copy.deepcopy(resource)
+            content.pop("status", None)
+            for field in ("resourceVersion", "managedFields"):
+                content["metadata"].pop(field, None)
+            return content
+
+        for attempt in range(3):
+            body["metadata"]["resourceVersion"] = current["metadata"]["resourceVersion"]
+            try:
+                return self.call(kind, "PUT", name, body=body)
+            except ApiException as error:
+                if error.status != 409:
+                    raise
+                observed = self.read(kind, name)
+                if not observed or stable_content(observed) != stable_content(current):
+                    raise RecoveryHold(
+                        "network resource changed during conflicting update"
+                    ) from error
+                if attempt == 2 or time.monotonic() >= self.deadline:
+                    raise RecoveryHold(
+                        "network resource update conflicts did not settle"
+                    ) from error
+                current = observed
+                time.sleep(0.05 * (attempt + 1))
+
     def apply(self, desired):
         kind, name = desired["kind"], desired["metadata"]["name"]
         if not self.owned(desired):
@@ -171,8 +198,10 @@ class NetworkRuntime:
                         if field in current["spec"]:
                             body["spec"][field] = current["spec"][field]
             self.ledger.fault_hook("networking.before_apply", key)
-            current = self.call(
-                kind, "PUT" if current else "POST", name if current else "", body=body
+            current = (
+                self.replace(kind, name, body, current)
+                if current
+                else self.call(kind, "POST", body=body)
             )
             self.ledger.fault_hook("networking.after_apply", key)
         effect.update(
