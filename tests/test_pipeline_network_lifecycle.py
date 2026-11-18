@@ -8,6 +8,7 @@ from unittest.mock import Mock
 import pytest
 
 from goblin_king import pipeline_deploy_worker as implementation
+from goblin_king.pipeline_deployment import HelmRelease
 from goblin_king.pipeline_identity import terminated_execution
 from goblin_king.pipeline_kubernetes import RecoveryHold
 from goblin_king.pipeline_state import PipelineConflict
@@ -146,3 +147,25 @@ def test_parent_termination_does_not_allow_live_nested_job():
     assert terminated_execution(operation, core, batch, "control")["network_job_uids"] == [
         "job-uid"
     ]
+
+
+def test_application_health_does_not_require_component_label_on_deployment():
+    core, apps, batch = Mock(), Mock(), Mock()
+    apps.list_namespaced_deployment.return_value = NS(
+        items=[
+            NS(metadata=NS(name="app"), spec=NS(replicas=0)),
+            NS(metadata=NS(name="app-egress"), spec=NS(replicas=1)),
+        ]
+    )
+    core.list_namespaced_pod.return_value = NS(
+        items=[NS(metadata=NS(labels={"goblin-king.io/networking": "true"}))]
+    )
+    batch.list_namespaced_cron_job.return_value = NS(items=[NS(spec=NS(suspend=True))])
+    release = HelmRelease(core, apps, batch, "test", "app", timeout=0)
+    assert release.verify(image="approved", active=False, port=8080, health_path="/health")[
+        "workloads_stopped"
+    ]
+    assert (
+        apps.list_namespaced_deployment.call_args.kwargs["label_selector"]
+        == "app.kubernetes.io/instance=app"
+    )

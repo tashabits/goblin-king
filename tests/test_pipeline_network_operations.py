@@ -108,3 +108,27 @@ def test_policy_change_requires_fresh_preview_for_explicit_recovery(tmp_path):
         recovered = manager.state.row(connection, pipeline_operations_table, operation_id)
     assert recovered["document"]["execution"]["policy_revision"] == updated_policy.revision
     assert recovered["document"]["execution"]["reapproved_policy_from"] == manager.policy.revision
+
+
+def test_failed_read_only_probe_releases_lock_and_replays_after_version_change(tmp_path):
+    manager, key, operations, operation_id = prepared(tmp_path)
+    observed = {
+        "configuration": manager.inspect(key)["desired"],
+        "policy_revision": manager.policy.revision,
+        "active": False,
+    }
+    operations.finish(operation_id, {"status": "success", "data": {"networking": observed}})
+    options = arguments(manager, key) | {"idempotency_key": "probe", "probe_only": True}
+    result = manager.apply(key, configuration(), **options)
+    operations.prepare(
+        result["operation_id"],
+        {
+            "image": "example/network@sha256:" + "a" * 64,
+            "resource_policy": {},
+        },
+    )
+    operations.finish(result["operation_id"], {"status": "failure", "error": "health unavailable"})
+    assert manager.inspect(key)["operation_id"] is None
+    assert manager.inspect(key)["hold"] is None
+    assert manager.inspect(key)["observed"] == observed
+    assert manager.apply(key, configuration(), **(options | {"preview_id": "f" * 64})) == result

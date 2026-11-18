@@ -125,17 +125,38 @@ class NetworkManagement:
                 raise KeyError(key)
             return self._preview(connection, release, configuration)
 
-    def apply(self, key, configuration, *, expected_version, preview_id, actor, idempotency_key):
+    def apply(
+        self,
+        key,
+        configuration,
+        *,
+        expected_version,
+        preview_id,
+        actor,
+        idempotency_key,
+        probe_only=False,
+    ):
         if self.recovery_mode:
             raise PipelineConflict("installation is in recovery mode")
         config = NetworkingConfiguration.model_validate(configuration).model_dump(mode="json")
-        fingerprint = _fingerprint([config, expected_version, preview_id, actor])
+        fingerprint = _fingerprint(
+            [expected_version, actor, "probe"]
+            if probe_only
+            else [config, expected_version, preview_id, actor]
+        )
         state = self.state
         with state.transaction() as connection:
             release = state.row(connection, releases, key)
             if release is None:
                 raise KeyError(key)
-            action_key = _fingerprint([release["project_id"], key, "networking", idempotency_key])
+            action_key = _fingerprint(
+                [
+                    release["project_id"],
+                    key,
+                    "networking-probe" if probe_only else "networking",
+                    idempotency_key,
+                ]
+            )
             prior = (
                 connection.execute(select(actions).where(actions.c.key == action_key))
                 .mappings()
@@ -157,6 +178,8 @@ class NetworkManagement:
                 )
             operation_id = str(uuid4())
             row = state.row(connection, networking, key)
+            if probe_only and (not row or row["document"]["desired"] != config):
+                raise PipelineConflict("probe requires the existing desired configuration")
             document = {
                 "desired": config,
                 "policy_revision": self.policy.revision,
@@ -185,6 +208,7 @@ class NetworkManagement:
                     document=encoded(
                         {
                             "action": "networking",
+                            "probe_only": probe_only,
                             "actor": actor,
                             "payload": preview,
                             "generation": release["document"]["generation"],

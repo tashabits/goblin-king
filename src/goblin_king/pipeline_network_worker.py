@@ -89,6 +89,7 @@ def configure(payload):
         previous=payload.get("previous"),
         health_path=payload["health_path"],
         prepare_only=payload.get("prepare_only", False),
+        probe_only=payload.get("probe_only", False),
     )
     result = GoblinResult.ok(data={"operation_id": payload["operation_id"], "networking": observed})
     ledger.finish(result.model_dump(mode="json"))

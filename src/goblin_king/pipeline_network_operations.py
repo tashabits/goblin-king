@@ -40,6 +40,7 @@ class NetworkOperations:
                 "port": observed.get("port", 8080) if observed else 8080,
                 "health_path": observed.get("health_path", "/health") if observed else "/health",
                 "previous": network["document"].get("observed"),
+                "probe_only": operation["document"].get("probe_only", False),
             }
             job_id = str(uuid5(NAMESPACE_URL, "goblin-king/networking/" + operation_id))
             job = JobRecord(
@@ -121,6 +122,12 @@ class NetworkOperations:
                 else:
                     updated["operation_id"] = None
                     status = "completed"
+            elif operation["document"].get("probe_only"):
+                updated["operation_id"] = None
+                state.cas(
+                    connection, networking, network, network["document"] | {"last_probe": result}
+                )
+                status = "failed"
             else:
                 updated["hold"] = {
                     "reason": "ambiguous networking execution",

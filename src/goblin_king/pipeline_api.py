@@ -376,6 +376,26 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
             idempotency_key=body.idempotency_key,
         )
 
+    @router.post("/releases/{key}/networking/probe", status_code=202)
+    def network_probe(key: str, body: MutationRequest, principal=principal_dependency):
+        manager = network_management()
+        row = invoke(manager.release, key)
+        authorize(principal, row["project_id"], mutation=True)
+        if active().network_operation_binding is None:
+            raise HTTPException(503, "networking execution is not installed")
+        current = invoke(manager.inspect, key)
+        preview = invoke(manager.preview, key, current["desired"])
+        return invoke(
+            manager.apply,
+            key,
+            current["desired"],
+            expected_version=body.expected_version,
+            preview_id=preview["preview_id"],
+            actor=principal.user_id,
+            idempotency_key=body.idempotency_key,
+            probe_only=True,
+        )
+
     @router.get("/status")
     def status(principal=principal_dependency):
         return {
@@ -496,6 +516,15 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
     def operations(project_id: str, principal=principal_dependency):
         authorize(principal, project_id)
         return {"items": active().state.list(pipeline_operations_table, project_id=project_id)}
+
+    @router.get("/operations/{operation_id}")
+    def operation_detail(operation_id: str, principal=principal_dependency):
+        with app_state.store.engine.connect() as connection:
+            row = active().state.row(connection, pipeline_operations_table, operation_id)
+        if row is None:
+            raise HTTPException(404, "operation not found")
+        authorize(principal, row["project_id"])
+        return row
 
     @router.post("/releases/{key}/operations", status_code=202)
     def release_action(key: str, body: ReleaseRequest, principal=principal_dependency):

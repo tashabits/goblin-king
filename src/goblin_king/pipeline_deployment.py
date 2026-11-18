@@ -131,15 +131,23 @@ class HelmRelease:
 
     def verify(self, *, image, active, port, health_path):
         deadline = time.monotonic() + self.timeout
-        selector = (
-            f"app.kubernetes.io/instance={self.release},"
-            "app.kubernetes.io/component in (service,background,schedule)"
-        )
+        selector = f"app.kubernetes.io/instance={self.release}"
         while True:
             deployments = self.apps.list_namespaced_deployment(
                 self.namespace, label_selector=selector
             ).items
+            deployments = [
+                item
+                for item in deployments
+                if item.metadata.name in {self.release, self.release + "-background"}
+            ]
             pods = self.core.list_namespaced_pod(self.namespace, label_selector=selector).items
+            pods = [
+                item
+                for item in pods
+                if (getattr(item.metadata, "labels", None) or {}).get("goblin-king.io/networking")
+                != "true"
+            ]
             schedules = self.batch.list_namespaced_cron_job(
                 self.namespace, label_selector=selector
             ).items

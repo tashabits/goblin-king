@@ -293,6 +293,19 @@ class NetworkRuntime:
                         for condition in ("Accepted", "ResolvedRefs")
                     ):
                         return None
+                if kind == "BackendTrafficPolicy":
+                    ancestors = current.get("status", {}).get("ancestors", [])
+                    if not ancestors or not all(
+                        any(
+                            condition["type"] == "Accepted"
+                            and condition["status"] == "True"
+                            and condition.get("observedGeneration")
+                            == current["metadata"]["generation"]
+                            for condition in entry.get("conditions", [])
+                        )
+                        for entry in ancestors
+                    ):
+                        return None
                 return current
 
             current = self.wait(ready, "network resource did not become ready: " + name)
@@ -556,6 +569,7 @@ class NetworkRuntime:
         previous=None,
         health_path="/health",
         prepare_only=False,
+        probe_only=False,
     ):
         configuration = NetworkingConfiguration.model_validate(configuration)
         desired = render_networking(
@@ -575,6 +589,24 @@ class NetworkRuntime:
             else None
         )
         self.inspect_policy_boundary()
+        if probe_only:
+            for resource in desired:
+                current = self.read(resource["kind"], resource["metadata"]["name"])
+                expected = {key: resource[key] for key in ("spec", "data") if key in resource}
+                if not current or not self.owned(current) or not contains(current, expected):
+                    raise RecoveryHold("network resource differs from approved configuration")
+            for kind, suffix in (
+                ("HTTPRoute", "-ingress"),
+                ("HTTPRoute", "-redirect"),
+                ("Deployment", "-egress"),
+                ("Service", "-egress"),
+            ):
+                if not any(
+                    item["kind"] == kind and item["metadata"]["name"] == self.release + suffix
+                    for item in desired
+                ) and self.read(kind, self.release + suffix):
+                    raise RecoveryHold("unexpected network resource remains active")
+            return self.observe(configuration, desired, certificate, active, port, health_path)
         old = NetworkingConfiguration.model_validate((previous or {}).get("configuration", {}))
         if not active:
             self.remove("HTTPRoute", self.release + "-ingress")
@@ -618,6 +650,19 @@ class NetworkRuntime:
                 self.remove(kind, self.release + suffix)
         if not prepare_only:
             self.restore_application(configuration, active)
+        return self.observe(
+            configuration,
+            desired,
+            certificate,
+            active,
+            port,
+            health_path,
+            prepare_only=prepare_only,
+        )
+
+    def observe(
+        self, configuration, desired, certificate, active, port, health_path, *, prepare_only=False
+    ):
         resources = self.verify_resources(desired)
         application_health = (
             self.verify_application(active=active, port=port, health_path=health_path)
