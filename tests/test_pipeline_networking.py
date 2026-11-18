@@ -192,6 +192,13 @@ def test_private_exception_preserves_independent_network_and_hostname_bounds():
         port=8080,
     )
     config = next(item for item in resources if item["kind"] == "ConfigMap")["data"]["squid.conf"]
+    route = next(item for item in resources if item["kind"] == "HTTPRoute")
+    headers = route["spec"]["rules"][0]["filters"][0]["requestHeaderModifier"]
+    assert set(headers["remove"]) == {"Forwarded", "X-Forwarded-For", "X-Real-IP"}
+    assert {entry["name"]: entry["value"] for entry in headers["set"]} == {
+        "X-Forwarded-Proto": "https",
+        "X-Forwarded-Host": "one.apps.example.com",
+    }
     assert "dns_nameservers 172.22.0.9" in config
     assert "acl private_host0 dstdomain -n api.example.com" in config
     assert config.index("http_access deny protected") < config.index(

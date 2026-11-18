@@ -13,13 +13,16 @@ from urllib.request import ProxyHandler, build_opener
 from uuid import uuid4
 
 
-def outbound():
+def outbound(activity="service"):
     proxy = os.environ.get("HTTP_PROXY")
     if not proxy:
         return {"configured": False}
     try:
         client = build_opener(ProxyHandler({"http": proxy}))
-        with client.open("http://allowed.fixture.example.test:8080/work", timeout=5) as response:
+        with client.open(
+            "http://allowed.fixture.example.test:8080/work/" + revision() + "/" + activity,
+            timeout=5,
+        ) as response:
             return {"status": response.status, "body": json.load(response)}
     except Exception as error:
         return {"error": type(error).__name__}
@@ -30,7 +33,16 @@ def record_work():
     root.mkdir(parents=True, exist_ok=True)
     with (root / "activity.jsonl").open("a") as stream:
         stream.write(
-            json.dumps({"time": time.time(), "revision": revision(), "outbound": outbound()}) + "\n"
+            json.dumps(
+                {
+                    "time": time.time(),
+                    "revision": revision(),
+                    "outbound": outbound(
+                        "background" if "--background" in sys.argv else "schedule"
+                    ),
+                }
+            )
+            + "\n"
         )
 
 

@@ -3,12 +3,44 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
+import tls from 'node:tls';
 
-export function outbound() {
+export function outboundTLS(ca) {
+  return new Promise((resolve, reject) => {
+    if (!process.env.HTTPS_PROXY) { reject(new Error('HTTPS proxy is not configured')); return; }
+    const hostname = 'allowed.fixture.example.test';
+    const request = http.request(process.env.HTTPS_PROXY, {
+      method: 'CONNECT', path: hostname + ':8443', timeout: 10000,
+    });
+    request.on('timeout', () => request.destroy(new Error('CONNECT timeout')));
+    request.on('error', reject);
+    request.on('connect', (response, socket, head) => {
+      if (response.statusCode !== 200 || head.length) { socket.destroy(); reject(new Error('CONNECT denied')); return; }
+      const secure = tls.connect({ socket, servername: hostname, ca }, () => {
+        secure.write('GET /work/' + (process.env.SOURCE_REVISION || 'development') +
+          '/service-tls HTTP/1.1\r\nHost: ' + hostname + ':8443\r\nConnection: close\r\n\r\n');
+      });
+      secure.setTimeout(10000, () => secure.destroy(new Error('TLS timeout')));
+      secure.on('error', reject);
+      let raw = '';
+      secure.on('data', chunk => { raw += chunk; if (raw.length > 16384) secure.destroy(new Error('response too large')); });
+      secure.on('end', () => {
+        try {
+          const split = raw.indexOf('\r\n\r\n');
+          if (!raw.startsWith('HTTP/1.1 200') && !raw.startsWith('HTTP/1.0 200')) throw new Error('upstream failed');
+          resolve({ status: 200, tls_verified: true, body: JSON.parse(raw.slice(split + 4)) });
+        } catch (error) { reject(error); }
+      });
+    });
+    request.end();
+  });
+}
+
+export function outbound(activity = 'service') {
   if (!process.env.HTTP_PROXY) return Promise.resolve({ configured: false });
   return new Promise(resolve => {
     const request = http.request(process.env.HTTP_PROXY, {
-      path: 'http://allowed.fixture.example.test:8080/work',
+      path: 'http://allowed.fixture.example.test:8080/work/' + (process.env.SOURCE_REVISION || 'development') + '/' + activity,
       headers: { Host: 'allowed.fixture.example.test:8080' }, timeout: 5000,
     }, response => {
       let body = '';
@@ -29,7 +61,7 @@ export function recordWork(root = process.env.DATA_DIR || '/data') {
   fs.appendFileSync(path.join(root, 'activity.jsonl'), JSON.stringify({
     time: Date.now(), revision: process.env.SOURCE_REVISION || 'development',
   }) + '\n');
-  if (process.env.HTTP_PROXY) void outbound().then(result => {
+  if (process.env.HTTP_PROXY) void outbound(process.argv.includes('--background') ? 'background' : 'schedule').then(result => {
     fs.appendFileSync(path.join(root, 'outbound.jsonl'), JSON.stringify(result) + '\n');
   });
 }

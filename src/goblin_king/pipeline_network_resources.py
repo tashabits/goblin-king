@@ -176,6 +176,18 @@ def render_networking(
                 "rules": [
                     {
                         "matches": [{"path": {"type": ingress.path_type, "value": ingress.path}}],
+                        "filters": [
+                            {
+                                "type": "RequestHeaderModifier",
+                                "requestHeaderModifier": {
+                                    "remove": ["Forwarded", "X-Forwarded-For", "X-Real-IP"],
+                                    "set": [
+                                        {"name": "X-Forwarded-Proto", "value": "https"},
+                                        {"name": "X-Forwarded-Host", "value": ingress.hostname},
+                                    ],
+                                },
+                            }
+                        ],
                         "backendRefs": [{"name": release, "port": port}],
                         "timeouts": {"request": f"{ingress.timeout_seconds}s"},
                     }

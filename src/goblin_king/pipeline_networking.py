@@ -74,6 +74,8 @@ class DirectDestination(NetworkModel):
     @field_validator("cidr")
     @classmethod
     def canonical_network(cls, value):
+        if "%" in value:
+            raise ValueError("scoped IP addresses are not supported")
         return str(ipaddress.ip_network(value, strict=True))
 
 
@@ -178,12 +180,16 @@ class ReleaseNetworkPolicy(NetworkModel):
             canonical = hostname(name)
             if canonical in result or not 1 <= len(addresses) <= 16:
                 raise ValueError("private upstreams require unique names and bounded exact IPs")
+            if any("%" in value for value in addresses):
+                raise ValueError("scoped IP addresses are not supported")
             result[canonical] = tuple(str(ipaddress.ip_address(value)) for value in addresses)
         return result
 
     @field_validator("proxy_dns_servers")
     @classmethod
     def exact_resolver_addresses(cls, values):
+        if any("%" in value for value in values):
+            raise ValueError("scoped IP addresses are not supported")
         return tuple(str(ipaddress.ip_address(value)) for value in values)
 
 
@@ -228,6 +234,8 @@ class NetworkingPolicy(NetworkModel):
     @field_validator("forbidden_cidrs", "protected_cidrs")
     @classmethod
     def canonical_cidrs(cls, values):
+        if any("%" in value for value in values):
+            raise ValueError("scoped IP addresses are not supported")
         return tuple(str(ipaddress.ip_network(v, strict=True)) for v in values)
 
     @model_validator(mode="after")
