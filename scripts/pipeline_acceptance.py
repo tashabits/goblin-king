@@ -320,7 +320,7 @@ class Acceptance:
         return {"evidence": "network-policy.json", "namespace": ns}
 
     def run(self, only=None):
-        from pipeline_admin_acceptance import verify as verify_admin
+        from pipeline_admin_browser import audit as verify_admin
         from pipeline_validation import validate
 
         implementations = {"network-policy": self.network_policy, "cleanup": self.cleanup_scenario}

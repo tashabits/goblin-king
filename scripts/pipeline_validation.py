@@ -60,7 +60,8 @@ def validate(proof, category):
             if case.find("skipped") is not None
         ]
         if any(
-            case["classname"] not in {
+            case["classname"]
+            not in {
                 "tests.test_kubernetes_artifacts",
                 "tests.test_make_flags",
                 "tests.test_docker_artifacts",
@@ -139,6 +140,17 @@ def validate(proof, category):
                 "image=registry.invalid/app@sha256:" + "a" * 64,
             ],
         )
+        if proof.state.get("networking"):
+            run(
+                "networking-chart",
+                [
+                    "helm",
+                    "lint",
+                    str(ROOT / "charts/pipeline-networking"),
+                    "-f",
+                    str(proof.output / "delivery/networking-values.json"),
+                ],
+            )
     else:
         raise ValueError("unknown validation category")
     if snapshot() != before:
