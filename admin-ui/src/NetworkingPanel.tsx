@@ -30,6 +30,7 @@ export function NetworkingPanel({ api, project, releases }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [diagnostics, setDiagnostics] = useState<any>(null);
   const release = releases.find(row => row.key === releaseKey);
   const environment = release?.document.environment;
   const allowed = capabilities?.releases?.[`${environment?.namespace}/${environment?.release}`];
@@ -53,6 +54,20 @@ export function NetworkingPanel({ api, project, releases }: {
   return <details className="panel">
     <summary>Networking: ingress and egress</summary>
     <p>Configure approved application routes and outbound connections separately for each environment.</p>
+    <button disabled={busy || !project} onClick={() => void perform(async () => {
+      setDiagnostics(await api(`/pipeline/networking/diagnostics?project_id=${encodeURIComponent(project)}`));
+    })}>Inspect networking diagnostics</button>
+    {diagnostics && <article aria-label="Networking diagnostics">
+      <p>{diagnostics.observation_scope}</p>
+      {!diagnostics.execution_available && <p role="alert">Install and validate networking execution before applying changes.</p>}
+      {diagnostics.recovery_mode && <p role="alert">Recovery mode prevents new delivery until reconciliation is complete.</p>}
+      {diagnostics.items.map((item: any) => <div key={item.release_key}>
+        <h4>{item.namespace} · {item.environment}: {item.status}</h4>
+        <p>Network version {item.network_version} · External reachability: {item.external_reachability}</p>
+        {item.certificate && <p>Certificate expires: {item.certificate.expires_at}</p>}
+        {item.actions.length > 0 && <ul>{item.actions.map((action: string) => <li key={action}>{action}</li>)}</ul>}
+      </div>)}
+    </article>}
     <label>Network release <select value={releaseKey} onChange={event => {
       setReleaseKey(event.target.value); setState(null); setPreview(null); setCapabilities(null);
     }}><option value="">Select a release</option>

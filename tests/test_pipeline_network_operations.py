@@ -128,6 +128,14 @@ def test_failed_read_only_probe_releases_lock_and_replays_after_version_change(t
         },
     )
     operations.finish(result["operation_id"], {"status": "failure", "error": "health unavailable"})
+    diagnostic = next(
+        item
+        for item in manager.diagnostics("sample-project")["items"]
+        if item["release_key"] == key
+    )
+    assert diagnostic["status"] == "attention"
+    assert any("last health probe failed" in action for action in diagnostic["actions"])
+    assert manager.diagnostics("another-project")["items"] == []
     assert manager.inspect(key)["operation_id"] is None
     assert manager.inspect(key)["hold"] is None
     assert manager.inspect(key)["observed"] == observed

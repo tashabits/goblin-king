@@ -36,6 +36,23 @@ function fixture(enabled = true) {
 }
 
 describe("networking controls", () => {
+  it("shows actionable diagnostics as retained evidence without mutating a release", async () => {
+    const api = vi.fn(async () => ({
+      observation_scope: "Retained observations; request a health probe for a fresh check.",
+      execution_available: true, recovery_mode: true,
+      items: [{ release_key: "release", namespace: "app-test", environment: "test", status: "attention",
+        network_version: 4, external_reachability: "unverified",
+        actions: ["Installation policy changed; preview and apply the configuration again."] }],
+    }));
+    render(<NetworkingPanel api={api} project="fixture" releases={releases} />);
+    fireEvent.click(screen.getByText("Networking: ingress and egress"));
+    fireEvent.click(screen.getByText("Inspect networking diagnostics"));
+    await screen.findByText(/Retained observations/);
+    expect(screen.getByText(/Installation policy changed/)).toBeTruthy();
+    expect(screen.getByText(/Recovery mode prevents new delivery/)).toBeTruthy();
+    expect(api.mock.calls).toEqual([["/pipeline/networking/diagnostics?project_id=fixture"]]);
+  });
+
   it("requires a current preview and sends the version and idempotency key", async () => {
     const api = fixture();
     await screen.findByText(/Release version 7/);

@@ -107,7 +107,14 @@ class NetworkOperations:
                 ):
                     raise PipelineConflict("observed networking differs from approved execution")
                 state.cas(
-                    connection, networking, network, network["document"] | {"observed": observed}
+                    connection,
+                    networking,
+                    network,
+                    network["document"]
+                    | {
+                        "observed": observed,
+                        "last_probe": result if operation["document"].get("probe_only") else None,
+                    },
                 )
                 if (
                     operation["document"]["execution"].get("recover")

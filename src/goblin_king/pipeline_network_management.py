@@ -40,10 +40,70 @@ class NetworkManagement:
             if row
             else NetworkingConfiguration().model_dump(mode="json"),
             "observed": row["document"].get("observed") if row else None,
+            "last_probe": row["document"].get("last_probe") if row else None,
             "operation_id": release["document"]["operation_id"],
             "hold": release["document"]["hold"],
             "active": release["document"]["active"],
             "policy_revision": self.policy.revision,
+        }
+
+    def diagnostics(self, project_id):
+        items = []
+        for row in self.state.list(releases, project_id=project_id):
+            current = self.inspect(row["key"])
+            observed = current["observed"]
+            reasons = []
+            if current["hold"]:
+                reasons.append("Resolve the retained recovery hold before changing networking.")
+            if current["operation_id"]:
+                reasons.append("A release operation is in progress; inspect its retained evidence.")
+            if current["network_version"] and not observed:
+                reasons.append("No verified network observation is recorded yet.")
+            if observed and observed.get("policy_revision") != self.policy.revision:
+                reasons.append(
+                    "Installation policy changed; preview and apply the configuration again."
+                )
+            if (
+                observed
+                and observed.get("configuration_revision")
+                != NetworkingConfiguration.model_validate(current["desired"]).revision
+            ):
+                reasons.append("Desired and observed network configurations differ.")
+            if current["last_probe"] and (
+                current["last_probe"].get("status") != "success"
+                or current["last_probe"].get("data", {}).get("recovery_hold")
+            ):
+                reasons.append(
+                    "The last health probe failed; inspect its operation before retrying."
+                )
+            items.append(
+                {
+                    "release_key": row["key"],
+                    "version": current["version"],
+                    "namespace": row["document"]["environment"]["namespace"],
+                    "environment": row["document"]["environment"]["name"],
+                    "network_version": current["network_version"],
+                    "operation_id": current["operation_id"],
+                    "status": "attention"
+                    if reasons
+                    else "observed"
+                    if observed
+                    else "not-configured",
+                    "actions": reasons,
+                    "last_probe": current["last_probe"],
+                    "application_health": (observed or {}).get("application_health"),
+                    "route_health": (observed or {}).get("route_health"),
+                    "certificate": (observed or {}).get("certificate"),
+                    "external_reachability": (observed or {}).get(
+                        "external_reachability", "unverified"
+                    ),
+                }
+            )
+        return {
+            "policy_revision": self.policy.revision,
+            "recovery_mode": self.recovery_mode,
+            "observation_scope": "Retained observations; request a health probe for a fresh check.",
+            "items": items,
         }
 
     def capabilities(self, project_id):
@@ -109,7 +169,8 @@ class NetworkManagement:
             "configuration": document,
             "previous": prior,
             "active": release["document"]["active"],
-            "workload_restart": prior["egress"] != document["egress"],
+            "workload_restart": prior["egress"] != document["egress"]
+            or bool(row and row["document"].get("policy_revision") != self.policy.revision),
             "url": "https://" + value.ingress.hostname + value.ingress.path
             if value.ingress.enabled
             else None,
