@@ -537,16 +537,17 @@ subprocess.run(['goblin-king','pipeline','inspect','repositories','--project','a
             raise RuntimeError("deactivation failed")
         resources = json.loads(
             self.proof.kube(
-                "-n", self.prefix + "-python-test", "get", "deploy,cronjobs,pods,pvc", "-o", "json"
+                "-n",
+                self.prefix + "-python-test",
+                "get",
+                "deploy,cronjobs,jobs,pods,pvc",
+                "-o",
+                "json",
             )
         )
-        for item in resources["items"]:
-            if item["kind"] == "Deployment" and item["spec"]["replicas"] != 0:
-                raise RuntimeError("inactive Deployment has replicas")
-            if item["kind"] == "CronJob" and not item["spec"]["suspend"]:
-                raise RuntimeError("inactive schedule is not suspended")
-            if item["kind"] == "Pod":
-                raise RuntimeError("scheduled or background Pod remains after deactivation")
+        from pipeline_inactive_acceptance import verify_inactive_workloads
+
+        retained_evidence = verify_inactive_workloads(resources["items"])
         from goblin_king.pipeline_kubernetes import restricted_job
 
         probe = "acceptance-off-data"
@@ -610,6 +611,7 @@ subprocess.run(['goblin-king','pipeline','inspect','repositories','--project','a
             {
                 "off": off,
                 "resources": resources,
+                "retained_networking_evidence": retained_evidence,
                 "inactive": inactive,
                 "on": on,
                 "after": after,

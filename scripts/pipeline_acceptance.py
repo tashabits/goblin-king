@@ -363,6 +363,8 @@ class Acceptance:
                 self.state["scenarios"][name] = {"status": "passed", **evidence}
             except Exception as error:
                 self.state["scenarios"][name] = {"status": "failed", "reason": str(error)}
+                self.report()
+                break
             self.report()
         return self.report()
 
