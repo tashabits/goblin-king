@@ -292,3 +292,21 @@ def test_network_failure_retains_status_without_response_secrets(monkeypatch, tm
     pipeline_network_worker.main()
     assert "HTTP 403" in result.read_text()
     assert "private" not in result.read_text()
+
+
+@pytest.mark.parametrize("change", ["identity", "configuration", "owner", "removed"])
+def test_readiness_cannot_accept_replaced_or_changed_resources(change):
+    current = runtime()
+    current.apply(resource())
+    stored = next(iter(current.api.resources.values()))
+    if change == "identity":
+        stored["metadata"]["uid"] = "replacement"
+    elif change == "configuration":
+        stored["data"]["squid.conf"] = "http_access allow all"
+    elif change == "owner":
+        stored["metadata"]["labels"]["app.kubernetes.io/instance"] = "other"
+    else:
+        current.api.resources.clear()
+    with pytest.raises(RecoveryHold, match="observation"):
+        current.verify_resources([resource()])
+    assert current.api.writes == 1

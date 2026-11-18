@@ -36,6 +36,10 @@ KINDS = {
 }
 
 
+class RouteUnavailable(RecoveryHold):
+    """The approved route could not serve healthy traffic."""
+
+
 def contains(actual, expected):
     """Compare declared fields while allowing Kubernetes to add server defaults."""
     if isinstance(expected, dict):
@@ -101,13 +105,13 @@ class NetworkRuntime:
                 raise
             return None
 
-    def wait(self, check, reason):
+    def wait(self, check, reason, *, error_type=RecoveryHold):
         while True:
             observation = check()
             if observation:
                 return observation
             if time.monotonic() >= self.deadline:
-                raise RecoveryHold(reason)
+                raise error_type(reason)
             time.sleep(1)
 
     def owned(self, resource):
@@ -328,8 +332,18 @@ class NetworkRuntime:
 
             def ready(kind=kind, name=name, resource=resource):
                 current = self.read(kind, name)
+                effect = self.ledger.document.get("network_effects", {}).get(
+                    "apply/" + kind + "/" + name, {}
+                )
+                if effect.get("complete") and (
+                    not current or current["metadata"]["uid"] != effect["uid"]
+                ):
+                    raise RecoveryHold("network resource identity changed during observation")
                 if not current:
                     return None
+                expected = {key: resource[key] for key in ("spec", "data") if key in resource}
+                if not self.owned(current) or not contains(current, expected):
+                    raise RecoveryHold("network resource changed during observation")
                 if kind == "Deployment":
                     status = current.get("status", {})
                     if (
@@ -403,7 +417,13 @@ class NetworkRuntime:
                         return None
                 return current
 
-            current = self.wait(ready, "network resource did not become ready: " + name)
+            current = self.wait(
+                ready,
+                "network resource did not become ready: " + name,
+                error_type=RouteUnavailable
+                if kind in {"HTTPRoute", "BackendTrafficPolicy"}
+                else RecoveryHold,
+            )
             observations.append(
                 {
                     "kind": kind,
@@ -640,7 +660,11 @@ class NetworkRuntime:
             finally:
                 connection.close()
 
-        return self.wait(probe, "gateway TLS or application route health did not pass")
+        return self.wait(
+            probe,
+            "gateway TLS or application route health did not pass",
+            error_type=RouteUnavailable,
+        )
 
     def verify_application(self, *, active, port, health_path):
         if not active:

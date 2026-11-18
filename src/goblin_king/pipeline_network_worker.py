@@ -12,7 +12,7 @@ from kubernetes.client.exceptions import ApiException
 from goblin_king.contracts import GoblinResult
 from goblin_king.pipeline_faults import configured_gate
 from goblin_king.pipeline_kubernetes import RecoveryHold, RetainedExecution
-from goblin_king.pipeline_network_runtime import NetworkRuntime
+from goblin_king.pipeline_network_runtime import NetworkRuntime, RouteUnavailable
 from goblin_king.pipeline_networking import NetworkingPolicy
 from goblin_king.runtime_helpers import current_kubernetes_namespace, kubernetes_clients
 
@@ -122,7 +122,7 @@ def configure(payload):
     if not ledger.document.get("route_fallback"):
         try:
             observed = execute(ledger, payload["configuration"], payload.get("previous"))
-        except (RecoveryHold, ValueError) as error:
+        except RouteUnavailable as error:
             fallback = authorized_route_fallback(payload, policy)
             if fallback is None:
                 raise
