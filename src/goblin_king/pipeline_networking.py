@@ -13,6 +13,32 @@ from goblin_king.pipeline_hashing import fingerprint as _fingerprint
 Port = Annotated[int, Field(strict=True, ge=1, le=65535)]
 Name = Annotated[str, Field(pattern=r"^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$")]
 
+# These destinations cannot become upstreams even through installation exceptions.
+PROTECTED_CIDRS = (
+    "0.0.0.0/8",
+    "127.0.0.0/8",
+    "169.254.0.0/16",
+    "224.0.0.0/4",
+    "240.0.0.0/4",
+    "::/128",
+    "::1/128",
+    "::ffff:0:0/96",
+    "64:ff9b::/96",
+    "64:ff9b:1::/48",
+    "100::/64",
+    "fe80::/10",
+    "ff00::/8",
+)
+
+
+def overlaps(cidr, exclusions):
+    network = ipaddress.ip_network(cidr)
+    return any(
+        network.version == (other := ipaddress.ip_network(value)).version
+        and network.overlaps(other)
+        for value in exclusions
+    )
+
 
 def hostname(value: str) -> str:
     """Accept canonical exact DNS names, never URLs, wildcards, literals or ACL syntax."""
@@ -140,6 +166,24 @@ class ReleaseNetworkPolicy(NetworkModel):
     gateways: tuple[str, ...] = ()
     outbound_hosts: tuple[OutboundHost, ...] = ()
     direct_destinations: tuple[DirectDestination, ...] = ()
+    private_upstreams: dict[str, tuple[str, ...]] = Field(default_factory=dict, max_length=64)
+    proxy_dns_servers: tuple[str, ...] = Field(default=(), max_length=3)
+
+    @field_validator("private_upstreams")
+    @classmethod
+    def exact_private_addresses(cls, values):
+        result = {}
+        for name, addresses in values.items():
+            canonical = hostname(name)
+            if canonical in result or not 1 <= len(addresses) <= 16:
+                raise ValueError("private upstreams require unique names and bounded exact IPs")
+            result[canonical] = tuple(str(ipaddress.ip_address(value)) for value in addresses)
+        return result
+
+    @field_validator("proxy_dns_servers")
+    @classmethod
+    def exact_resolver_addresses(cls, values):
+        return tuple(str(ipaddress.ip_address(value)) for value in values)
 
 
 class NetworkingPolicy(NetworkModel):
@@ -177,8 +221,9 @@ class NetworkingPolicy(NetworkModel):
         "ff00::/8",
     )
     proxy_image: str = ""
+    protected_cidrs: tuple[str, ...] = ()
 
-    @field_validator("forbidden_cidrs")
+    @field_validator("forbidden_cidrs", "protected_cidrs")
     @classmethod
     def canonical_cidrs(cls, values):
         return tuple(str(ipaddress.ip_network(v, strict=True)) for v in values)
@@ -198,7 +243,25 @@ class NetworkingPolicy(NetworkModel):
                     or self.gateways[alias].environment != release.environment
                 ):
                     raise ValueError("gateway binding crosses environment authority")
+            approved_names = {entry.hostname for entry in release.outbound_hosts}
+            if not set(release.private_upstreams).issubset(approved_names):
+                raise ValueError("private upstream requires an approved hostname and port")
+            destinations = [
+                address for addresses in release.private_upstreams.values() for address in addresses
+            ] + list(release.proxy_dns_servers)
+            destinations += [entry.cidr for entry in release.direct_destinations]
+            if any(overlaps(value, self.protected_networks) for value in destinations):
+                raise ValueError("upstream, resolver or direct rule overlaps a protected network")
         return self
+
+    @property
+    def protected_networks(self):
+        return tuple(sorted(set(PROTECTED_CIDRS + self.protected_cidrs)))
+
+    @property
+    def excluded_networks(self):
+        defaults = type(self).model_fields["forbidden_cidrs"].default
+        return tuple(sorted(set(defaults + self.forbidden_cidrs + self.protected_networks)))
 
     @property
     def revision(self):

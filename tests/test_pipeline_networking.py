@@ -151,6 +151,72 @@ def test_direct_rules_require_explicit_approval():
 
 
 @pytest.mark.parametrize(
+    "destination", ["127.0.0.1", "169.254.169.254", "::ffff:10.1.2.3", "10.244.1.4", "172.22.0.3"]
+)
+@pytest.mark.parametrize("field", ["private_upstreams", "proxy_dns_servers", "direct_destinations"])
+def test_installation_cannot_approve_protected_addresses(destination, field):
+    document = policy().model_dump(mode="json")
+    document["protected_cidrs"] = ["10.244.0.0/16", "172.22.0.3/32"]
+    entry = document["releases"]["app-test/app"]
+    entry[field] = (
+        {"api.example.com": [destination]}
+        if field == "private_upstreams"
+        else [destination]
+        if field == "proxy_dns_servers"
+        else [{"cidr": destination + ("/128" if ":" in destination else "/32"), "port": 443}]
+    )
+    with pytest.raises(ValueError, match="protected network"):
+        NetworkingPolicy.model_validate(document)
+
+
+def test_private_exception_preserves_independent_network_and_hostname_bounds():
+    from goblin_king.pipeline_network_resources import render_networking
+
+    document = policy().model_dump(mode="json")
+    document["forbidden_cidrs"] = []
+    document["protected_cidrs"] = ["172.22.0.3/32", "10.96.0.0/16"]
+    document["releases"]["app-test/app"].update(
+        private_upstreams={"api.example.com": ["172.22.0.9"]},
+        proxy_dns_servers=["172.22.0.9"],
+    )
+    installed = NetworkingPolicy.model_validate(document)
+    resources = render_networking(
+        configuration(),
+        installed,
+        namespace="app-test",
+        release="app",
+        project_id="fixture",
+        environment="test",
+        operation_id="one",
+        active=True,
+        port=8080,
+    )
+    config = next(item for item in resources if item["kind"] == "ConfigMap")["data"]["squid.conf"]
+    assert "dns_nameservers 172.22.0.9" in config
+    assert "acl private_host0 dstdomain -n api.example.com" in config
+    assert config.index("http_access deny protected") < config.index(
+        "http_access allow connect private_host0"
+    )
+    assert config.index("http_access deny forbidden") < config.index(
+        "http_access allow connect host0"
+    )
+    assert "172.16.0.0/12" in installed.excluded_networks
+    proxy = next(
+        item
+        for item in resources
+        if item["kind"] == "NetworkPolicy" and item["metadata"]["name"] == "app-egress"
+    )
+    rules = proxy["spec"]["egress"]
+    assert rules[0]["to"] == [{"ipBlock": {"cidr": "172.22.0.9/32"}}]
+    assert rules[1] == {
+        "to": [{"ipBlock": {"cidr": "172.22.0.9/32"}}],
+        "ports": [{"protocol": "TCP", "port": 443}],
+    }
+    public = rules[2]["to"][0]["ipBlock"]
+    assert public["cidr"] == "0.0.0.0/0" and "172.16.0.0/12" in public["except"]
+
+
+@pytest.mark.parametrize(
     "first,second,overlap",
     [
         (("/", "PathPrefix"), ("/api", "Exact"), True),

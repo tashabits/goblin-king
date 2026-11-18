@@ -619,7 +619,11 @@ class NetworkRuntime:
         if not active:
             self.remove("HTTPRoute", self.release + "-ingress")
             self.remove("HTTPRoute", self.release + "-redirect")
-        if old.egress != configuration.egress or not active:
+        if (
+            old.egress != configuration.egress
+            or (previous or {}).get("policy_revision") != self.policy.revision
+            or not active
+        ):
             self.settle_application()
             # Terminate old CONNECT tunnels before publishing a changed destination policy.
             if not self.ledger.document.get("proxy_quiesced"):

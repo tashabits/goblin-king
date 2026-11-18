@@ -8,7 +8,20 @@ import ipaddress
 from goblin_king.pipeline_networking import NetworkingConfiguration, NetworkingPolicy
 
 
-def squid_configuration(configuration: NetworkingConfiguration, policy: NetworkingPolicy) -> str:
+def squid_cidrs(values):
+    return " ".join(
+        str(network)
+        for value in values
+        if not (
+            (network := ipaddress.ip_network(value)).version == 6
+            and network.network_address.ipv4_mapped is not None
+        )
+    )
+
+
+def squid_configuration(
+    configuration: NetworkingConfiguration, policy: NetworkingPolicy, authority
+) -> str:
     """Emit exact destination/port pairs, with no caching or request content logging."""
     lines = [
         "http_port 3128",
@@ -29,19 +42,29 @@ def squid_configuration(configuration: NetworkingConfiguration, policy: Networki
         "acl http proto HTTP",
         "http_access deny manager",
     ]
-    if policy.forbidden_cidrs:
-        lines += [
-            "acl forbidden dst "
-            + " ".join(
-                cidr
-                for cidr in policy.forbidden_cidrs
-                if not (
-                    ipaddress.ip_network(cidr).version == 6
-                    and ipaddress.ip_network(cidr).network_address.ipv4_mapped is not None
-                )
-            ),
-            "http_access deny forbidden",
-        ]
+    if authority.proxy_dns_servers:
+        lines.append("dns_nameservers " + " ".join(authority.proxy_dns_servers))
+    lines += [
+        "acl protected dst " + squid_cidrs(policy.protected_networks),
+        "http_access deny protected",
+    ]
+    if configuration.egress.enabled:
+        for index, destination in enumerate(configuration.egress.hosts):
+            addresses = authority.private_upstreams.get(destination.hostname)
+            if not addresses:
+                continue
+            methods = "connect" if destination.protocol == "HTTPS" else "!connect http"
+            lines += [
+                f"acl private_host{index} dstdomain -n {destination.hostname}",
+                f"acl private_port{index} port {destination.port}",
+                f"acl private_address{index} dst " + squid_cidrs(addresses),
+                f"http_access allow {methods} private_host{index} "
+                f"private_port{index} private_address{index}",
+            ]
+    lines += [
+        "acl forbidden dst " + squid_cidrs(policy.excluded_networks),
+        "http_access deny forbidden",
+    ]
     if configuration.egress.enabled:
         for index, destination in enumerate(configuration.egress.hosts):
             methods = "connect" if destination.protocol == "HTTPS" else "!connect http"
@@ -99,6 +122,7 @@ def render_networking(
         project_id=project_id,
         environment=environment,
     )
+    authority = policy.releases[namespace + "/" + release]
     resources = []
     labels = {"app.kubernetes.io/instance": release, "goblin-king.io/networking": "true"}
 
@@ -206,7 +230,7 @@ def render_networking(
     proxy_selector = {"matchLabels": proxy_labels}
     if egress.enabled and active:
         name = release + "-egress"
-        config = squid_configuration(configuration, policy)
+        config = squid_configuration(configuration, policy, authority)
         digest = hashlib.sha256(config.encode()).hexdigest()
         resource("ConfigMap", name, None, data={"squid.conf": config})
         resource(
@@ -301,13 +325,37 @@ def render_networking(
         "networking.k8s.io/v1",
     )
     upstream_ports = sorted({h.port for h in egress.hosts}) if egress.enabled and active else []
-    proxy_egress = [dns_rule()]
+    proxy_egress = (
+        [
+            {
+                "to": [
+                    {"ipBlock": {"cidr": str(ipaddress.ip_network(address))}}
+                    for address in authority.proxy_dns_servers
+                ],
+                "ports": [{"protocol": protocol, "port": 53} for protocol in ("UDP", "TCP")],
+            }
+        ]
+        if authority.proxy_dns_servers
+        else [dns_rule()]
+    )
     if upstream_ports:
+        for destination in egress.hosts:
+            addresses = authority.private_upstreams.get(destination.hostname, ())
+            if addresses:
+                proxy_egress.append(
+                    {
+                        "to": [
+                            {"ipBlock": {"cidr": str(ipaddress.ip_network(address))}}
+                            for address in addresses
+                        ],
+                        "ports": [{"protocol": "TCP", "port": destination.port}],
+                    }
+                )
         for version, default in ((4, "0.0.0.0/0"), (6, "::/0")):
             excluded = list(
                 ipaddress.collapse_addresses(
                     ipaddress.ip_network(cidr)
-                    for cidr in policy.forbidden_cidrs
+                    for cidr in policy.excluded_networks
                     if ipaddress.ip_network(cidr).version == version
                     and not (
                         version == 6
