@@ -236,11 +236,15 @@ class ReleaseOperations:
             )
             return op["execution"]
 
-    def recovery_receipt(self, operation_id, expected_version, actor, idempotency_key):
+    def recovery_receipt(
+        self, operation_id, expected_version, actor, idempotency_key, networking_preview_id=None
+    ):
         import json
 
         key = _fingerprint([operation_id, "recover", idempotency_key])
-        fingerprint = _fingerprint([expected_version, actor])
+        fingerprint = _fingerprint(
+            [expected_version, actor] + ([networking_preview_id] if networking_preview_id else [])
+        )
         with self.state.store.engine.connect() as connection:
             prior = (
                 connection.execute(select(actions).where(actions.c.key == key))
@@ -254,11 +258,21 @@ class ReleaseOperations:
         return None
 
     def recover(
-        self, operation_id, *, expected_version, actor, termination, binding, idempotency_key
+        self,
+        operation_id,
+        *,
+        expected_version,
+        actor,
+        termination,
+        binding,
+        idempotency_key,
+        networking_preview_id=None,
     ):
         """Create an inspection attempt only after authoritative termination was established."""
         state = self.state
-        replay = self.recovery_receipt(operation_id, expected_version, actor, idempotency_key)
+        replay = self.recovery_receipt(
+            operation_id, expected_version, actor, idempotency_key, networking_preview_id
+        )
         if replay:
             return replay
         with state.transaction() as connection:
@@ -281,6 +295,35 @@ class ReleaseOperations:
                 uuid5(NAMESPACE_URL, f"goblin-king/release/{operation_id}/recovery/{attempt}")
             )
             payload = old["execution"] | {"recover": True, "recovery_attempt": attempt}
+            if old["action"] == "networking" and self.network_policy:
+                if payload["policy_revision"] != self.network_policy.revision:
+                    from goblin_king.pipeline_network_management import NetworkManagement
+
+                    manager = NetworkManagement(state, self.network_policy)
+                    preview = manager._preview(connection, release, payload["configuration"])
+                    if not networking_preview_id or networking_preview_id != preview["preview_id"]:
+                        raise PipelineConflict(
+                            "networking policy changed; preview the held configuration "
+                            "before recovery"
+                        )
+                    network = state.row(connection, networking, operation["release_key"])
+                    if network["document"]["desired"] != payload["configuration"]:
+                        raise PipelineConflict(
+                            "held configuration differs from current desired networking"
+                        )
+                    payload = payload | {
+                        "reapproved_policy_from": payload["policy_revision"],
+                        "policy_revision": self.network_policy.revision,
+                    }
+                    state.cas(
+                        connection,
+                        networking,
+                        network,
+                        network["document"]
+                        | {
+                            "policy_revision": self.network_policy.revision,
+                        },
+                    )
             job = JobRecord(
                 id=job_id,
                 kind=("pipeline.network." if old["action"] == "networking" else "pipeline.deploy.")
@@ -331,7 +374,10 @@ class ReleaseOperations:
             connection.execute(
                 actions.insert().values(
                     key=_fingerprint([operation_id, "recover", idempotency_key]),
-                    fingerprint=_fingerprint([expected_version, actor]),
+                    fingerprint=_fingerprint(
+                        [expected_version, actor]
+                        + ([networking_preview_id] if networking_preview_id else [])
+                    ),
                     response=encoded(response),
                 )
             )

@@ -40,6 +40,10 @@ class ManagementRequest(MutationRequest):
     enabled: bool = Field(strict=True)
 
 
+class RecoveryRequest(MutationRequest):
+    networking_preview_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+
 class ReleaseRequest(MutationRequest):
     action: str
     payload: dict = Field(default_factory=dict)
@@ -511,7 +515,7 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
         )
 
     @router.post("/operations/{operation_id}/recover", status_code=202)
-    def recover_operation(operation_id: str, body: MutationRequest, principal=principal_dependency):
+    def recover_operation(operation_id: str, body: RecoveryRequest, principal=principal_dependency):
         from goblin_king.pipeline_identity import terminated_execution
         from goblin_king.pipeline_operations import ReleaseOperations
         from goblin_king.runtime_helpers import current_kubernetes_namespace, kubernetes_clients
@@ -521,13 +525,14 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
         if operation is None:
             raise HTTPException(404, "operation not found")
         authorize(principal, operation["project_id"], mutation=True)
-        manager = ReleaseOperations(active().state)
+        manager = ReleaseOperations(active().state, network_policy=active().settings.networking)
         replay = invoke(
             manager.recovery_receipt,
             operation_id,
             body.expected_version,
             principal.user_id,
             body.idempotency_key,
+            body.networking_preview_id,
         )
         if replay:
             return replay
@@ -548,6 +553,7 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
             actor=principal.user_id,
             termination=termination,
             idempotency_key=body.idempotency_key,
+            networking_preview_id=body.networking_preview_id,
             binding=(
                 active().network_operation_binding
                 if operation["document"]["action"] == "networking"

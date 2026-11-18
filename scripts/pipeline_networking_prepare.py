@@ -177,26 +177,30 @@ def prepare(output, images, *, context, project, gateway_class, controller_name,
     }
     package_path = output / "networking-values.json"
     package_path.write_text(json.dumps(package, indent=2))
-    subprocess.run(
-        [
-            "helm",
-            "--kube-context",
-            context,
-            "upgrade",
-            "--install",
-            "networking",
-            str(ROOT / "charts/pipeline-networking"),
-            "-n",
-            namespace,
-            "-f",
-            str(package_path),
-            "--wait",
-            "--timeout",
-            "180s",
-        ],
-        check=True,
-        timeout=210,
-    )
+
+    def install_package():
+        subprocess.run(
+            [
+                "helm",
+                "--kube-context",
+                context,
+                "upgrade",
+                "--install",
+                "networking",
+                str(ROOT / "charts/pipeline-networking"),
+                "-n",
+                namespace,
+                "-f",
+                str(package_path),
+                "--wait",
+                "--timeout",
+                "180s",
+            ],
+            check=True,
+            timeout=210,
+        )
+
+    install_package()
     for environment in ("test", "prod"):
         kube(
             "-n",
@@ -269,6 +273,7 @@ def prepare(output, images, *, context, project, gateway_class, controller_name,
     values_path.write_text(json.dumps(values, indent=2))
     package["policy"] = policy
     package_path.write_text(json.dumps(package, indent=2))
+    install_package()
     print(
         json.dumps(
             {

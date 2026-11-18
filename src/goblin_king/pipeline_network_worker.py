@@ -58,7 +58,15 @@ def configure(payload):
         environment["namespace"],
         str(uuid5(NAMESPACE_URL, payload["parent_ledger"] + "/" + payload["parent_stage"]))
         if payload.get("parent_stage")
-        else payload["operation_id"],
+        else (
+            str(
+                uuid5(
+                    NAMESPACE_URL, payload["operation_id"] + "/policy/" + payload["policy_revision"]
+                )
+            )
+            if payload.get("reapproved_policy_from")
+            else payload["operation_id"]
+        ),
         identity,
         fault_hook=configured_gate(core, namespace, installed),
     )

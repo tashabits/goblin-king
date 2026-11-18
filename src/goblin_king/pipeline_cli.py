@@ -171,11 +171,20 @@ def recover_build(build_id: str, expected_version: int, idempotency_key: str):
 
 
 @app.command()
-def recover(operation_id: str, expected_version: int, idempotency_key: str):
+def recover(
+    operation_id: str,
+    expected_version: int,
+    idempotency_key: str,
+    networking_preview_id: str | None = None,
+):
     """Reconcile an interrupted release after its previous execution has terminated."""
     call(
         f"/operations/{operation_id}/recover",
-        {"expected_version": expected_version, "idempotency_key": idempotency_key},
+        {
+            "expected_version": expected_version,
+            "idempotency_key": idempotency_key,
+            "networking_preview_id": networking_preview_id,
+        },
     )
 
 
