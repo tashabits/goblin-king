@@ -5,10 +5,11 @@ I exercised the Docker and Helm admin interfaces twice against implementation
 containers without desktop input. Every registered one-shot kind was submitted
 through the UI; the long-running example was checked through Services.
 
-These are browser audit results, not a claim that the complete delivery acceptance
-suite has finished. Cluster fault, storage, cleanup and retained-demo results are
-reported separately. The delivery fixtures use a local GitHub API simulation;
-synthetic reviews do not establish real GitHub review or App-installation evidence.
+I also completed both full fresh-namespace delivery acceptance runs and installed
+the verified local demonstration. [Complete acceptance report](DELIVERY.md) and
+[demonstration identities](demonstration.json) include the remaining cluster proof.
+The delivery fixtures use a local GitHub API simulation; synthetic reviews do not
+establish real GitHub review or App-installation evidence.
 
 Helm evidence was verified using the unchanged verifier inside its audit Pod,
 where the loopback endpoint is reachable. The packaged preparation helper verifies

@@ -1,0 +1,251 @@
+{
+  "revision": "437d2ca3debcdc6438dd15568fc62f4d2cc69ba6",
+  "source_sha256": "11e40cfcdc99cf768990c1340105646ae0ebbba7534615c5dd6d91b8faf9c6f1",
+  "provider_mode": "local-simulation",
+  "namespace_prefix": "gk-verified-437d2ca3",
+  "namespaces": {
+    "gk-verified-437d2ca3-demo": {
+      "uid": "a3967034-971c-4bf6-a454-8d66913b70f1"
+    },
+    "gk-verified-437d2ca3-node-build": {
+      "uid": "ad0eb35f-4e60-44da-b2a6-168dab746d4f"
+    },
+    "gk-verified-437d2ca3-node-prod": {
+      "uid": "c1f65bf0-4c0d-4a91-8a9a-f6faf0005b43"
+    },
+    "gk-verified-437d2ca3-node-test": {
+      "uid": "da244ea8-2101-4e02-ad7d-0f12b1df192e"
+    },
+    "gk-verified-437d2ca3-provider": {
+      "uid": "02d70ebb-d562-4e91-9516-c68af14f10cb"
+    },
+    "gk-verified-437d2ca3-python-build": {
+      "uid": "d7b19cfb-5314-4cb4-8b84-aa2e4921d97b"
+    },
+    "gk-verified-437d2ca3-python-prod": {
+      "uid": "a846c1ee-b38e-47a0-829c-3d6d3933b63d"
+    },
+    "gk-verified-437d2ca3-python-test": {
+      "uid": "be9ecdea-73ab-489f-92dd-8f40a628db90"
+    }
+  },
+  "gateway_image": "goblin-king-admin-ui@sha256:b7021a8f025227e5d9a40261d4568d9513f1629a581bb1ab9fbfb27d3274e42c",
+  "loopback_only": true,
+  "acceptance_faults": false,
+  "repositories": [
+    {
+      "key": "288932cbfd70bac53b9518b0f21717bf7cbdff507e38dd0fdc62c35165b41284",
+      "repository": "fixture/python-api"
+    },
+    {
+      "key": "5317707f7e9815641224cfa9e8d9315ab3da7b8da7070398984b8956e49bfc70",
+      "repository": "fixture/node-api"
+    }
+  ],
+  "releases": [
+    {
+      "key": "8d39c22e41ae96e0d89896d2c6262709f18b26a019134c94ce1c4c044f7fbca3",
+      "version": 5,
+      "environment": {
+        "active": true,
+        "branch": "test",
+        "deployment_profile": "http-service-v1",
+        "image_repository": "172.22.0.3:30443/python/gk-verified-437d2ca3/test",
+        "name": "test",
+        "namespace": "gk-verified-437d2ca3-python-test",
+        "release": "app",
+        "target": "local"
+      },
+      "observed": {
+        "active": true,
+        "build_id": "7c512cfe-637c-40f4-aa5d-b1dedb682529",
+        "health": {
+          "active": true,
+          "body": "{\"healthy\": true, \"implementation\": \"python\", \"revision\": \"3d8e789dc78a7c7512806a2d8fe594ed72a9b636\", \"sentinel\": \"c4be111d-a64a-4fa3-9a81-84547b54a0f6\"}",
+          "pods": [
+            {
+              "name": "app-568b4b654f-gqwxv",
+              "node": "desktop-worker",
+              "uid": "cc726b22-9df4-4d63-9b10-4807f7d1d2c6"
+            },
+            {
+              "name": "app-background-868cc764fd-g8c74",
+              "node": "desktop-worker",
+              "uid": "6e22a87b-b7dc-4d54-bc8f-9b63603bc6fe"
+            },
+            {
+              "name": "app-schedule-29916084-9vkxk",
+              "node": "desktop-worker",
+              "uid": "14eb47a7-a92f-4892-a289-3bc4ab0d38e7"
+            }
+          ],
+          "status": 200,
+          "url": "http://app.gk-verified-437d2ca3-python-test.svc:8080/health"
+        },
+        "health_path": "/health",
+        "helm_revision": 1,
+        "image": "172.22.0.3:30443/python/gk-verified-437d2ca3/test@sha256:35d1b831a1fc3f5f2593792ad73a2823e8b4b8c80b5075931e8be053e0f2fd49",
+        "operation_id": "aa30d3e1-423b-4280-a1bd-99349c79e40a",
+        "port": 8080,
+        "status": "success"
+      },
+      "recording": {
+        "commit": "c0bc1f886f6bcd9748e1cfffbfa6582846f73993",
+        "operation_path": "operations/aa30d3e1-423b-4280-a1bd-99349c79e40a.json",
+        "recovered": false
+      }
+    },
+    {
+      "key": "70f7d06bb7979adcb109f30142d0463773c5c6f60eb7396e85efb9ff9c396d64",
+      "version": 5,
+      "environment": {
+        "active": true,
+        "branch": "main",
+        "deployment_profile": "http-service-v1",
+        "image_repository": "172.22.0.3:30443/python/gk-verified-437d2ca3/prod",
+        "name": "prod",
+        "namespace": "gk-verified-437d2ca3-python-prod",
+        "release": "app",
+        "target": "local"
+      },
+      "observed": {
+        "active": true,
+        "build_id": "db98d191-a683-44e4-966b-9bb3d021f374",
+        "health": {
+          "active": true,
+          "body": "{\"healthy\": true, \"implementation\": \"python\", \"revision\": \"abe8566beee71541a1b7bb1af2392b07f7e5bccf\", \"sentinel\": \"7e5f036e-e752-41af-8246-2687a5860d8a\"}",
+          "pods": [
+            {
+              "name": "app-5bbb86785b-tx6l7",
+              "node": "desktop-worker",
+              "uid": "1de6435f-d6d6-4c14-9036-aaf101dcc6d7"
+            },
+            {
+              "name": "app-background-6558fdbc77-rlr24",
+              "node": "desktop-worker",
+              "uid": "550ec0fe-c418-40f1-b057-eab4e4ff9648"
+            },
+            {
+              "name": "app-schedule-29916090-qnwh8",
+              "node": "desktop-worker",
+              "uid": "2bf320b1-44d4-4d46-9a21-e39a9b2252f0"
+            }
+          ],
+          "status": 200,
+          "url": "http://app.gk-verified-437d2ca3-python-prod.svc:8080/health"
+        },
+        "health_path": "/health",
+        "helm_revision": 1,
+        "image": "172.22.0.3:30443/python/gk-verified-437d2ca3/prod@sha256:e5d1c921a0e83ead81b25a54087261c628f18020272932842781b1311df1c26d",
+        "operation_id": "978b8295-9a92-41b0-868a-79d38e806c06",
+        "port": 8080,
+        "status": "success"
+      },
+      "recording": {
+        "commit": "e8759a01f6579d81340b55f40a753629b956da51",
+        "operation_path": "operations/978b8295-9a92-41b0-868a-79d38e806c06.json",
+        "recovered": false
+      }
+    },
+    {
+      "key": "831d5c30fa6daffe2ef58d5448810b304f2d15e0fcaab9e36069a7d8dd168045",
+      "version": 5,
+      "environment": {
+        "active": true,
+        "branch": "test",
+        "deployment_profile": "http-service-v1",
+        "image_repository": "172.22.0.3:30443/node/gk-verified-437d2ca3/test",
+        "name": "test",
+        "namespace": "gk-verified-437d2ca3-node-test",
+        "release": "app",
+        "target": "local"
+      },
+      "observed": {
+        "active": true,
+        "build_id": "7e5262a8-102e-438e-9599-7b839dea8cf1",
+        "health": {
+          "active": true,
+          "body": "{\"healthy\":true,\"implementation\":\"node\",\"revision\":\"c27ff8994d355d2afe97ad84d94b61be16170434\",\"sentinel\":\"cdcfab28-87e3-44af-9bf2-5fa535a0e404\"}",
+          "pods": [
+            {
+              "name": "app-79898f4d69-6qb77",
+              "node": "desktop-worker",
+              "uid": "09694679-11d3-4075-8cbb-e29ff12e3f70"
+            },
+            {
+              "name": "app-background-5b6f96fc49-jnxnf",
+              "node": "desktop-worker",
+              "uid": "8b577489-81bf-4ee3-8a95-9ba47ad360e6"
+            },
+            {
+              "name": "app-schedule-29916096-577d6",
+              "node": "desktop-worker",
+              "uid": "af0d1ffb-f564-4952-aa96-a9a03abab6a7"
+            }
+          ],
+          "status": 200,
+          "url": "http://app.gk-verified-437d2ca3-node-test.svc:8080/health"
+        },
+        "health_path": "/health",
+        "helm_revision": 1,
+        "image": "172.22.0.3:30443/node/gk-verified-437d2ca3/test@sha256:c725deb6a66c32848829e936c2377113d0f597a91d94acc7a0663b011591cc5e",
+        "operation_id": "aa82f1e9-7de1-446a-8405-59b58fc0f6e7",
+        "port": 8080,
+        "status": "success"
+      },
+      "recording": {
+        "commit": "b8f6f58edf5a9de438a40fa0b912ffccba0fa1be",
+        "operation_path": "operations/aa82f1e9-7de1-446a-8405-59b58fc0f6e7.json",
+        "recovered": false
+      }
+    },
+    {
+      "key": "54bbfcb2b47cc67d0224e1fc2726562d27e1d8d92847ba737df0cbe498031d36",
+      "version": 5,
+      "environment": {
+        "active": true,
+        "branch": "main",
+        "deployment_profile": "http-service-v1",
+        "image_repository": "172.22.0.3:30443/node/gk-verified-437d2ca3/prod",
+        "name": "prod",
+        "namespace": "gk-verified-437d2ca3-node-prod",
+        "release": "app",
+        "target": "local"
+      },
+      "observed": {
+        "active": true,
+        "build_id": "e131ade3-c271-4723-9107-9b978efafa00",
+        "health": {
+          "active": true,
+          "body": "{\"healthy\":true,\"implementation\":\"node\",\"revision\":\"56f6023c2483866b1c20c8771ad2c3f2dfb0dccf\",\"sentinel\":\"0e58301c-e74b-4f88-86ca-829045b7a7ab\"}",
+          "pods": [
+            {
+              "name": "app-background-56874bfb5d-rf89d",
+              "node": "desktop-worker",
+              "uid": "0c315fe4-0102-4d8f-8040-1e822c26853d"
+            },
+            {
+              "name": "app-f46567579-fkqxv",
+              "node": "desktop-worker",
+              "uid": "c0cf6460-f0f5-45fc-a5bc-a5ebea3030a7"
+            }
+          ],
+          "status": 200,
+          "url": "http://app.gk-verified-437d2ca3-node-prod.svc:8080/health"
+        },
+        "health_path": "/health",
+        "helm_revision": 1,
+        "image": "172.22.0.3:30443/node/gk-verified-437d2ca3/prod@sha256:d968dd18e63e189459e8edb55bd846faa9938d7e6d658806b33112dc3ca3f7b3",
+        "operation_id": "042e7bc0-e13d-4065-940e-fb7050f420c3",
+        "port": 8080,
+        "status": "success"
+      },
+      "recording": {
+        "commit": "a64011c948e69208be44189573502332c44a36e3",
+        "operation_path": "operations/042e7bc0-e13d-4065-940e-fb7050f420c3.json",
+        "recovered": false
+      }
+    }
+  ],
+  "ui_api_cli_agree": true
+}
