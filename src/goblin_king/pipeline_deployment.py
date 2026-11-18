@@ -107,6 +107,9 @@ class HelmRelease:
         mutation = args[0] in {"upgrade", "rollback"}
         if mutation:
             self.fault_hook("helm.before_" + args[0], self.namespace + "/" + self.release)
+            # Networking temporarily changes replicas, schedules and proxy settings
+            # under the same release lock. Three-way merging preserves that handoff.
+            args = (*args, "--server-side=false")
         environment = os.environ | {
             "HELM_DRIVER": "configmap",
             "HELM_CACHE_HOME": "/tmp/helm/cache",
@@ -136,7 +139,18 @@ class HelmRelease:
             deployments = self.apps.list_namespaced_deployment(
                 self.namespace, label_selector=selector
             ).items
+            deployments = [
+                item
+                for item in deployments
+                if item.metadata.name in {self.release, self.release + "-background"}
+            ]
             pods = self.core.list_namespaced_pod(self.namespace, label_selector=selector).items
+            pods = [
+                item
+                for item in pods
+                if (getattr(item.metadata, "labels", None) or {}).get("goblin-king.io/networking")
+                != "true"
+            ]
             schedules = self.batch.list_namespaced_cron_job(
                 self.namespace, label_selector=selector
             ).items
@@ -326,4 +340,32 @@ class HelmRelease:
             "health": health,
             "port": values["port"],
             "health_path": values["healthPath"],
+        }
+
+    def rollback(self, previous, *, reason):
+        """Restore a recorded healthy revision while the existing release claim is held."""
+        self.helm(
+            "rollback",
+            self.release,
+            str(previous["helm_revision"]),
+            "--wait=watcher",
+            "--timeout",
+            f"{self.timeout}s",
+        )
+        if not previous["active"]:
+            self.settle_schedules()
+        health = self.verify(
+            image=previous["image"],
+            active=previous["active"],
+            port=previous["port"],
+            health_path=previous["health_path"],
+        )
+        return {
+            "status": "failed",
+            "error": reason,
+            "rollback": previous
+            | {
+                "health": health,
+                "helm_revision": self.history()[-1]["revision"],
+            },
         }

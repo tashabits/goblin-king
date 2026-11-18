@@ -3,7 +3,20 @@
 import json
 from unittest.mock import Mock
 
+import pytest
+
 from goblin_king.pipeline_deployment import HelmRelease
+
+
+@pytest.mark.parametrize("command", ["upgrade", "rollback", "history"])
+def test_helm_mutations_use_three_way_merge_for_network_lifecycle(monkeypatch, command):
+    run = Mock(return_value=Mock(returncode=0, stdout="[]"))
+    monkeypatch.setattr("goblin_king.pipeline_deployment.subprocess.run", run)
+    release = HelmRelease(Mock(), Mock(), Mock(), "test", "app")
+    release.helm(command, "app")
+    arguments = run.call_args.args[0]
+    assert ("--server-side=false" in arguments) == (command != "history")
+    assert "--force-conflicts" not in arguments
 
 
 def test_recovery_verifies_completed_upgrade_without_redeploying():

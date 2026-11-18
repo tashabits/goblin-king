@@ -40,6 +40,10 @@ class ManagementRequest(MutationRequest):
     enabled: bool = Field(strict=True)
 
 
+class RecoveryRequest(MutationRequest):
+    networking_preview_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+
 class ReleaseRequest(MutationRequest):
     action: str
     payload: dict = Field(default_factory=dict)
@@ -221,17 +225,33 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
         if service.settings.networking.enabled and service.settings.network_image:
 
             def network_operation_binding(environment):
+                from goblin_king.contracts import JobRecord, utc_now
+
                 kind = "pipeline.network." + environment
                 entry = app_state.workers.get(kind)
                 if entry.image != service.settings.network_image:
                     raise PipelineConflict("networking image differs from installed approval")
-                return {
+                binding = {
                     "image": entry.image,
                     "profile": service.settings.worker_profile,
                     "resource_policy": app_state.resource_policies.effective_for(
                         kind, timeout_seconds=900, max_retries=0
                     ).compact(),
                 }
+                validate_dispatch(
+                    JobRecord(
+                        id="networking-phase-validation",
+                        created_at=utc_now(),
+                        kind=kind,
+                        timeout_seconds=900,
+                        max_retries=0,
+                        metadata={
+                            "pipeline": binding,
+                            "resource_policy": binding["resource_policy"],
+                        },
+                    )
+                )
+                return binding
 
             service.network_operation_binding = network_operation_binding
 
@@ -356,6 +376,26 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
             idempotency_key=body.idempotency_key,
         )
 
+    @router.post("/releases/{key}/networking/probe", status_code=202)
+    def network_probe(key: str, body: MutationRequest, principal=principal_dependency):
+        manager = network_management()
+        row = invoke(manager.release, key)
+        authorize(principal, row["project_id"], mutation=True)
+        if active().network_operation_binding is None:
+            raise HTTPException(503, "networking execution is not installed")
+        current = invoke(manager.inspect, key)
+        preview = invoke(manager.preview, key, current["desired"])
+        return invoke(
+            manager.apply,
+            key,
+            current["desired"],
+            expected_version=body.expected_version,
+            preview_id=preview["preview_id"],
+            actor=principal.user_id,
+            idempotency_key=body.idempotency_key,
+            probe_only=True,
+        )
+
     @router.get("/status")
     def status(principal=principal_dependency):
         return {
@@ -477,6 +517,15 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
         authorize(principal, project_id)
         return {"items": active().state.list(pipeline_operations_table, project_id=project_id)}
 
+    @router.get("/operations/{operation_id}")
+    def operation_detail(operation_id: str, principal=principal_dependency):
+        with app_state.store.engine.connect() as connection:
+            row = active().state.row(connection, pipeline_operations_table, operation_id)
+        if row is None:
+            raise HTTPException(404, "operation not found")
+        authorize(principal, row["project_id"])
+        return row
+
     @router.post("/releases/{key}/operations", status_code=202)
     def release_action(key: str, body: ReleaseRequest, principal=principal_dependency):
         with app_state.store.engine.connect() as connection:
@@ -495,7 +544,7 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
         )
 
     @router.post("/operations/{operation_id}/recover", status_code=202)
-    def recover_operation(operation_id: str, body: MutationRequest, principal=principal_dependency):
+    def recover_operation(operation_id: str, body: RecoveryRequest, principal=principal_dependency):
         from goblin_king.pipeline_identity import terminated_execution
         from goblin_king.pipeline_operations import ReleaseOperations
         from goblin_king.runtime_helpers import current_kubernetes_namespace, kubernetes_clients
@@ -505,13 +554,18 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
         if operation is None:
             raise HTTPException(404, "operation not found")
         authorize(principal, operation["project_id"], mutation=True)
-        manager = ReleaseOperations(active().state)
+        manager = ReleaseOperations(
+            active().state,
+            network_policy=active().settings.networking,
+            network_binding=active().network_operation_binding,
+        )
         replay = invoke(
             manager.recovery_receipt,
             operation_id,
             body.expected_version,
             principal.user_id,
             body.idempotency_key,
+            body.networking_preview_id,
         )
         if replay:
             return replay
@@ -532,6 +586,7 @@ def install_pipeline_api(app, app_state, require_principal, project_for_request)
             actor=principal.user_id,
             termination=termination,
             idempotency_key=body.idempotency_key,
+            networking_preview_id=body.networking_preview_id,
             binding=(
                 active().network_operation_binding
                 if operation["document"]["action"] == "networking"

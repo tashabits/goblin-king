@@ -130,6 +130,7 @@ class DemoPreparation:
                         },
                         "spec": {
                             "automountServiceAccountToken": False,
+                            "terminationGracePeriodSeconds": 1,
                             "tolerations": [{"operator": "Exists"}],
                             "containers": [
                                 {

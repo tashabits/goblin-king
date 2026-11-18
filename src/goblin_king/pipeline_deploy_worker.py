@@ -8,12 +8,45 @@ from urllib.request import Request, urlopen
 from uuid import NAMESPACE_URL, uuid5
 
 from kubernetes import client
+from kubernetes.client.exceptions import ApiException
 
 from goblin_king.contracts import GoblinResult
 from goblin_king.pipeline_deployment import HelmRelease
 from goblin_king.pipeline_faults import configured_gate
 from goblin_king.pipeline_kubernetes import RecoveryHold, RetainedExecution
+from goblin_king.pipeline_network_child import phase as network_phase
 from goblin_king.runtime_helpers import current_kubernetes_namespace, kubernetes_clients
+
+
+def recorded_first_failure(core, payload):
+    """Recover an acknowledged first-install failure without repeating its Helm operation."""
+    if not payload.get("recover") or payload.get("previous"):
+        return None
+    try:
+        previous = json.loads(
+            core.read_namespaced_config_map(
+                "pipeline-" + payload["operation_id"], payload["environment"]["namespace"]
+            ).data["execution.json"]
+        )
+    except ApiException as error:
+        if error.status == 404:
+            return None
+        raise
+    original = previous["identity"]["request"]
+    if any(
+        original.get(key) != payload.get(key)
+        for key in ("operation_id", "release_key", "build_id", "environment", "values")
+    ):
+        raise RecoveryHold("prior deployment result differs from selected recovery intent")
+    result = previous.get("result") or {}
+    observed = result.get("data", {}).get("release") or {}
+    return (
+        observed
+        if result.get("status") == "success"
+        and observed.get("status") == "failed"
+        and not observed.get("rollback")
+        else None
+    )
 
 
 def deploy(payload):
@@ -83,6 +116,45 @@ def deploy(payload):
         environment["release"],
         fault_hook=fault_hook,
     )
+    network = payload.get("networking")
+    failed = recorded_first_failure(core, payload)
+    if failed:
+        actual = json.loads(
+            release.helm("get", "values", environment["release"], "--output", "json")
+        )
+        if any(actual.get(key) != values[key] for key in ("image", "operationId")):
+            raise RecoveryHold("failed first installation changed before recovery")
+        release.verify(
+            image=values["image"],
+            active=False,
+            port=values["port"],
+            health_path=values["healthPath"],
+        )
+        if network:
+            network_phase(
+                ledger,
+                core,
+                payload=payload,
+                installed=config,
+                stage="network-after",
+                active=False,
+                previous=network.get("previous"),
+                probe_only=True,
+            )
+        result = GoblinResult.ok(data={"operation_id": payload["operation_id"], "release": failed})
+        ledger.finish(result.model_dump(mode="json"))
+        return result
+    if network:
+        network_phase(
+            ledger,
+            core,
+            payload=payload,
+            installed=config,
+            stage="network-before",
+            active=values["active"],
+            previous=network.get("previous"),
+            prepare_only=True,
+        )
     ledger.document["helm_started"] = True
     ledger.save()
     observed = (
@@ -92,6 +164,36 @@ def deploy(payload):
             values, chart=Path("/opt/pipeline-http-service"), previous=payload["previous"]
         )
     )
+    if network:
+        restored = observed if observed["status"] == "success" else observed.get("rollback")
+        try:
+            evidence = network_phase(
+                ledger,
+                core,
+                payload=payload,
+                installed=config,
+                stage="network-after",
+                active=bool(restored and restored["active"]),
+                previous=network.get("previous"),
+            )
+        except RecoveryHold:
+            if observed["status"] != "success" or not payload["previous"]:
+                raise
+            observed = release.rollback(
+                payload["previous"], reason="network route verification failed after rollout"
+            )
+            restored = observed["rollback"]
+            evidence = network_phase(
+                ledger,
+                core,
+                payload=payload,
+                installed=config,
+                stage="network-rollback",
+                active=restored["active"],
+                previous=network.get("previous"),
+            )
+        if restored:
+            restored["networking"] = evidence
     result = GoblinResult.ok(data={"operation_id": payload["operation_id"], "release": observed})
     ledger.finish(result.model_dump(mode="json"))
     return result

@@ -55,6 +55,27 @@ def networking_apply(release_key: str, preview: Path, idempotency_key: str):
     )
 
 
+@networking_app.command("probe")
+def networking_probe(release_key: str, expected_version: int, idempotency_key: str):
+    """Verify route health without changing routes, policies or application workloads."""
+    call(
+        f"/releases/{release_key}/networking/probe",
+        {
+            "expected_version": expected_version,
+            "idempotency_key": idempotency_key,
+        },
+    )
+
+
+@networking_app.command("disable")
+def networking_disable(release_key: str, preview: Path, idempotency_key: str):
+    """Apply a reviewed preview that disables both networking features."""
+    value = json.loads(preview.read_text())
+    if any(value["configuration"][kind]["enabled"] for kind in ("ingress", "egress")):
+        raise typer.BadParameter("disable requires a preview with ingress and egress disabled")
+    networking_apply(release_key, preview, idempotency_key)
+
+
 def call(path, body=None, method=None):
     token = os.environ.get("GOBLIN_KING_API_TOKEN")
     if not token:
@@ -171,11 +192,20 @@ def recover_build(build_id: str, expected_version: int, idempotency_key: str):
 
 
 @app.command()
-def recover(operation_id: str, expected_version: int, idempotency_key: str):
+def recover(
+    operation_id: str,
+    expected_version: int,
+    idempotency_key: str,
+    networking_preview_id: str | None = None,
+):
     """Reconcile an interrupted release after its previous execution has terminated."""
     call(
         f"/operations/{operation_id}/recover",
-        {"expected_version": expected_version, "idempotency_key": idempotency_key},
+        {
+            "expected_version": expected_version,
+            "idempotency_key": idempotency_key,
+            "networking_preview_id": networking_preview_id,
+        },
     )
 
 

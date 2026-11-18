@@ -90,7 +90,12 @@ class NetworkRuntime:
 
     def read(self, kind, name, *, namespace=None):
         try:
-            return self.call(kind, "GET", name, namespace=namespace)
+            resource = self.call(kind, "GET", name, namespace=namespace)
+            if kind == "NetworkPolicy":
+                for direction in ("Ingress", "Egress"):
+                    if direction in resource["spec"].get("policyTypes", []):
+                        resource["spec"].setdefault(direction.lower(), [])
+            return resource
         except ApiException as error:
             if error.status != 404:
                 raise
@@ -293,6 +298,19 @@ class NetworkRuntime:
                         for condition in ("Accepted", "ResolvedRefs")
                     ):
                         return None
+                if kind == "BackendTrafficPolicy":
+                    ancestors = current.get("status", {}).get("ancestors", [])
+                    if not ancestors or not all(
+                        any(
+                            condition["type"] == "Accepted"
+                            and condition["status"] == "True"
+                            and condition.get("observedGeneration")
+                            == current["metadata"]["generation"]
+                            for condition in entry.get("conditions", [])
+                        )
+                        for entry in ancestors
+                    ):
+                        return None
                 return current
 
             current = self.wait(ready, "network resource did not become ready: " + name)
@@ -311,9 +329,18 @@ class NetworkRuntime:
     def inspect_policy_boundary(self):
         """Additional Kubernetes allow rules cannot be counteracted by a deny policy."""
         for item in self.call("NetworkPolicy", "GET")["items"]:
-            if self.owned(item):
+            if self.owned(item) and item["metadata"]["name"] in {
+                self.release + "-networking",
+                self.release + "-egress",
+            }:
                 continue
             spec = item["spec"]
+            # This installation rule selects only the dedicated configuration Pods.
+            # Application and proxy templates never carry this identity label.
+            if spec.get("podSelector") == {
+                "matchLabels": {"goblin-king.io/trust": "network-control"}
+            }:
+                continue
             if any(rule != dns_rule() for rule in spec.get("egress", [])):
                 raise RecoveryHold(
                     "additional outbound policy requires installation review: "
@@ -550,6 +577,7 @@ class NetworkRuntime:
         previous=None,
         health_path="/health",
         prepare_only=False,
+        probe_only=False,
     ):
         configuration = NetworkingConfiguration.model_validate(configuration)
         desired = render_networking(
@@ -569,6 +597,24 @@ class NetworkRuntime:
             else None
         )
         self.inspect_policy_boundary()
+        if probe_only:
+            for resource in desired:
+                current = self.read(resource["kind"], resource["metadata"]["name"])
+                expected = {key: resource[key] for key in ("spec", "data") if key in resource}
+                if not current or not self.owned(current) or not contains(current, expected):
+                    raise RecoveryHold("network resource differs from approved configuration")
+            for kind, suffix in (
+                ("HTTPRoute", "-ingress"),
+                ("HTTPRoute", "-redirect"),
+                ("Deployment", "-egress"),
+                ("Service", "-egress"),
+            ):
+                if not any(
+                    item["kind"] == kind and item["metadata"]["name"] == self.release + suffix
+                    for item in desired
+                ) and self.read(kind, self.release + suffix):
+                    raise RecoveryHold("unexpected network resource remains active")
+            return self.observe(configuration, desired, certificate, active, port, health_path)
         old = NetworkingConfiguration.model_validate((previous or {}).get("configuration", {}))
         if not active:
             self.remove("HTTPRoute", self.release + "-ingress")
@@ -612,6 +658,19 @@ class NetworkRuntime:
                 self.remove(kind, self.release + suffix)
         if not prepare_only:
             self.restore_application(configuration, active)
+        return self.observe(
+            configuration,
+            desired,
+            certificate,
+            active,
+            port,
+            health_path,
+            prepare_only=prepare_only,
+        )
+
+    def observe(
+        self, configuration, desired, certificate, active, port, health_path, *, prepare_only=False
+    ):
         resources = self.verify_resources(desired)
         application_health = (
             self.verify_application(active=active, port=port, health_path=health_path)

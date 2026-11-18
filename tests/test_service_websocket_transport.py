@@ -15,6 +15,7 @@ from goblin_king.api_settings import ApiSettings
 from goblin_king.service_websocket_drain import WebSocketDrainRegistry
 from goblin_king.service_websocket_proxy import (
     ServiceWebSocketProxyConfig,
+    ServiceWebSocketProxyError,
     filtered_query_string,
     proxy_managed_service_websocket,
     service_websocket_url,
@@ -127,6 +128,26 @@ async def test_proxy_uses_bounded_buffers_and_awaits_upstream_backpressure(
     assert captured["max_size"] == 2048
     assert captured["max_queue"] == 3
     assert captured["write_limit"] == 4096
+
+
+@pytest.mark.asyncio
+async def test_keepalive_does_not_preempt_short_application_idle_deadline(monkeypatch):
+    captured = {}
+
+    def connect(_uri, **options):
+        captured.update(options)
+        raise OSError("fixture stops before opening a connection")
+
+    monkeypatch.setattr("goblin_king.service_websocket_proxy.websockets.connect", connect)
+    downstream = AsyncMock()
+    downstream.headers = Headers()
+    config = ServiceWebSocketProxyConfig(idle_timeout_seconds=0.05)
+    with pytest.raises(ServiceWebSocketProxyError):
+        await proxy_managed_service_websocket(
+            downstream, upstream_url="ws://fixture.example/socket", config=config
+        )
+    assert captured["ping_interval"] > config.idle_timeout_seconds
+    assert captured["ping_timeout"] > config.idle_timeout_seconds
 
 
 @pytest.mark.parametrize(

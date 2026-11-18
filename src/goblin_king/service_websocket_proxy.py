@@ -144,8 +144,10 @@ async def proxy_managed_service_websocket(
         "subprotocols": subprotocols or None,
         "compression": "deflate",
         "open_timeout": config.open_timeout_seconds,
-        "ping_interval": min(20.0, config.idle_timeout_seconds / 2),
-        "ping_timeout": min(20.0, config.idle_timeout_seconds / 2),
+        # The application idle timer owns short inactivity deadlines. Millisecond
+        # keepalive deadlines can otherwise report a transport failure first.
+        "ping_interval": 20.0,
+        "ping_timeout": 20.0,
         "close_timeout": config.close_timeout_seconds,
         "max_size": config.max_message_bytes,
         "max_queue": config.max_queue_messages,

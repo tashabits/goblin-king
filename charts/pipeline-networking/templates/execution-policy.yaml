@@ -1,0 +1,82 @@
+{{- if .Values.policy.enabled }}
+{{- $control := required "networking requires controlNamespace" .Values.controlNamespace }}
+{{- $apiCIDRs := required "networking requires exact apiServerCIDRs" .Values.apiServerCIDRs }}
+{{- range $identity, $release := .Values.policy.releases }}
+{{- $namespace := first (splitList "/" $identity) }}
+{{- $name := last (splitList "/" $identity) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}-network-execution
+  namespace: {{ $namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      goblin-king.io/trust: network-control
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        {{- range $apiCIDRs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: 443}
+        - {protocol: TCP, port: 6443}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $control }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+      ports:
+        - {protocol: TCP, port: {{ $.Values.apiPort }}}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ $name }}
+              app.kubernetes.io/component: service
+    {{- range $alias := $release.gateways }}
+    {{- $gateway := index $.Values.policy.gateways $alias }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $gateway.dataplane_namespace }}
+          podSelector:
+            matchLabels: {{ $gateway.pod_selector | toJson }}
+    {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $namespace }}-{{ $name }}-network-api
+  namespace: {{ $control }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: api
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $namespace }}
+          podSelector:
+            matchLabels:
+              goblin-king.io/trust: network-control
+      ports:
+        - {protocol: TCP, port: {{ $.Values.apiPort }}}
+{{- end }}
+{{- end }}

@@ -74,7 +74,11 @@ def terminated_execution(operation, core, batch, namespace):
 
 def verify_network_phase_identity(token, operation, stage, core):
     """Bind a nested networking phase to the original retained Job and one live Pod."""
-    if not token or len(token) > 16384 or stage not in {"network-before", "network-after"}:
+    if (
+        not token
+        or len(token) > 16384
+        or stage not in {"network-before", "network-after", "network-rollback"}
+    ):
         raise PipelineConflict("approved network phase identity required")
     execution = operation["document"]["execution"]
     if not execution.get("networking") or operation["status"] != "running":
@@ -172,12 +176,45 @@ def _terminated_execution(operation, core, batch, namespace):
             or pod.status.phase not in {"Succeeded", "Failed"}
         ):
             raise PipelineConflict("previous execution has a non-terminated container")
+    nested = []
+    execution = operation["document"].get("execution", {})
+    if execution.get("networking"):
+        target_namespace = execution["environment"]["namespace"]
+        # Inspect all operation-labelled Jobs, including creation before UID acknowledgement.
+        for child in batch.list_namespaced_job(
+            target_namespace, label_selector="goblin-king.io/operation=" + execution["operation_id"]
+        ).items:
+            if not (child.status.succeeded or child.status.failed):
+                raise PipelineConflict("nested networking Job has not terminated")
+            child_pods = core.list_namespaced_pod(
+                target_namespace, label_selector="job-name=" + child.metadata.name
+            ).items
+            if not child_pods:
+                raise PipelineConflict("nested networking termination evidence is absent")
+            for child_pod in child_pods:
+                statuses = (child_pod.status.container_statuses or []) + (
+                    child_pod.status.init_container_statuses or []
+                )
+                if (
+                    not any(
+                        ref.uid == child.metadata.uid
+                        for ref in child_pod.metadata.owner_references or []
+                    )
+                    or len(statuses)
+                    != len(child_pod.spec.containers) + len(child_pod.spec.init_containers or [])
+                    or not statuses
+                    or child_pod.status.phase not in {"Succeeded", "Failed"}
+                    or any(item.state is None or item.state.terminated is None for item in statuses)
+                ):
+                    raise PipelineConflict("nested networking container has not terminated")
+            nested.append(child.metadata.uid)
     return {
         "job_id": job_id,
         "job_uid": job.metadata.uid,
         "terminated": True,
         "pod_uids": [pod.metadata.uid for pod in owned],
         "source_namespace": retained.get("source_namespace"),
+        "network_job_uids": nested,
     }
 
 
