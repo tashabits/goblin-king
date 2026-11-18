@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import base64
 import datetime
+import ipaddress
 import json
 import subprocess
 from pathlib import Path
@@ -42,7 +43,17 @@ def certificate(hostnames):
     )
 
 
-def prepare(output, images, *, context, project, gateway_class, controller_name, resume=False):
+def prepare(
+    output,
+    images,
+    *,
+    context,
+    project,
+    gateway_class,
+    controller_name,
+    resume=False,
+    external_fixture=None,
+):
     values_path = output / "values.json"
     values = json.loads(values_path.read_text())
     control = values["pipeline"]["workerConfig"]["api_url"].split("//", 1)[1].split(".")[1]
@@ -99,6 +110,19 @@ def prepare(output, images, *, context, project, gateway_class, controller_name,
         "gateways": {},
         "releases": {},
     }
+    nodes = json.loads(kube("get", "nodes", "-o", "json"))["items"]
+    protected = set()
+    for node in nodes:
+        protected.update(node["spec"].get("podCIDRs", []))
+        for address in node["status"]["addresses"]:
+            if address["type"] in {"InternalIP", "ExternalIP"}:
+                protected.add(str(ipaddress.ip_network(address["address"])))
+    service_cidrs = json.loads(kube("get", "servicecidrs", "-o", "json"))["items"]
+    for item in service_cidrs:
+        protected.update(item["spec"]["cidrs"])
+    if not service_cidrs or not all(node["spec"].get("podCIDRs") for node in nodes):
+        raise ValueError("cluster service and pod address ranges are required for networking")
+    policy["protected_cidrs"] = sorted(protected)
     for environment in ("test", "prod"):
         domains = [
             f"{implementation}.{environment}.{prefix}.example.test"
@@ -153,6 +177,23 @@ def prepare(output, images, *, context, project, gateway_class, controller_name,
                     {"hostname": "example.com", "port": 443, "protocol": "HTTPS"},
                 ],
             }
+            if external_fixture:
+                address = external_fixture["address"]
+                entry = policy["releases"][identity]
+                entry["outbound_hosts"] = [
+                    {"hostname": name + ".fixture.example.test", "port": port, "protocol": protocol}
+                    for name in ("allowed", "rebind", "mixed")
+                    for port, protocol in ((8080, "HTTP"), (8443, "HTTPS"))
+                ]
+                entry["private_upstreams"] = {
+                    name + ".fixture.example.test": [address]
+                    for name in ("allowed", "rebind", "mixed")
+                }
+                entry["proxy_dns_servers"] = [address]
+                entry["direct_destinations"] = [
+                    {"cidr": str(ipaddress.ip_network(address)), "port": port, "protocol": protocol}
+                    for port, protocol in ((9002, "TCP"), (9003, "UDP"))
+                ]
     policy = NetworkingPolicy.model_validate(policy).model_dump(mode="json")
     package = {
         "policy": policy,
@@ -294,6 +335,7 @@ if __name__ == "__main__":
     parser.add_argument("--gateway-class", required=True)
     parser.add_argument("--controller-name", required=True)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--external-fixture", type=Path)
     args = parser.parse_args()
     prepare(
         args.output.resolve(),
@@ -303,4 +345,7 @@ if __name__ == "__main__":
         gateway_class=args.gateway_class,
         controller_name=args.controller_name,
         resume=args.resume,
+        external_fixture=json.loads(args.external_fixture.read_text())
+        if args.external_fixture
+        else None,
     )
