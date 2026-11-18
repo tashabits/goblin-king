@@ -7,6 +7,7 @@ from urllib.request import Request, urlopen
 from uuid import NAMESPACE_URL, uuid5
 
 from kubernetes import client
+from kubernetes.client.exceptions import ApiException
 
 from goblin_king.contracts import GoblinResult
 from goblin_king.pipeline_faults import configured_gate
@@ -167,10 +168,15 @@ def main():
             else configure(payload)
         )
     except Exception as error:
-        result = GoblinResult.failed(
-            error=str(error)
+        message = (
+            str(error)
             if isinstance(error, (RecoveryHold, ValueError))
-            else type(error).__name__,
+            else f"Kubernetes API rejected request (HTTP {error.status})"
+            if isinstance(error, ApiException)
+            else type(error).__name__
+        )
+        result = GoblinResult.failed(
+            error=message,
             data={"recovery_hold": True},
         )
     raw = result.model_dump_json()
