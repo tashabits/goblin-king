@@ -195,14 +195,9 @@ class Simulator:
             with (directory / "Dockerfile").open("a") as stream:
                 stream.write("\nRUN exit 31\n")
         elif fault == "health":
-            filename = "app.py" if repository["directory"] == "python-api" else "app.mjs"
-            path = directory / filename
-            original = path.read_text()
-            path.write_text(
-                original.replace('os.environ.get("FAIL_HEALTH") != "1"', "False").replace(
-                    "process.env.FAIL_HEALTH !== '1'", "false"
-                )
-            )
+            # The final stage fails readiness while the test target stays healthy.
+            with (directory / "Dockerfile").open("a") as stream:
+                stream.write("\nENV FAIL_HEALTH=1\n")
         elif fault == "repair":
             shutil.copytree(
                 FIXTURES / repository["directory"],
