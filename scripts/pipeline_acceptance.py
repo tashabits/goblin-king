@@ -54,7 +54,16 @@ class Acceptance:
         self.output.mkdir(parents=True, exist_ok=True)
         temporary = self.state_path.with_suffix(".tmp")
         temporary.write_text(json.dumps(self.state, indent=2) + "\n", encoding="utf-8")
-        temporary.replace(self.state_path)
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                temporary.replace(self.state_path)
+                break
+            except PermissionError:
+                # Windows readers can briefly prevent atomic replacement of a receipt.
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.1)
 
     def command(self, argv, *, document=None, timeout=120, environment=None):
         result = subprocess.run(
