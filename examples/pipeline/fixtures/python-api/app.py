@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import os
+import signal
 import ssl
 import struct
 import sys
@@ -148,7 +149,12 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps({"bytes": len(body)}).encode())
 
 
+def terminate(_signum, _frame):
+    raise SystemExit(0)
+
+
 if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, terminate)
     if "--work-once" in sys.argv:
         record_work()
     elif "--background" in sys.argv:
@@ -156,4 +162,5 @@ if __name__ == "__main__":
             record_work()
             time.sleep(2)
     else:
-        ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+        with ThreadingHTTPServer(("0.0.0.0", 8080), Handler) as server:
+            server.serve_forever()
