@@ -397,8 +397,24 @@ class Acceptance:
         return {"evidence": "cleanup.json"}
 
     def cleanup(self):
-        # Verify every identity before uninstalling resources with cross-namespace bindings.
+        namespaces = {}
         for entry in self.state["namespaces"].values():
+            existing = namespaces.setdefault(entry["name"], dict(entry))
+            if existing["uid"] != entry["uid"]:
+                raise RuntimeError("conflicting namespace identities; cleanup refused")
+            if entry.get("removed"):
+                existing["removed"] = True
+
+        def mark_removed(entry):
+            for alias in self.state["namespaces"].values():
+                if alias["name"] == entry["name"]:
+                    alias["removed"] = True
+
+        for entry in namespaces.values():
+            if entry.get("removed"):
+                mark_removed(entry)
+        # Verify every identity before uninstalling resources with cross-namespace bindings.
+        for entry in namespaces.values():
             if entry.get("removed"):
                 continue
             current = json.loads(self.kube("get", "namespace", entry["name"], "-o", "json"))
@@ -408,7 +424,7 @@ class Acceptance:
                 != self.state["run_id"]
             ):
                 raise RuntimeError("namespace ownership mismatch; cleanup refused")
-        for entry in self.state["namespaces"].values():
+        for entry in namespaces.values():
             if self.state.get("networking") and not entry.get("removed"):
                 self.command(
                     [
@@ -439,7 +455,7 @@ class Acceptance:
                         "--timeout=90s",
                     ]
                 )
-        for entry in self.state["namespaces"].values():
+        for entry in namespaces.values():
             if entry.get("removed"):
                 continue
             current = json.loads(self.kube("get", "namespace", entry["name"], "-o", "json"))
@@ -451,6 +467,7 @@ class Acceptance:
                 raise RuntimeError("namespace ownership mismatch; cleanup refused")
             self.kube("delete", "namespace", entry["name"], "--wait=true", "--timeout=90s")
             entry["removed"] = True
+            mark_removed(entry)
             self.save()
         if self.state.get("networking"):
             removed_names = {entry["name"] for entry in self.state["namespaces"].values()}
