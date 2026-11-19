@@ -105,6 +105,18 @@ class Acceptance:
             if exclude_acceptance
             else set()
         )
+
+        def owned_gateway_proxy(item):
+            labels = item["metadata"].get("labels", {})
+            return (
+                item["kind"] in {"Deployment", "Service"}
+                and labels.get("app.kubernetes.io/component") == "proxy"
+                and labels.get("app.kubernetes.io/managed-by") == "envoy-gateway"
+                and labels.get("app.kubernetes.io/name") == "envoy"
+                and bool(labels.get("gateway.envoyproxy.io/owning-gateway-name"))
+                and labels.get("gateway.envoyproxy.io/owning-gateway-namespace") in owned
+            )
+
         return {
             item["metadata"]["uid"]: {
                 "kind": item["kind"],
@@ -117,6 +129,7 @@ class Acceptance:
             for item in items
             if item["metadata"].get("namespace") not in owned
             and not (item["kind"] == "Namespace" and item["metadata"]["name"] in owned)
+            and not owned_gateway_proxy(item)
         }
 
     def scenarios(self):
