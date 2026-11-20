@@ -133,7 +133,7 @@ class NetworkRuntime:
             self.ledger.save()
         return effects[key]
 
-    def replace(self, kind, name, body, current):
+    def update_resource(self, kind, name, body, current, *, method="PUT"):
         def stable_content(resource):
             content = copy.deepcopy(resource)
             content.pop("status", None)
@@ -144,7 +144,7 @@ class NetworkRuntime:
         for attempt in range(3):
             body["metadata"]["resourceVersion"] = current["metadata"]["resourceVersion"]
             try:
-                return self.call(kind, "PUT", name, body=body)
+                return self.call(kind, method, name, body=body)
             except ApiException as error:
                 if error.status != 409:
                     raise
@@ -203,7 +203,7 @@ class NetworkRuntime:
                             body["spec"][field] = current["spec"][field]
             self.ledger.fault_hook("networking.before_apply", key)
             current = (
-                self.replace(kind, name, body, current)
+                self.update_resource(kind, name, body, current)
                 if current
                 else self.call(kind, "POST", body=body)
             )
@@ -530,14 +530,15 @@ class NetworkRuntime:
             return
         if not contains(current, {"spec": changes}):
             self.ledger.fault_hook("networking.before_workload_change", key)
-            self.call(
+            self.update_resource(
                 item["kind"],
-                "PATCH",
                 item["name"],
-                body={
-                    "metadata": {"resourceVersion": current["metadata"]["resourceVersion"]},
+                {
+                    "metadata": {},
                     "spec": changes,
                 },
+                current,
+                method="PATCH",
             )
             self.ledger.fault_hook("networking.after_workload_change", key)
         effect["complete"] = True
