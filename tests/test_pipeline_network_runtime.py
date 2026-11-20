@@ -275,6 +275,71 @@ def test_update_conflicts_retry_only_status_changes(change):
         assert current.api.writes == 1
 
 
+@pytest.mark.parametrize("kind", ["Deployment", "CronJob"])
+@pytest.mark.parametrize(
+    "change", ["status", "identity", "configuration", "owner", "removed", "endless", "unavailable"]
+)
+def test_workload_patch_conflicts_preserve_identity_and_configuration(kind, change):
+    current = runtime()
+    version, plural = (
+        ("apps/v1", "deployments") if kind == "Deployment" else ("batch/v1", "cronjobs")
+    )
+    path = f"/apis/{version}/namespaces/app-test/{plural}/app"
+    initial_spec = {"replicas": 1} if kind == "Deployment" else {"suspend": False}
+    changes = {"replicas": 0} if kind == "Deployment" else {"suspend": True}
+    current.api.resources[path] = {
+        "metadata": {
+            "uid": "original",
+            "resourceVersion": "1",
+            "labels": {"app.kubernetes.io/instance": "app"},
+        },
+        "spec": initial_spec.copy(),
+    }
+    call = current.api.call_api
+    attempts = []
+
+    def conflicting(path, method, **kwargs):
+        if method != "PATCH":
+            return call(path, method, **kwargs)
+        attempts.append(kwargs["body"]["metadata"]["resourceVersion"])
+        if change == "unavailable":
+            raise ApiException(status=503)
+        stored = current.api.resources[path]
+        if len(attempts) == 1 or change == "endless":
+            stored["metadata"]["resourceVersion"] = str(10 + len(attempts))
+            stored["status"] = {"lastScheduleTime": "2026-11-20T05:20:00Z"}
+            if change == "identity":
+                stored["metadata"]["uid"] = "replacement"
+            elif change == "configuration":
+                stored["spec"]["other"] = "changed"
+            elif change == "owner":
+                stored["metadata"]["labels"]["app.kubernetes.io/instance"] = "other"
+            elif change == "removed":
+                del current.api.resources[path]
+            raise ApiException(status=409)
+        assert (
+            kwargs["body"]["metadata"]["resourceVersion"] == stored["metadata"]["resourceVersion"]
+        )
+        stored["spec"].update(kwargs["body"]["spec"])
+        current.api.writes += 1
+        return copy.deepcopy(stored)
+
+    current.api.call_api = conflicting
+    item = {"kind": kind, "name": "app", "uid": "original"}
+    if change == "status":
+        current.change_workload(item, changes, "quiesce")
+        assert current.api.resources[path]["spec"] == changes
+        assert attempts == ["1", "11"]
+        assert current.api.writes == 1
+        assert current.ledger.document["network_effects"][f"quiesce/{kind}/app"]["complete"]
+    else:
+        with pytest.raises(ApiException if change == "unavailable" else RecoveryHold):
+            current.change_workload(item, changes, "quiesce")
+        assert len(attempts) == (3 if change == "endless" else 1)
+        assert current.api.writes == 0
+        assert not current.ledger.document["network_effects"][f"quiesce/{kind}/app"]["complete"]
+
+
 def test_network_failure_retains_status_without_response_secrets(monkeypatch, tmp_path):
     from goblin_king import pipeline_network_worker
 
