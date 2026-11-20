@@ -231,6 +231,7 @@ class NetworkStorageAcceptance:
             pod["spec"]["nodeName"]
             for phase in evidence.values()
             for pod in phase["application_pods"]
+            if pod["spec"].get("nodeName")
         }
         if len(nodes) < 2 or any(
             row["connection"]["direct"] != "denied" for row in evidence.values()
